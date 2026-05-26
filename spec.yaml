@@ -26,8 +26,8 @@ constraints:
   BOOKS:
     requirements:
       1: Books are defined by profile yaml files
-      2: "The profile yaml files that define book chapters are named after existing document folders, with optional -fw and -pol suffixes. Example: For document folder calltaker, two profiles exist: calltaker-fw and calltaker-pol." 
-      2-1: A chapter list of a profile yaml of name "a", "a-fw" or "a-pol" is generated from the folder "a" that must exist in the quarto document tree root.
+      2: "The profile yaml files that define book chapters are named after existing document folders, with a `_quarto-` prefix and optional `-fw` and `-pol` suffixes. Example: For document folder `calltaker`, two profiles exist: `_quarto-calltaker-fw` and `_quarto-calltaker-pol`." 
+      2-1: A chapter list of a profile yaml of name "_quarto-a", "_quarto-a-fw" or "_quarto-a-pol" is generated from the folder "a" that must exist in the quarto document tree root.
       3: Source document file names may end in _POL.qmd or _FW.qmd. 
       4: "A chapter list in a profile yaml with -fw or -pol suffix is built with these rules:"
       4-1: If a file has no _POL or _FW suffix, include it as per the order value.
