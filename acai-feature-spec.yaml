@@ -1,0 +1,88 @@
+feature:
+    name: feature-yaml
+    description: A formal specification for compliant feature.yaml files. A self-referential spec-for-the-spec.
+    version: 1.0.0-beta.3
+    product: my-product.example.com
+    version: 1.0.0-beta.3
+    draft: true
+    description: | 
+      This document formally specifies how a compliant feature.yaml file can be written. feature.yaml files are intended to be used as structured, stable lists of acceptance criteria defining the functionality of a software feature, but they could be used for other specifications as well. This document is also a compliant feature.yaml, making it a self-referential spec-for-the-spec.
+    prerequisites:
+      - The acai.sh CLI and server are highly recommended for annotating and syncing your spec files.
+
+components:
+    FILE:
+      name: Top level file format
+      requirements:
+        1: The file must be called `<feature-name>.feature.yaml`
+        2: The file must begin with the `feature` top-level property (see FEATURE below)
+        3: The file may contain a `components` top-level property, with unique component keys
+        4: The file may contain a `constraints` top-level property, with unique constraint keys
+
+    FEATURE:
+        name: Feature metadata
+        description: Feature metadata is defined under the top-level `feature` key
+        requirements:
+            # feature.name
+            1: Feature metadata must have a `name` field
+            1-1: The `name` must be unique within the product
+            1-2: The `name` must only contain lowercase chars, numbers, dashes, and underscores e.g. `my-feature_123`
+            # feature.description
+            2: Feature metadata may have an optional `description` string
+            # feature.version
+            3: Feature metadata may have an optional `version` string
+            3-1: If present, version should follow SemVer
+            # feature.product
+            4: Feature metadata must contain a `product` string
+            4-1: The `product` must only contain upper- and lower-case chars, numbers, underscores, dashes, and periods e.g. `my-product.example.com`
+            5: Feature metadata may have an optional `prerequisites` list of strings, which help identify external dependencies that live outside the scope of the spec.
+
+    COMPONENTS:
+        name: Component groupings, defined under the top level `components` property as unique keys.
+        requirements:
+            1: The `components` object contains only unique component keys, which are groupings of component requirements.
+            1-1: Component key must only contain upper-case chars, numbers, or underscores e.g. `MY_COMPONENT1`
+            1-2: Must be unique within the feature; may not clash with any other group key, neither `component` nor `constraint` key.
+            2: Each component group must have a `requirements` field, containing a list of requirements (defined below).
+            3: Each component group can have an optional `name` string
+            4: Each component group can have an optional `description` string
+
+    CONSTRAINT:
+        name: Constraint groupings, defined under the top level `constraints` property as unique keys.
+        description: The goal of the `constraints` property is to organize cross-cutting requirements, or criteria that don't fit within a single component.
+        requirements:
+            1: The `constraints` object contains only unique constraint keys, which are groupings of constraint requirements.
+            1-1: Constraint group key must only contain upper-case chars, numbers, or underscores e.g. `MY_CONSTRAINT2`
+            1-2: Constraint group key must be unique within the feature; must not clash with any other `component` nor `constraint` key.
+            2: Each constraint group must have a `requirements` field, containing a list of requirements (defined below).
+            3: Each constraint group can have an optional `name` string
+            4: Each constraint group can have an optional `description` string
+
+    REQUIREMENT:
+        name: Requirement definitions, defined under the constraint.requirements or component.requirements property.
+        description: |
+            Requirements are numbered acceptance criteria that live under a component group key or a constraint group key.
+            The goal of a requirement is to define a behavior or functionality.
+        requirements:
+            1: Requirement keys must be integer keys (e.g. `1:`, `2:`, `3:`)
+            2: Sub-requirement must associate to a parent requirement's number, using integer-dash keys (e.g., `1-1`, `1-2`)
+            2-note: A sub-requirement may be parentless (e.g. `2-1` is present but parent `2` is not present).
+            3: Sub-requirement keys must never include `-0` as the parent requirement is implicitly the 0th item.
+            4: Requirements may be written as any yaml compatible string, including multi-line blocks with markdown, gherkin, etc.
+            5: Requirements and sub-requirements can be defined as either key-string pairs or key-object pairs
+            6: 
+              requirement: When defined as an object, it must contain a `requirement` property with the requirement definition string
+              note: This is an example of object notation, with a requirement and a note, as opposed to the key-string pairs above.
+            6-1: The object may contain a `note` property with a string value
+            6-2: The object may contain a `deprecated` property with a boolean value
+            6-3: The object may contain a `replaced_by` property with a list of ACID strings
+            7: Alternatively, notes may be defined in-line and attached to parent using `-note` suffix, (e.g. `1-note`, `2-1-note`)
+            7-note: This is an example of the simple note syntax, which is often preferred to nested `note` keys
+            8: Sub-requirements may not be nested more than 1 level deep. E.g. `1-1` is allowed, `1-1-1` is forbidden.
+            
+
+    ACID:
+        name: Requirement ID references / Acceptance Criteria IDs (ACIDs)
+        requirements:
+            1: A requirement can be referenced anywhere in the product via its unique ACID
+            2: ACIDs follow the format `<feature-name>.<GROUP_KEY>.<ID>` for example `my-feature.MY_COMPONENT.1-1` or `my-feature.MY_CONSTRAINT.2`
