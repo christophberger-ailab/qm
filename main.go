@@ -73,6 +73,14 @@ func main() {
 
 	chapters := buildFolderChapters(absDocPath, baseFolderPath, baseFolder, entries)
 
+	// Quarto requires the cover page to be "index.qmd" without a folder prefix.
+	if len(chapters) > 0 {
+		base := filepath.Base(chapters[0])
+		if base == "index.qmd" || base == "index.md" {
+			chapters[0] = base
+		}
+	}
+
 	if err := updateProfileYaml(profilePath, chapters); err != nil {
 		fatalf("error updating profile yaml: %v", err)
 	}
