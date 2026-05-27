@@ -40,6 +40,11 @@ func main() {
 
 	profileArg := args[0]
 
+	// Ensure the _quarto- prefix is present (BOOKS.2)
+	if !strings.HasPrefix(profileArg, "_quarto-") {
+		profileArg = "_quarto-" + profileArg
+	}
+
 	absDocPath, err := filepath.Abs(docPath)
 	if err != nil {
 		fatalf("cannot resolve doc path: %v", err)
@@ -88,14 +93,21 @@ func stripYamlExt(name string) string {
 }
 
 // parseProfileName derives the base folder and optional variant (fw/pol) from a profile name.
+// Profile names follow the pattern `_quarto-<folder>`, `_quarto-<folder>-fw`, or `_quarto-<folder>-pol`.
 func parseProfileName(name string) (baseFolder, variant string) {
-	if strings.HasSuffix(name, "-fw") {
-		return strings.TrimSuffix(name, "-fw"), "fw"
-	}
-	if strings.HasSuffix(name, "-pol") {
-		return strings.TrimSuffix(name, "-pol"), "pol"
-	}
-	return name, ""
+    const prefix = "_quarto-"
+    if !strings.HasPrefix(name, prefix) {
+        fatalf("profile name %q does not start with %q", name, prefix)
+    }
+    name = strings.TrimPrefix(name, prefix)
+
+    if strings.HasSuffix(name, "-fw") {
+        return strings.TrimSuffix(name, "-fw"), "fw"
+    }
+    if strings.HasSuffix(name, "-pol") {
+        return strings.TrimSuffix(name, "-pol"), "pol"
+    }
+    return name, ""
 }
 
 // resolveProfilePath finds the profile yaml file in the doc root, trying .yaml/.yml extensions.
