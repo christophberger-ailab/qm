@@ -76,9 +76,10 @@ func main() {
 	// Quarto requires the cover page to be "index.qmd" without a folder prefix.
 	if len(chapters) > 0 {
 		base := filepath.Base(chapters[0])
-		if base == "index.qmd" || base == "index.md" {
-			chapters[0] = base
+		if base != "index.qmd" && base != "index.md" {
+			fatalf("Cover page: expected index.(q)md, got %s", base)
 		}
+		chapters[0] = base
 	}
 
 	if err := updateProfileYaml(profilePath, chapters); err != nil {
@@ -103,19 +104,19 @@ func stripYamlExt(name string) string {
 // parseProfileName derives the base folder and optional variant (fw/pol) from a profile name.
 // Profile names follow the pattern `_quarto-<folder>`, `_quarto-<folder>-fw`, or `_quarto-<folder>-pol`.
 func parseProfileName(name string) (baseFolder, variant string) {
-    const prefix = "_quarto-"
-    if !strings.HasPrefix(name, prefix) {
-        fatalf("profile name %q does not start with %q", name, prefix)
-    }
-    name = strings.TrimPrefix(name, prefix)
+	const prefix = "_quarto-"
+	if !strings.HasPrefix(name, prefix) {
+		fatalf("profile name %q does not start with %q", name, prefix)
+	}
+	name = strings.TrimPrefix(name, prefix)
 
-    if strings.HasSuffix(name, "-fw") {
-        return strings.TrimSuffix(name, "-fw"), "fw"
-    }
-    if strings.HasSuffix(name, "-pol") {
-        return strings.TrimSuffix(name, "-pol"), "pol"
-    }
-    return name, ""
+	if strings.HasSuffix(name, "-fw") {
+		return strings.TrimSuffix(name, "-fw"), "fw"
+	}
+	if strings.HasSuffix(name, "-pol") {
+		return strings.TrimSuffix(name, "-pol"), "pol"
+	}
+	return name, ""
 }
 
 // resolveProfilePath finds the profile yaml file in the doc root, trying .yaml/.yml extensions.
