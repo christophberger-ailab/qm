@@ -1,6 +1,6 @@
-feature: 
+feature:
   name: quarto-order-to-chapter-list
-  description: This CLI tool reads order values from quarto metadata to generate or update chapters lists. 
+  description: This CLI tool reads order values from quarto metadata to generate or update chapters lists.
 
 components:
   MAIN:
@@ -20,18 +20,19 @@ components:
 constraints:
   ORDERS:
     requirements:
-      1: Files named index.qmd belong to their folder. Their order is in relation to sibling folders of their folder. So a/index.qmd and b/index.qmd belong to the same document level. Their order entry applies to this level. 
-      2: "a/somemore.qmd and a/evenmore.qmd are sorted at the file level: a/index.qmd is always the first file in this order, and if a/somemore.qmd has order: 1, it follows after index.qmd, and if a/evenmore.qmd has order: 2, it follows after a/sommore.qmd in the chapters list."
+      1: Files named index.qmd belong to their folder. Their order is in relation to sibling folders of their folder. So a/index.qmd and b/index.qmd belong to the same document level. Their order entry applies to this level.
+      2: 'a/somemore.qmd and a/evenmore.qmd are sorted at the file level: a/index.qmd is always the first file in this order, and if a/somemore.qmd has order: 1, it follows after index.qmd, and if a/evenmore.qmd has order: 2, it follows after a/sommore.qmd in the chapters list.'
 
   BOOKS:
     requirements:
       1: Books are defined by profile yaml files
-      2: "The profile yaml files that define book chapters are named after existing document folders, with a `_quarto-` prefix and optional `-fw` and `-pol` suffixes. Example: For document folder `calltaker`, two profiles exist: `_quarto-calltaker-fw` and `_quarto-calltaker-pol`." 
+      2: 'The profile yaml files that define book chapters are named after existing document folders, with a `_quarto-` prefix and optional `-fw` and `-pol` suffixes. Example: For document folder `calltaker`, two profiles exist: `_quarto-calltaker-fw` and `_quarto-calltaker-pol`.'
       2-1: A chapter list of a profile yaml of name "_quarto-a", "_quarto-a-fw" or "_quarto-a-pol" is generated from the folder "a" that must exist in the quarto document tree root.
-      3: Source document file names may end in _POL.qmd or _FW.qmd. 
-      4: "A chapter list in a profile yaml with -fw or -pol suffix is built with these rules:"
+      3: Source document file names may end in _POL.qmd or _FW.qmd.
+      3-1: 'Source document folder names may end in _POL or _FW.'
+      4: 'A chapter list in a profile yaml with -fw or -pol suffix is built with these rules:'
       4-1: If a file has no _POL or _FW suffix, include it as per the order value.
-      4-2: If two files with the same basename and the suffixes _POL and _FW exist, pick the one that matches the profile yaml suffix. 
+      4-2: If the basename of a folder or file has a _POL or _FW suffix, only include it if the suffix matches the suffix of the profile yaml file.
 
   FILES:
     requirements:
@@ -43,4 +44,3 @@ constraints:
       1: The tool shall be implemented in Go.
       2: Keep external dependencies to an absolute minimum. The standard library provides useful packages for many requirements.
       3: Use red/green TDD
-

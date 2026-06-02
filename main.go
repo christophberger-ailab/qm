@@ -175,10 +175,96 @@ func scanFiles(docRoot, baseFolderPath, variant string) (map[string]*fileEntry, 
 	return entries, nil
 }
 
+// pathFolderVariant inspects the folder segments of relPath (i.e. all path
+// segments except the file basename) and returns the variant suffix found on
+// any of them ("fw", "pol", or "" for none). If multiple segments carry a
+// suffix the most-specific (deepest) one wins; mixed suffixes along the path
+// are reported as the deepest one.
+func pathFolderVariant(relPath string) string {
+	segments := strings.Split(filepath.ToSlash(relPath), "/")
+	if len(segments) < 2 {
+		return ""
+	}
+	variant := ""
+	for _, seg := range segments[:len(segments)-1] {
+		switch {
+		case strings.HasSuffix(seg, "_FW"):
+			variant = "fw"
+		case strings.HasSuffix(seg, "_POL"):
+			variant = "pol"
+		}
+	}
+	return variant
+}
+
 // applyVariantFilter implements BOOKS.4: for profiles with -fw or -pol suffix,
 // plain files are included as-is, and when both _FW and _POL variants of the
-// same file exist, only the matching variant is kept.
+// same file exist, only the matching variant is kept. Per BOOKS.3-1 and 4-2,
+// folder basenames ending in _POL or _FW are treated the same as files: a
+// folder with a non-matching variant suffix excludes everything beneath it.
 func applyVariantFilter(entries map[string]*fileEntry, profileVariant string) map[string]*fileEntry {
+	// First, drop any entry whose path contains a folder segment with a
+	// variant suffix that doesn't match the profile variant.
+	filtered := make(map[string]*fileEntry, len(entries))
+	for relPath, entry := range entries {
+		folderVariant := pathFolderVariant(relPath)
+		if folderVariant != "" && folderVariant != profileVariant {
+			continue
+		}
+		filtered[relPath] = entry
+	}
+	entries = filtered
+
+	// Folder pairing (mirrors file pairing for BOOKS.3-1 and 4-2): when a
+	// plain folder and its variant counterpart both exist, the variant
+	// folder supersedes the plain one for the matching profile. Warn about
+	// the conflict so authors notice unintended overlap.
+	variantSuffix := ""
+	switch profileVariant {
+	case "fw":
+		variantSuffix = "_FW"
+	case "pol":
+		variantSuffix = "_POL"
+	}
+	if variantSuffix != "" {
+		folders := make(map[string]bool)
+		for relPath := range entries {
+			parts := strings.Split(relPath, "/")
+			for i := 0; i < len(parts)-1; i++ {
+				folders[strings.Join(parts[:i+1], "/")] = true
+			}
+		}
+		superseded := make(map[string]bool)
+		for folder := range folders {
+			base := filepath.Base(folder)
+			if strings.HasSuffix(base, "_FW") || strings.HasSuffix(base, "_POL") {
+				continue
+			}
+			variantFolder := folder + variantSuffix
+			if folders[variantFolder] {
+				superseded[folder] = true
+				fmt.Fprintf(os.Stderr, "warning: folder %s superseded by %s\n", folder, variantFolder)
+			}
+		}
+		if len(superseded) > 0 {
+			next := make(map[string]*fileEntry, len(entries))
+			for relPath, entry := range entries {
+				skip := false
+				parts := strings.Split(relPath, "/")
+				for i := 0; i < len(parts)-1; i++ {
+					if superseded[strings.Join(parts[:i+1], "/")] {
+						skip = true
+						break
+					}
+				}
+				if !skip {
+					next[relPath] = entry
+				}
+			}
+			entries = next
+		}
+	}
+
 	type group struct {
 		plain *fileEntry
 		fw    *fileEntry
@@ -232,7 +318,11 @@ func applyVariantFilter(entries map[string]*fileEntry, profileVariant string) ma
 			if chosen != nil {
 				result[chosen.relPath] = chosen
 			}
-			// A plain file alongside variants is superseded — omit it.
+			// A plain file alongside variants is superseded — omit it
+			// and warn so authors notice the conflict.
+			if g.plain != nil {
+				fmt.Fprintf(os.Stderr, "warning: file %s superseded by variant counterpart\n", g.plain.relPath)
+			}
 		} else if g.plain != nil {
 			// BOOKS.4-1: plain files with no variants are always included.
 			result[g.plain.relPath] = g.plain
