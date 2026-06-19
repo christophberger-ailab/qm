@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -23,11 +24,27 @@ type frontmatter struct {
 	Order *int `yaml:"order"`
 }
 
+// defaultExcludePattern matches file basenames starting with `_` or `.` (FILES.3).
+const defaultExcludePattern = `^[._]`
+
+// shouldExcludeChapter returns true when the file's basename matches the
+// exclusion regex. A nil pattern disables filtering.
+func shouldExcludeChapter(relPath string, pattern *regexp.Regexp) bool {
+	if pattern == nil {
+		return false
+	}
+	base := filepath.Base(filepath.ToSlash(relPath))
+	return pattern.MatchString(base)
+}
+
 func main() {
 	var docPath string
+	var excludePatternStr string
 	flag.StringVar(&docPath, "path", ".", "Path to the Quarto document tree (default: current directory)")
+	flag.StringVar(&excludePatternStr, "exclude", defaultExcludePattern,
+		"Regex pattern matched against file basenames to exclude chapters (default: files starting with _ or .)")
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: quarto-order-to-chapter-list [--path <doc-tree>] <profile-yaml-name>")
+		fmt.Fprintln(os.Stderr, "Usage: quarto-order-to-chapter-list [--path <doc-tree>] [--exclude <regex>] <profile-yaml-name>")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -45,6 +62,15 @@ func main() {
 		profileArg = "_quarto-" + profileArg
 	}
 
+	var excludePattern *regexp.Regexp
+	if excludePatternStr != "" {
+		var err error
+		excludePattern, err = regexp.Compile(excludePatternStr)
+		if err != nil {
+			fatalf("invalid --exclude regex %q: %v", excludePatternStr, err)
+		}
+	}
+
 	absDocPath, err := filepath.Abs(docPath)
 	if err != nil {
 		fatalf("cannot resolve doc path: %v", err)
@@ -60,7 +86,7 @@ func main() {
 		fatalf("base folder %q not found in document tree %q", baseFolder, absDocPath)
 	}
 
-	entries, err := scanFiles(absDocPath, baseFolderPath, variant)
+	entries, err := scanFiles(absDocPath, baseFolderPath, variant, excludePattern)
 	if err != nil {
 		fatalf("error scanning files: %v", err)
 	}
@@ -134,8 +160,9 @@ func resolveProfilePath(docRoot, arg string) string {
 }
 
 // scanFiles recursively finds all .qmd/.md files in baseFolderPath, reads their
-// order frontmatter, and applies variant filtering if a variant is specified.
-func scanFiles(docRoot, baseFolderPath, variant string) (map[string]*fileEntry, error) {
+// order frontmatter, applies variant filtering if a variant is specified, and
+// drops any file whose basename matches excludePattern.
+func scanFiles(docRoot, baseFolderPath, variant string, excludePattern *regexp.Regexp) (map[string]*fileEntry, error) {
 	entries := make(map[string]*fileEntry)
 
 	err := filepath.WalkDir(baseFolderPath, func(path string, d os.DirEntry, err error) error {
@@ -155,6 +182,10 @@ func scanFiles(docRoot, baseFolderPath, variant string) (map[string]*fileEntry, 
 			return err
 		}
 		relPath = filepath.ToSlash(relPath)
+
+		if shouldExcludeChapter(relPath, excludePattern) {
+			return nil
+		}
 
 		order, err := readOrder(path)
 		if err != nil {

@@ -38,6 +38,7 @@ constraints:
     requirements:
       1: Files must have an order entry. Report files with a missing order entry but continue generating the chapters list.
       2: The paths to the chapters files in the profile yamls are relative to the Quarto document root.
+      3: Exclude files whose names start with an underscore or a full stop. Examples: `_foo.qmd`, `.bar.qmd`.
 
   IMPLEMENTATION:
     requirements:
