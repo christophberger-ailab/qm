@@ -1,0 +1,25 @@
+
+feature:
+  name: chapters-remove
+  description: Remove a chapter.
+
+components:
+  COMMAND:
+    description: qm chapters remove <path-to-folder> <order number>
+    requirements:
+      1: Object name is "chapters"
+      2: Subcommand name is "remove"
+      3: Reqiured parameters
+      3-1: Flag --project sets the path to the document tree. Defaults to the current directory
+      3-2: The path to the folder to insert the chapter into
+      3-3: The current order number of the chapter to move
+      3-4: The new order number of the chapter to move
+
+constraints:
+  STANDARD: See the constraints in spec.yaml.
+
+  PROCESS:
+    1: Read the existing order list from the given folder. Remember that a chapter may either be a .qmd file in this folder or a subfolder with an index.qmd file inside. E.g., `parsing.qmd` or `parsing/index.qmd`.
+    2: Ask the user to confirm the removal. Print the file name and the `order` and `title` fields from the frontmatter.
+    2-1: If the user confirms, remove the file. Try to call the `trash` commmand first; it's an external CLI tool to trash files instead of removing. Syntax is `trash <file name>`. If there is no `trash` command available, fall back to removing the file. 
+

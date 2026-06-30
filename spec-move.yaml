@@ -1,0 +1,29 @@
+
+feature:
+  name: chapters-move
+  description: Move a chapter to another place.
+
+components:
+  COMMAND:
+    description: qm chapters move <path-to-folder> <old-order> <new-order>
+    requirements:
+      1: Object name is "chapters"
+      2: Subcommand name is "move"
+      3: Reqiured parameters
+      3-1: Flag --project sets the path to the document tree. Defaults to the current directory
+      3-2: The path to the folder to insert the chapter into
+      3-3: The current order number of the chapter to move
+      3-4: The new order number of the chapter to move
+
+constraints:
+  STANDARD: See the constraints in spec.yaml.
+
+  PROCESS:
+    1: Read the existing order list from the given folder. Remember that a chapter may either be a .qmd file in this folder or a subfolder with an index.qmd file inside. E.g., `parsing.qmd` or `parsing/index.qmd`.
+    2: Renumber the orders of all files based on the old and new place.
+    2-1: If the chapter is moved to a lower order number, renumber the orders between the new and the old order. e.g., qm chapters move sysadmin/intro 4 2 -> rename order 4 to 2, 2 to 3, and 3 to 4.
+    2-2: 'If the chapter is moved to a higher order number:'
+    2-2-1: Renumber the chapters after the new order number e.g. qm chapters move sysadmin 4 6 -> rename order 6 to 7, 7 to 8, etc
+    2-2-2: Renumber the chapters after the original number to close the cap, e.g. qm chapters move sysadmin 4 6 -> rename order 5 to 4
+    2-2-3: Change order number 4 to 6
+    3: Invoke the chapters-update subcommand to keep the chapters list in sync.

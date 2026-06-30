@@ -1,0 +1,41 @@
+
+feature:
+  name: chapters-insert
+  description: Insert a new chapter into a quarto book.
+
+components:
+  COMMAND:
+    description: qm chapters insert
+    requirements:
+      1: Object name is "chapters"
+      2: Subcommand name is "insert"
+      3: Reqiured parameters
+      3-1: 'Flag `--project`: The path to the document tree. Defaults to the current directory'
+      3-2: The path to the folder to insert the chapter into
+
+constraints:
+  STANDARD: See the constraints in spec.yaml.
+
+  NEWCHAPTER:
+    1: The new chapter exists as a file in the target folder.
+    2: The file has no `order` entry in the frontmatter.
+    3: 'The file has an insert-at: <n> entry in the frontmatter, where <n> is the order number of the new chapter.'
+
+  PROCESS:
+    1: Read the existing order list from the given folder. Remember that a chapter may either be a .qmd file in this folder or a subfolder with an index.qmd file inside. E.g., `parsing.qmd` or `parsing/index.qmd`.
+    2: Renumber the orders of all files with an order number greater or equal to the order number of the new chapter.
+    3: Rename the frontmatter entry `insert-at` to `order`.
+    4: Invoke the chapters-update subcommand to keep the chapters list in sync.
+
+examples:
+
+  SYSADMIN:
+    1: Command `qm chapters insert sysadmin`
+    2: Resulting Quarto profile file is `_quarto-sysadmin.yml`
+    3: Resulting book folder is `sysadmin/`
+  
+  EINFUEHRUNG:
+    1: Current working dir is outside the Quarto project
+    2: Command `qm update einfuehrung --project $HOME/docs/training`
+    3: Resulting Quarto profile file is `_quarto-einfuehrung.yml`
+    4: Resulting book folder is `$HOME/docs/training/einfuehrung/`

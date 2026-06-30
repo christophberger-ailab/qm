@@ -1,23 +1,31 @@
 feature:
-  name: quarto-order-to-chapter-list
-  description: This CLI tool reads order values from quarto metadata to generate or update chapters lists.
+  name: qm
+  description: This CLI tool manages quarto documentation. It adds functions that the `quarto` command lacks.
 
 components:
+
   MAIN:
     description: Primary command behavior
     requirements:
-      1: Fetch user-supplied parameters from the command line
-      1-1: The path to the Quarto document tree
-      1-2: The name of the Quarto profile yaml file
-      2: Store them for later reference
-      3: Reqiured parameters
-      3-1: The path to the document tree. Defaults to the current directory
-      3-2: The name of the book yaml to update
-      4: Recursively read the order entries from the yaml frontmatter of each *.md or *qmd file and save each file path and its order so that you can produce an ordered list of chapters later
-      5: "Open the Quarto profile yaml file and find the entry 'book: chapters:'."
-      6: Add the list of chapters in the appropriate order, based on the given contstraints.
+      1: Command pattern is `qm <object> <subcommand> [<flag>|<parameter>]*`
+      1-1: The first parameter is always an object 
+      1-2: The first parameter is always a sub-command that applies to the object
+      1-3: Subsequent parameters belong to the sub-command
+      2: Implement subcommands as packages inside this module.
+      2-1: Subcommands are specified in their respective specification file.
+      2-2: Design a clean package API for each command.
+      2-3: Wire up the subcommands in the main package. 
 
 constraints:
+
+  SUBCOMMANDS:
+    requirements:
+      1: Use github.com/christophberger/start for managing subcommand setups and flags.
+      2: The `start` module organizes commands and flags in a particular way.
+      2-1: Flags may apply to qm as a whole or to specific subcommands. 
+      2-2: Flags have corresponding environment variables and config file entries.
+      3: The `start` module has no notion of `<object>`. Implement an object as a dummy command. 
+
   ORDERS:
     requirements:
       1: Files named index.qmd belong to their folder. Their order is in relation to sibling folders of their folder. So a/index.qmd and b/index.qmd belong to the same document level. Their order entry applies to this level.
@@ -27,12 +35,14 @@ constraints:
     requirements:
       1: Books are defined by profile yaml files
       2: 'The profile yaml files that define book chapters are named after existing document folders, with a `_quarto-` prefix and optional `-fw` and `-pol` suffixes. Example: For document folder `calltaker`, two profiles exist: `_quarto-calltaker-fw` and `_quarto-calltaker-pol`.'
-      2-1: A chapter list of a profile yaml of name "_quarto-a", "_quarto-a-fw" or "_quarto-a-pol" is generated from the folder "a" that must exist in the quarto document tree root.
+      2-1: Subcommands may receive a profile name. E.g., profile name is "calltaker" -> profile yaml is `_quarto-calltaker.yml`
+      2-2: A chapter list of a profile yaml of name "_quarto-a", "_quarto-a-fw" or "_quarto-a-pol" is generated from the folder "a" that must exist in the quarto document tree root.
       3: Source document file names may end in _POL.qmd or _FW.qmd.
       3-1: 'Source document folder names may end in _POL or _FW.'
       4: 'A chapter list in a profile yaml with -fw or -pol suffix is built with these rules:'
       4-1: If a file has no _POL or _FW suffix, include it as per the order value.
       4-2: If the basename of a folder or file has a _POL or _FW suffix, only include it if the suffix matches the suffix of the profile yaml file.
+      5: If no particular profile name is passed in the command line, read all _quarto-<profile>.yml files and parse them for `book:` entries. Process each as described in the above BOOKS requirements.
 
   FILES:
     requirements:
@@ -43,5 +53,6 @@ constraints:
   IMPLEMENTATION:
     requirements:
       1: The tool shall be implemented in Go.
-      2: Keep external dependencies to an absolute minimum. The standard library provides useful packages for many requirements.
-      3: Use red/green TDD
+      2: Write minimalistic code in idiomatic Go. 
+      3: Keep external dependencies to an absolute minimum. The standard library provides useful packages for many requirements.
+      4: Use red/green TDD.
