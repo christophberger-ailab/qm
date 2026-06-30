@@ -11,9 +11,9 @@ components:
       3: Flags and parameters
       3-1: "Flag `--project`: The path to the document tree. Defaults to the current directory"
       3-2: The name of the book yaml to update. Defaults to all.
-      4: Recursively read the order entries from the yaml frontmatter of each *.md or *qmd file and save each file path and its order so that you can produce an ordered list of chapters later
+      4: Recursively read the order entries from the yaml frontmatter of each *.md or *.qmd file and save each file path and its order so that you can produce an ordered list of chapters later
       5: "Open the Quarto profile yaml file and find the entry 'book: chapters:'."
-      6: Add the list of chapters in the appropriate order, based on the given contstraints.
+      6: Add the list of chapters in the appropriate order, based on the given constraints.
 
 constraints:
   STANDARD: See the constraints in spec.yaml.

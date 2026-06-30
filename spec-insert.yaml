@@ -26,16 +26,3 @@ constraints:
     2: Renumber the orders of all files with an order number greater or equal to the order number of the new chapter.
     3: Rename the frontmatter entry `insert-at` to `order`.
     4: Invoke the chapters-update subcommand to keep the chapters list in sync.
-
-examples:
-
-  SYSADMIN:
-    1: Command `qm chapters insert sysadmin`
-    2: Resulting Quarto profile file is `_quarto-sysadmin.yml`
-    3: Resulting book folder is `sysadmin/`
-  
-  EINFUEHRUNG:
-    1: Current working dir is outside the Quarto project
-    2: Command `qm update einfuehrung --project $HOME/docs/training`
-    3: Resulting Quarto profile file is `_quarto-einfuehrung.yml`
-    4: Resulting book folder is `$HOME/docs/training/einfuehrung/`

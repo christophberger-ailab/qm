@@ -9,7 +9,7 @@ components:
     requirements:
       1: Command pattern is `qm <object> <subcommand> [<flag>|<parameter>]*`
       1-1: The first parameter is always an object 
-      1-2: The first parameter is always a sub-command that applies to the object
+      1-2: The second parameter is always a sub-command that applies to the object
       1-3: Subsequent parameters belong to the sub-command
       2: Implement subcommands as packages inside this module.
       2-1: Subcommands are specified in their respective specification file.
@@ -29,7 +29,7 @@ constraints:
   ORDERS:
     requirements:
       1: Files named index.qmd belong to their folder. Their order is in relation to sibling folders of their folder. So a/index.qmd and b/index.qmd belong to the same document level. Their order entry applies to this level.
-      2: 'a/somemore.qmd and a/evenmore.qmd are sorted at the file level: a/index.qmd is always the first file in this order, and if a/somemore.qmd has order: 1, it follows after index.qmd, and if a/evenmore.qmd has order: 2, it follows after a/sommore.qmd in the chapters list.'
+      2: 'a/somemore.qmd and a/evenmore.qmd are sorted at the file level: a/index.qmd is always the first file in this order, and if a/somemore.qmd has order: 1, it follows after index.qmd, and if a/evenmore.qmd has order: 2, it follows after a/somemore.qmd in the chapters list.'
 
   BOOKS:
     requirements:
