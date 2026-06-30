@@ -15,6 +15,7 @@ components:
       2-1: Subcommands are specified in their respective specification file.
       2-2: Design a clean package API for each command.
       2-3: Wire up the subcommands in the main package. 
+      2-4: The object parameter is not a subcommand. Don't use the object name as package name. Each object's subcommand gets its specific package.
 
 constraints:
 
