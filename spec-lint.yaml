@@ -1,0 +1,26 @@
+
+feature:
+  name: lint
+  description: A linter for Quarto projects
+
+components:
+  COMMAND:
+    description: qm lint [<profile>]
+    requirements:
+      1: Object name is "lint"
+      2: No subcommand; `qm lint` runs all linters
+      3: Reqiured parameters
+      3-1: Flag --project sets the path to the document tree. Defaults to the current directory
+      3-2: A profile name. Defaults to the whole repository.
+
+constraints:
+  STANDARD: See the constraints in spec.yaml.
+
+  PROCESS:
+    requirements:
+      1: Read every *.qmd file that belongs to the given profile, or all *.qmd files in the project if no profile is passed.
+      2: Apply every available linter to each file
+      3: Report success or failure for each linter
+      3-1: Prefix the name of the linter
+      3-2: List the files and (if possible) the line number where the linter found an issue
+      3-3: If none of the linters reports an issue, it is sufficient to just report the number of files checked and that no issues are found

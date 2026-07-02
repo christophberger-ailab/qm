@@ -1,0 +1,19 @@
+
+feature:
+  name: lint-quarto-blocks
+  description: Check the project for unclosed Quarto blocks
+
+components:
+  COMMAND:
+    description: a linter for qm lint
+    requirements: same as for the lint feature
+
+constraints:
+  STANDARD: See the constraints in spec.yaml.
+
+  PROCESS:
+    requirements:
+      1: The linter shall verify if each quarto block opening fence has a corresponding closing fence.
+      2: A quarto block starts with a line that begins with three or more colons, followed by a block descriptor
+      3: A quarto block ends with a line that begins with three or more colons and contains nothing else (except maybe trailing whitespace)
+      4: The number of colons in an opening fence may match the number of colons in the corresponding closing fence, but this is no strict technical requirement. It is a help for the user to recognize nesting more easily. 

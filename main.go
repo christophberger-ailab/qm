@@ -14,6 +14,7 @@ import (
 	"os"
 
 	"github.com/cboct/qm/insert"
+	"github.com/cboct/qm/lint"
 	"github.com/cboct/qm/move"
 	"github.com/cboct/qm/remove"
 	"github.com/cboct/qm/update"
@@ -57,6 +58,11 @@ func main() {
 	insert.Register("chapters", projectFlag)
 	move.Register("chapters", projectFlag)
 	remove.Register("chapters", projectFlag)
+
+	// The `lint` object has no sub-commands, so it is registered as a
+	// leaf command directly (SUBCOMMANDS.3 does not apply when there is
+	// nothing to dispatch to).
+	lint.Register(projectFlag)
 
 	start.Up()
 }
