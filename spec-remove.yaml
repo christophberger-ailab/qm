@@ -1,4 +1,3 @@
-
 feature:
   name: chapters-remove
   description: Remove a chapter.

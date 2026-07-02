@@ -1,4 +1,3 @@
-
 feature:
   name: chapters-insert
   description: Insert a new chapter into a quarto book.
