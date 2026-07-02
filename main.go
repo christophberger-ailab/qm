@@ -17,6 +17,7 @@ import (
 	"github.com/cboct/qm/lint"
 	"github.com/cboct/qm/move"
 	"github.com/cboct/qm/remove"
+	"github.com/cboct/qm/render"
 	"github.com/cboct/qm/update"
 
 	"github.com/christophberger/start"
@@ -63,6 +64,9 @@ func main() {
 	// leaf command directly (SUBCOMMANDS.3 does not apply when there is
 	// nothing to dispatch to).
 	lint.Register(projectFlag)
+
+	// The `render` object also has no sub-commands.
+	render.Register(projectFlag)
 
 	start.Up()
 }

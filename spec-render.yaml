@@ -1,0 +1,26 @@
+feature:
+  name: render
+  description: Render 
+
+components:
+  COMMAND:
+    description: qm render [<profile>,<profile>]
+    requirements:
+      1: Object name is "render"
+      2: No subcommand
+      3: Reqiured parameters
+      3-1: Flag --project sets the path to the document tree. Defaults to the current directory
+      3-2: Two  quarto profile names separated by a comma
+
+constraints:
+  STANDARD: See the constraints in spec.yaml.
+
+  PROCESS:
+    requirements:
+      1: If two profile names are given, then -
+      1-1: If one of the names is "slides", run `<project-path>/.scripts/make-slides.ps1 <other-name>`
+      1-2: else run `quarto render --profile <name1>,<name2> --no-clean`
+      2: If one profile name is given, issue an error
+      3: If no profile name is given, run <project-path>/render.ps1
+      4: If the shell isn't a Powershell shell, spawn `pwsh` for running the scripts.
+
