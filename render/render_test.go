@@ -55,8 +55,8 @@ func TestBuildPlan_SlidesFirst(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if p.Name != "make-slides" {
-		t.Fatalf("Name = %q, want make-slides", p.Name)
+	if p.Name != "make_slides" {
+		t.Fatalf("Name = %q, want make_slides", p.Name)
 	}
 	if p.Args[len(p.Args)-1] != "calltaker" {
 		t.Errorf("last arg = %q, want calltaker", p.Args[len(p.Args)-1])
@@ -68,8 +68,8 @@ func TestBuildPlan_SlidesSecondCaseInsensitive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if p.Name != "make-slides" {
-		t.Fatalf("Name = %q, want make-slides", p.Name)
+	if p.Name != "make_slides" {
+		t.Fatalf("Name = %q, want make_slides", p.Name)
 	}
 	if p.Args[len(p.Args)-1] != "calltaker" {
 		t.Errorf("last arg = %q, want calltaker", p.Args[len(p.Args)-1])

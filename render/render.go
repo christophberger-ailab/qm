@@ -4,7 +4,7 @@
 //
 //	qm render                     -> run <project>/render.ps1
 //	qm render a,b                 -> quarto render --profile a,b --no-clean
-//	qm render slides,a            -> run <project>/.scripts/make-slides.ps1 a
+//	qm render slides,a            -> run <project>/.scripts/make_slides.ps1 a
 //	qm render a                   -> error (exactly two profiles required
 //	                                 when profile names are given)
 //
@@ -37,7 +37,7 @@ func Register(projectFlag *string) {
 			"render.ps1 script. With two comma-separated profile names, " +
 			"runs `quarto render --profile <a>,<b> --no-clean`, unless one " +
 			"of the profiles is `slides`, in which case " +
-			".scripts/make-slides.ps1 <other> is executed instead.",
+			".scripts/make_slides.ps1 <other> is executed instead.",
 		Flags: []string{"project"},
 		Cmd:   cmd,
 	})
@@ -60,7 +60,7 @@ func cmd(c *start.Command) error {
 
 // Plan describes what Run intends to execute. Exposed for tests.
 type Plan struct {
-	Name string   // logical action: "render.ps1", "make-slides", "quarto"
+	Name string   // logical action: "render.ps1", "make_slides", "quarto"
 	Cmd  string   // executable
 	Args []string // arguments
 }
@@ -79,15 +79,15 @@ func BuildPlan(docPath, profileArg string) (Plan, error) {
 
 	case 1:
 		return Plan{}, fmt.Errorf(
-			"render: exactly two profile names are required (got %q); " +
+			"render: exactly two profile names are required (got %q); "+
 				"pass them as `<a>,<b>` or omit the argument to run render.ps1",
 			profiles[0])
 
 	case 2:
 		if other, ok := pickSlides(profiles); ok {
-			script := filepath.Join(docPath, ".scripts", "make-slides.ps1")
+			script := filepath.Join(docPath, ".scripts", "make_slides.ps1")
 			bin, args := psInvocation(script, other)
-			return Plan{Name: "make-slides", Cmd: bin, Args: args}, nil
+			return Plan{Name: "make_slides", Cmd: bin, Args: args}, nil
 		}
 		return Plan{
 			Name: "quarto",
