@@ -1,0 +1,10 @@
+---
+title: "Zweiter Abschnitt"
+order: 2
+---
+
+::: explanation
+Nur Fließtext, die Überschrift steht im Front Matter.
+
+## Ein Unterpunkt
+:::

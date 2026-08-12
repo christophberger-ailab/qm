@@ -1,0 +1,18 @@
+---
+title: "Test Book"
+order: 4
+listing:
+  type: table
+  contents:
+    - "./*/index.qmd"
+---
+
+::: slide
+- nur für Folien
+:::
+
+::: explanation
+# Test Book
+
+Willkommen. Siehe [Alpha](/book/erster/alpha/) und [Extern](/anderes/kapitel/).
+:::

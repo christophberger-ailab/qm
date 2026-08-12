@@ -2,11 +2,11 @@
 //
 // Usage: qm <object> <subcommand> [flags] [args]
 //
-// The only object currently supported is "chapters", with the subcommands
-// `update`, `insert`, `move`, and `remove`. The "chapters" command itself
-// is a dummy wrapper required because github.com/christophberger/start
-// has no native notion of an "object" parameter (see spec.yaml,
-// constraint SUBCOMMANDS.3).
+// The object "chapters" carries the subcommands `update`, `insert`,
+// `move`, and `remove`; the objects "lint", "render", and "web" have no
+// subcommands. The "chapters" command itself is a dummy wrapper required
+// because github.com/christophberger/start has no native notion of an
+// "object" parameter (see spec.yaml, constraint SUBCOMMANDS.3).
 package main
 
 import (
@@ -19,6 +19,7 @@ import (
 	"github.com/cboct/qm/remove"
 	"github.com/cboct/qm/render"
 	"github.com/cboct/qm/update"
+	"github.com/cboct/qm/web"
 
 	"github.com/christophberger/start"
 	flag "github.com/spf13/pflag"
@@ -67,6 +68,9 @@ func main() {
 
 	// The `render` object also has no sub-commands.
 	render.Register(projectFlag)
+
+	// The `web` object serves the sorter UI; no sub-commands either.
+	web.Register(projectFlag)
 
 	start.Up()
 }
