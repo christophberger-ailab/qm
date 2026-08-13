@@ -1,0 +1,37 @@
+feature:
+  name: web
+  description: Serve a local web UI for sorting, editing, and rendering the project's pages
+
+components:
+  COMMAND:
+    description: qm web [--addr <host:port>] [<path>]
+    requirements:
+      1: Object name is "web"
+      2: No subcommand
+      3: Parameters
+      3-1: Flag --project sets the path to the document tree. Defaults to the current directory
+      3-2: Flag --addr sets the listen address. Defaults to "localhost:8199"
+      3-3: A positional path names the project to open and takes precedence over --project
+      4: The command serves until it is interrupted, printing the URL it listens on to stderr
+
+constraints:
+  STANDARD: See the constraints in spec.yaml.
+
+  ORIGIN:
+    description: The command is the quarto-sorter tool (github.com/christophberger-ailab/quarto-sorter) merged into qm.
+    requirements:
+      1: The UI, its templates, and its static assets are embedded in the binary; no files are read from disk at run time
+      2: The page tree, page editing, and the render panel keep the behavior they had in quarto-sorter
+      3: The render panel and `qm render` drive the same flow (internal/bookrender), so both produce identical output
+
+  UI:
+    requirements:
+      1: The page tree shows the project's .qmd pages in website order, nested by folder
+      2: Dragging a page updates the `order` frontmatter of the affected pages and the Markdown heading levels of the moved page
+      3: Pages can be created, deleted, and edited in place
+      4: The tree is polled for outside changes and refreshed when the project changed on disk
+      5: The render panel selects book folders, their profiles, the output formats, and whether slides are rendered
+      5-1: The selection is remembered per project in `<user config dir>/qm/render.json`
+      5-2: A book the user never configured defaults to the profiles named after it
+      6: A render runs in the background; the panel polls its log while it runs
+      6-1: Only one render runs at a time

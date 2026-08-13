@@ -1,0 +1,18 @@
+---
+title: "Erster Abschnitt"
+order: 1
+---
+
+::: slide
+# Erster Abschnitt
+
+:::: {.notes}
+Sprechernotizen
+::::
+:::
+
+::: explanation
+# Erster Abschnitt
+
+Einleitung zum ersten Abschnitt.
+:::

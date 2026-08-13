@@ -1,0 +1,57 @@
+::: explanation
+# Test Book {#bm-book .unnumbered}
+
+Willkommen. Siehe [Alpha](#bm-book-erster-alpha) und [Extern](/anderes/kapitel/).
+:::
+
+::: explanation
+# Erster Abschnitt {#bm-book-erster}
+
+Einleitung zum ersten Abschnitt.
+:::
+
+::: explanation
+## Alpha-Seite {#bm-book-erster-alpha}
+
+![Bord](/assets/images/bord.png)
+
+### Unterpunkt
+:::
+
+::: explanation
+### Tiefe Seite {#bm-book-erster-alpha-tief}
+
+Text.
+:::
+
+::: explanation
+## Beta-Seite {#bm-book-erster-beta}
+:::
+
+::: tutorial
+## Beta-Seite {#bm-book-erster-beta}
+
+Übung.
+:::
+
+::: reference
+## Quellen
+:::
+
+# Zweiter Abschnitt {#bm-book-zweiter}
+
+::: explanation
+Nur Fließtext, die Überschrift steht im Front Matter.
+
+## Ein Unterpunkt
+:::
+
+:::: fw
+::: explanation
+# Nur Feuerwehr {#bm-book-dritter-fw}
+:::
+
+::: explanation
+## Feuerwehr-Detailseite {#bm-book-dritter-fw-seite}
+:::
+::::

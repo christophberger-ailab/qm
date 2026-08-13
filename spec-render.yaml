@@ -1,26 +1,42 @@
 feature:
   name: render
-  description: Render 
+  description: Render the book folders of the Quarto project
 
 components:
   COMMAND:
-    description: qm render [<profile>,<profile>]
+    description: qm render [--profile <a>,<b>] [--to <fmt>,<fmt>] [--slides] [<book>...]
     requirements:
       1: Object name is "render"
       2: No subcommand
-      3: Reqiured parameters
+      3: Parameters
       3-1: Flag --project sets the path to the document tree. Defaults to the current directory
-      3-2: Two  quarto profile names separated by a comma
+      3-2: Flag --profile takes a comma-separated list of Quarto profile names. Optional
+      3-3: Flag --to takes a comma-separated list of Quarto output formats. Defaults to "pdf,docx"
+      3-4: Flag --slides also renders the deck built from the pages' ::: slide blocks. Defaults to false
+      3-5: Positional arguments name the book folders to render. Optional
 
 constraints:
   STANDARD: See the constraints in spec.yaml.
 
   PROCESS:
+    description: The render flow is shared with `qm web` (see spec-web.yaml); both drive internal/bookrender.
     requirements:
-      1: If two profile names are given, then -
-      1-1: If one of the names is "slides", run `<project-path>/.scripts/make_slides.ps1 <other-name>`
-      1-2: else run `quarto render --profile <name1>,<name2> --no-clean`
-      2: If one profile name is given, issue an error
-      3: If no profile name is given, run <project-path>/render.ps1
-      4: If the shell isn't a Powershell shell, spawn `pwsh` for running the scripts.
-
+      1: A book folder is a first-level folder of the project that holds .qmd files and has no Quarto project config of its own
+      2: If no book folder is named on the command line, render every book folder of the project
+      3: If a named folder is not a book folder, issue an error and render nothing
+      4: If the project holds no book folder at all, issue an error
+      5: Each book is flattened into a single .qmd document written to the project root, so that project-absolute media paths resolve
+      5-1: The flat document is named `_book-build-<book>.qmd`; the leading underscore keeps Quarto from rendering it as project content
+      5-2: With --slides, the slides extracted from the book's pages are written to `_slides-build-<book>.qmd`
+      5-3: Both files are removed once the book is rendered
+      6: Each book is rendered with `quarto render <flat document> --to <format> --no-clean [--profile <name>]`
+      6-1: --no-clean keeps a run from deleting the output of the runs before it
+      6-2: Output paths and file names are left to the profile configuration; no --output or --output-dir is passed
+      7: A book is rendered once per profile and format, because a book's profiles select alternative variants of it rather than combining into one document
+      7-1: With --profile, the named profiles apply to every book being rendered
+      7-2: Without --profile, a book is rendered with the profiles named after it: `<book>` and `<book>-*`
+      7-3: A book with no profile is rendered once, without --profile
+      7-4: With --slides, the deck is rendered to revealjs once per profile
+      8: If neither a format nor --slides is selected, issue an error
+      9: Progress, the quarto invocations, and their output are written to stdout
+      10: A failing book does not stop the remaining books; the command reports how many books failed and exits with an error

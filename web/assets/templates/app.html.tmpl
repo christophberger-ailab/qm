@@ -1,0 +1,113 @@
+{{define "page"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quarto Sorter</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js"></script>
+  <script src="/static/sortable.min.js"></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>Quarto Sorter</h1>
+    <form class="open-form" hx-post="/open" hx-target="#main" hx-swap="innerHTML">
+      <input name="path" placeholder="/path/to/quarto/project" value="{{.Root}}">
+      <button type="submit">Open</button>
+    </form>
+    <div id="render-panel">{{template "render" .}}</div>
+  </header>
+  <main class="panes" id="main">
+    {{template "main" .}}
+  </main>
+</body>
+</html>{{end}}
+
+{{define "render"}}{{with .Render}}{{if .Books}}<details class="render">
+  <summary title="Build each selected book into one flat document and render it">Render</summary>
+  <div class="render-body">
+    <form id="render-form" hx-post="/render/select" hx-trigger="change" hx-swap="none">
+      {{range $book := .Books}}
+      <fieldset class="book">
+        <legend><label><input type="checkbox" name="book" value="{{$book.Name}}"{{if $book.Selected}} checked{{end}}> {{$book.Name}}</label></legend>
+        {{range $book.Profiles}}<label class="profile" title="One quarto render run per checked profile"><input type="checkbox" name="profile.{{$book.Name}}" value="{{.Name}}"{{if .Selected}} checked{{end}}> {{.Name}}</label>
+        {{else}}<span class="empty">no book profiles</span>{{end}}
+      </fieldset>
+      {{end}}
+      <fieldset class="formats">
+        <legend>Formats</legend>
+        {{range .Formats}}<label><input type="checkbox" name="format" value="{{.Name}}"{{if .Selected}} checked{{end}}> {{.Name}}</label>
+        {{end}}
+        <label title="Also render the deck built from the pages' ::: slide blocks"><input type="checkbox" name="slides" value="1"{{if .Slides}} checked{{end}}> slides</label>
+      </fieldset>
+      <button type="button" id="render-run" hx-post="/render" hx-target="#render-log" hx-swap="innerHTML">Render</button>
+    </form>
+    <div id="render-log"></div>
+  </div>
+</details>{{end}}{{end}}{{end}}
+
+{{define "render-log"}}<div{{if .Running}} hx-get="/render/status" hx-trigger="every 1s" hx-target="#render-log" hx-swap="innerHTML"{{end}}>
+  {{if .Lines}}<pre class="render-output">{{range .Lines}}{{.}}
+{{end}}</pre>{{end}}
+  {{if .Running}}<span class="render-status running">Rendering…</span>
+  {{else if .Failed}}<span class="render-status failed">Render failed</span>
+  {{else if .Lines}}<span class="render-status ok">Done</span>{{end}}
+</div>{{end}}
+
+{{define "main"}}{{if .Tree}}
+<section id="tree-pane">
+  <form class="new-file-form" hx-post="/create" hx-target="#tree" hx-swap="innerHTML">
+    <input type="hidden" name="parent" value="">
+    <input type="hidden" name="after" value="">
+    <input name="name" placeholder="new-page" required>
+    <input name="title" placeholder="Title">
+    <button type="submit">＋ Page</button>
+  </form>
+  <div id="tree" hx-get="/watch" hx-trigger="every 2s" hx-swap="innerHTML">{{template "tree" .Tree}}</div>
+  <div class="tree-toolbar">
+    <button type="button" id="expand-all" title="Expand all branches" aria-label="Expand all branches">⊞</button>
+    <button type="button" id="collapse-all" title="Collapse all branches" aria-label="Collapse all branches">⊟</button>
+  </div>
+</section>
+<div id="divider" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
+<section id="content-pane"><div id="content"><p class="empty">Select a page to view its content.</p></div></section>
+{{else}}
+<section id="tree-pane"><p class="empty">Open a Quarto project to get started.</p></section>
+<div id="divider" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
+<section id="content-pane"><div id="content"></div></section>
+{{end}}{{end}}
+
+{{define "tree"}}{{template "pages" group "" .Pages}}{{end}}
+
+{{define "pages"}}<ul class="children" data-parent="{{.Parent}}">
+{{range .Pages}}{{template "node" .}}{{end}}</ul>{{end}}
+
+{{define "node"}}<li class="page {{if .Order}}ordered{{else}}unordered{{end}}{{if .BadFences}} bad-fences{{end}}{{if .Children}} has-children{{end}}" data-path="{{.Path}}" data-key="{{if .Path}}{{.Path}}{{else}}{{.Dir}}{{end}}">
+  <div class="row">
+    <span class="toggle" title="Collapse or expand"></span>
+    {{if .Path}}<span class="drag-handle" title="Drag to move">⠿</span>{{end}}
+    <span class="num"></span>
+    {{if .Marker}}<span class="marker">{{.Marker}}</span>{{end}}
+    {{if .Path}}<a class="title" href="#" hx-get="/content?path={{.Path}}" hx-target="#content">{{.Title}}</a>
+    <button class="add" title="Add child page" hx-post="/create" hx-prompt="Name of the new page (without .qmd)" hx-vals='{"parent":"{{.Path}}"}' hx-target="#tree" hx-swap="innerHTML">＋</button>
+    <button class="delete" title="Move to trash" hx-post="/delete" hx-vals='{"path":"{{.Path}}"}' hx-target="#tree" hx-swap="innerHTML" hx-confirm="Move {{.Path}} to the trash?">🗑</button>
+    {{else}}<span class="title">{{.Title}}</span>{{end}}
+  </div>
+  {{template "pages" group .Path .Children}}
+</li>{{end}}
+
+{{define "treewrap"}}{{if .Error}}<div class="error">{{.Error}}</div>{{end}}{{template "tree" .Tree}}{{end}}
+
+{{define "content-heading"}}{{.Title}} <span class="path">{{.Path}}</span>{{end}}
+
+{{define "content"}}<div class="content-header">
+  <h2 class="content-title" id="content-title">{{template "content-heading" .}}</h2>
+  <span class="save-status" id="save-status"></span>
+  <button class="reload" title="Reload from disk" hx-get="/content?path={{.Path}}&reload=1" hx-target="#content" hx-swap="innerHTML">↻ Reload</button>
+</div>
+<form class="edit-form" hx-post="/save" hx-trigger="input delay:1s from:find textarea" hx-swap="none">
+  <input type="hidden" name="path" value="{{.Path}}">
+  <textarea name="body" class="file-content">{{.Body}}</textarea>
+</form>{{end}}
