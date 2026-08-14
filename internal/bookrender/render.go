@@ -22,14 +22,16 @@ import (
 	"github.com/cboct/qm/internal/bookmaker"
 )
 
-// buildPrefix and slidesPrefix name the flat documents handed to Quarto.
+// buildPrefix and slidesPrefix name the flat documents Quarto renders.
 //
 // The leading underscore is what tells Quarto the file is not project
 // content: without it a website build renders every flat book a second time
 // as a stray top-level page and `contents: auto` lists it in the sidebar. It
-// also keeps the file out of the sorter's own page tree. An
-// underscore-prefixed file still renders when named on the command line,
-// which is exactly how it is used here.
+// also keeps the file out of the sorter's own page tree. The book document
+// is not meant to render on its own anyway — the project's top-level
+// index.qmd pulls it in with `{{< include >}}`. The slide deck has no such
+// host page and is named on the command line, which an
+// underscore-prefixed file still renders from.
 const (
 	buildPrefix  = "_book-build-"
 	slidesPrefix = "_slides-build-"
@@ -47,11 +49,18 @@ type Options struct {
 	// Books are the book folder names to render.
 	Books []string
 	// Profiles maps a book folder name to the Quarto profiles it is
-	// rendered with — one render run per profile, since the profiles of a
-	// book (…-fw, …-pol) select alternative variants of it rather than
-	// combining into one document. A book with no profile is rendered once
-	// without --profile.
+	// rendered with. By default that is one render run per profile, since
+	// the profiles named after a book (…-fw, …-pol) select alternative
+	// variants of it rather than combining into one document. A book with
+	// no profile is rendered once without --profile.
 	Profiles map[string][]string
+	// CombineProfiles hands a book's profiles to Quarto as one composed set
+	// (`--profile a,b`) in a single run instead of running once per profile.
+	// That is what an explicitly named profile list means: the profiles
+	// contribute different parts of one configuration — the variant selects
+	// the chapters, another profile the output format — and dropping any of
+	// them leaves Quarto with an incomplete book.
+	CombineProfiles bool
 	// Formats are the Quarto output formats for the book, e.g. pdf, docx.
 	Formats []string
 	// Slides also renders the deck built from the pages' ::: slide blocks.
@@ -89,6 +98,11 @@ func Run(o Options, log Logf) error {
 // from standard input, and it resolves media paths against the file's own
 // location, so the book has to exist as a file at the project root for the
 // duration of the render and is removed afterwards.
+//
+// The book itself is not named on the Quarto command line: the project is
+// rendered as a whole, and the top-level index.qmd includes the flat
+// document. That leaves the chapter list to the profile configuration,
+// which is where a book project keeps it.
 func renderBook(o Options, book string, log Logf) error {
 	res, err := FlattenBook(o.Root, book)
 	if err != nil {
@@ -119,22 +133,16 @@ func renderBook(o Options, book string, log Logf) error {
 		defer remove(slidesFile, log)
 	}
 
-	// No profile selected still means one run: the book renders with the
-	// project's default configuration.
-	profiles := o.Profiles[book]
-	if len(profiles) == 0 {
-		profiles = []string{""}
-	}
 	var failed bool
-	for _, profile := range profiles {
+	for _, profiles := range o.runs(book) {
 		for _, format := range o.Formats {
-			if err := quarto(o.Root, bookFile, format, profile, log); err != nil {
+			if err := quarto(o.Root, "", format, profiles, log); err != nil {
 				log("%s: %v", book, err)
 				failed = true
 			}
 		}
 		if slidesFile != "" {
-			if err := quarto(o.Root, slidesFile, slidesFormat, profile, log); err != nil {
+			if err := quarto(o.Root, slidesFile, slidesFormat, profiles, log); err != nil {
 				log("%s: %v", book, err)
 				failed = true
 			}
@@ -144,6 +152,25 @@ func renderBook(o Options, book string, log Logf) error {
 		return fmt.Errorf("one or more render runs failed")
 	}
 	return nil
+}
+
+// runs returns the profile sets a book is rendered with, one set per render
+// run. Without CombineProfiles every profile is a run of its own; with it,
+// all profiles go into a single run. Either way a book with no profile
+// still renders once, with the project's default configuration.
+func (o Options) runs(book string) [][]string {
+	profiles := o.Profiles[book]
+	if len(profiles) == 0 {
+		return [][]string{nil}
+	}
+	if o.CombineProfiles {
+		return [][]string{profiles}
+	}
+	out := make([][]string, 0, len(profiles))
+	for _, p := range profiles {
+		out = append(out, []string{p})
+	}
+	return out
 }
 
 // FlattenBook turns a book folder into the flat book and slide documents.
@@ -168,17 +195,27 @@ func FlattenBook(root, book string) (*bookmaker.Result, error) {
 // installations replace it.
 var QuartoCommand = "quarto"
 
-// quarto runs one `quarto render` and streams its output into the log.
+// quarto runs one `quarto render` and streams its output into the log. An
+// empty input renders the project rather than a single document.
+//
+// All profiles of the run go into one --profile argument, as Quarto's own
+// comma-separated list, so that none of them is lost: leave one out and the
+// configuration it holds — the chapter list, say — is missing from the
+// render.
 //
 // --no-clean keeps Quarto from emptying the output directory before each
 // run: the books, profiles, and formats are rendered one after another into
 // the same directory, so cleaning would throw away what the previous runs
 // just produced. No --output or --output-dir is passed either, leaving the
 // output paths and file names to the profile configuration.
-func quarto(root, input, format, profile string, log Logf) error {
-	args := []string{"render", filepath.Base(input), "--to", format, "--no-clean"}
-	if profile != "" {
-		args = append(args, "--profile", profile)
+func quarto(root, input, format string, profiles []string, log Logf) error {
+	args := []string{"render"}
+	if input != "" {
+		args = append(args, filepath.Base(input))
+	}
+	args = append(args, "--to", format, "--no-clean")
+	if len(profiles) > 0 {
+		args = append(args, "--profile", strings.Join(profiles, ","))
 	}
 	log("$ %s %s", QuartoCommand, strings.Join(args, " "))
 
@@ -190,7 +227,11 @@ func quarto(root, input, format, profile string, log Logf) error {
 	err := cmd.Run()
 	w.flush()
 	if err != nil {
-		return fmt.Errorf("%s --to %s: %w", filepath.Base(input), format, err)
+		what := "the project"
+		if input != "" {
+			what = filepath.Base(input)
+		}
+		return fmt.Errorf("%s --to %s: %w", what, format, err)
 	}
 	return nil
 }

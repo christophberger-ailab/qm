@@ -98,7 +98,9 @@ func TestRunRendersBookAndSlides(t *testing.T) {
 
 	got := readLog(t, log)
 	for _, want := range []string{
-		"args: render _book-build-book.qmd --to pdf --no-clean\n",
+		// The book is not named on the command line: the project renders,
+		// and its index.qmd includes the flat document.
+		"args: render --to pdf --no-clean\n",
 		"args: render _slides-build-book.qmd --to revealjs --no-clean\n",
 	} {
 		if !strings.Contains(got, want) {
@@ -135,6 +137,38 @@ func TestRunRendersOncePerProfile(t *testing.T) {
 	}
 	if got := strings.Count(readLog(t, log), "args:"); got != 4 {
 		t.Errorf("%d quarto runs, want 4 (2 profiles x 2 formats)", got)
+	}
+}
+
+// With CombineProfiles the profiles are one composed configuration and must
+// all reach Quarto, in a single run per format.
+func TestRunCombinesProfilesIntoOneRun(t *testing.T) {
+	log := stubQuarto(t, "")
+	root := project(t)
+
+	err := Run(Options{
+		Root:            root,
+		Books:           []string{"book"},
+		Profiles:        map[string][]string{"book": {"handout", "book-fw"}},
+		CombineProfiles: true,
+		Formats:         []string{"pdf"},
+		Slides:          true,
+	}, nil)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	got := readLog(t, log)
+	for _, want := range []string{
+		"args: render --to pdf --no-clean --profile handout,book-fw\n",
+		"args: render _slides-build-book.qmd --to revealjs --no-clean --profile handout,book-fw\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing invocation %q, got:\n%s", want, got)
+		}
+	}
+	if n := strings.Count(got, "args:"); n != 2 {
+		t.Errorf("%d quarto runs, want 2 (one book, one deck):\n%s", n, got)
 	}
 }
 

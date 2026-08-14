@@ -4,14 +4,15 @@
 //
 //	qm render                     -> render every book folder of the project
 //	qm render a b                 -> render the book folders a and b
-//	qm render --profile x,y a     -> render book a once per profile
+//	qm render --profile x,y a     -> render book a with the profiles x and y
 //	qm render --to pdf a          -> render book a to PDF only
 //	qm render --slides a          -> also render the deck of a's slide blocks
 //
 // The work itself is the render flow merged in from quarto-sorter (see
 // internal/bookrender): each book folder is flattened into a single .qmd
-// document at the project root and handed to `quarto render`. The `qm web`
-// UI drives the same flow, so both produce identical output; this command
+// document at the project root, which the project's top-level index.qmd
+// includes, and the project is handed to `quarto render`. The `qm web` UI
+// drives the same flow, so both produce identical output; this command
 // streams the progress to stdout instead of a browser panel.
 package render
 
@@ -52,9 +53,11 @@ func Register(projectFlag *string) {
 		Short: "Render the book folders of the project",
 		Long: "Flatten each book folder into a single document and render it " +
 			"with Quarto. Usage: qm render [<book>...]. Without a book name, " +
-			"every book folder of the project is rendered. A book is rendered " +
-			"once per profile; without --profile, the profiles named after the " +
-			"book (`<book>` and `<book>-*`) are used.",
+			"every book folder of the project is rendered. The profiles given " +
+			"to --profile are passed to Quarto together, as one composed " +
+			"configuration; without --profile, the profiles named after the " +
+			"book (`<book>` and `<book>-*`) are used, and the book is rendered " +
+			"once per profile because those are variants of it.",
 		Flags: []string{"project", "profile", "to", "slides"},
 		Cmd:   cmd,
 	})
@@ -132,13 +135,18 @@ func BuildOptions(docPath string, books, profiles, formats []string, slides bool
 		Formats:  formats,
 		Slides:   slides,
 	}
-	// Profiles named on the command line apply to every book; otherwise each
-	// book gets the profiles named after it, which is what the web UI offers
-	// as its default selection too.
+	// Profiles named on the command line apply to every book, and all of
+	// them go into one render run: a list such as `handout,calltaker-fw`
+	// composes one configuration out of several profiles, so every one of
+	// them has to reach Quarto. Otherwise each book gets the profiles named
+	// after it — `<book>` and `<book>-*`, which is what the web UI offers as
+	// its default selection too. Those are alternative variants of the same
+	// book, so they are rendered one after another instead.
 	if len(profiles) > 0 {
 		for _, b := range books {
 			opts.Profiles[b] = profiles
 		}
+		opts.CombineProfiles = true
 		return opts, nil
 	}
 	declared, err := project.Profiles(docPath)
