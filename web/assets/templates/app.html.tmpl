@@ -8,6 +8,8 @@
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/htmx.min.js"></script>
   <script src="/static/sortable.min.js"></script>
+  <script src="/static/marked.umd.js"></script>
+  <script src="/static/preview.js" defer></script>
   <script src="/static/app.js" defer></script>
 </head>
 <body>
@@ -105,9 +107,14 @@
 {{define "content"}}<div class="content-header">
   <h2 class="content-title" id="content-title">{{template "content-heading" .}}</h2>
   <span class="save-status" id="save-status"></span>
+  <button type="button" class="preview-toggle" id="preview-toggle" aria-pressed="true" title="Show or hide the Markdown preview">👁 Preview</button>
   <button class="reload" title="Reload from disk" hx-get="/content?path={{.Path}}&reload=1" hx-target="#content" hx-swap="innerHTML">↻ Reload</button>
 </div>
-<form class="edit-form" hx-post="/save" hx-trigger="input delay:1s from:find textarea" hx-swap="none">
-  <input type="hidden" name="path" value="{{.Path}}">
-  <textarea name="body" class="file-content">{{.Body}}</textarea>
-</form>{{end}}
+<div class="editor-split">
+  <form class="edit-form" hx-post="/save" hx-trigger="input delay:1s from:find textarea" hx-swap="none">
+    <input type="hidden" name="path" value="{{.Path}}">
+    <textarea name="body" class="file-content">{{.Body}}</textarea>
+  </form>
+  <div id="preview-divider" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
+  <article class="markdown-preview" id="preview"></article>
+</div>{{end}}
