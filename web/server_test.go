@@ -1,6 +1,8 @@
 package web
 
 import (
+	"bytes"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -188,6 +190,93 @@ func TestPreviewAssetsAreServed(t *testing.T) {
 		if rec := get(t, srv, asset); rec.Code != http.StatusOK {
 			t.Errorf("GET %s: status %d, want 200", asset, rec.Code)
 		}
+	}
+}
+
+// onePixelPNG is a 1x1 transparent PNG. The media route copies bytes, so
+// the tests only need a file that is genuinely an image.
+var onePixelPNG = mustDecode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
+
+func mustDecode(s string) []byte {
+	b, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		panic(err)
+	}
+	return b
+}
+
+// writePNG puts an image at rel below dir and returns its content.
+func writePNG(t *testing.T, dir, rel string) []byte {
+	t.Helper()
+	p := filepath.Join(dir, filepath.FromSlash(rel))
+	os.MkdirAll(filepath.Dir(p), 0o755)
+	if err := os.WriteFile(p, onePixelPNG, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return onePixelPNG
+}
+
+// A page's images are fetched from the project through /media. The project
+// writes them website-absolute (`/assets/images/bord.png`), which the
+// preview turns into `/media/assets/images/bord.png`.
+func TestMediaServesProjectImages(t *testing.T) {
+	srv, root := testServer(t)
+	want := writePNG(t, root, "assets/images/bord.png")
+
+	rec := get(t, srv, "/media/assets/images/bord.png")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, want 200: %s", rec.Code, rec.Body)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "image/png" {
+		t.Errorf("Content-Type %q, want image/png", ct)
+	}
+	if !bytes.Equal(rec.Body.Bytes(), want) {
+		t.Errorf("body is not the file on disk")
+	}
+}
+
+// /media exists so the preview can show images. It must not become a reader
+// for the rest of the project.
+func TestMediaServesImagesOnly(t *testing.T) {
+	srv, _ := testServer(t)
+	for _, p := range []string{"/media/index.qmd", "/media/_quarto.yml"} {
+		if rec := get(t, srv, p); rec.Code != http.StatusNotFound {
+			t.Errorf("GET %s: status %d, want 404", p, rec.Code)
+		}
+	}
+}
+
+// However it is spelled, a path leading out of the project must not be
+// served.
+func TestMediaRejectsTraversal(t *testing.T) {
+	srv, root := testServer(t)
+	writePNG(t, filepath.Dir(root), "outside.png")
+
+	for _, p := range []string{
+		"/media/../outside.png",
+		"/media/%2e%2e/outside.png",
+		"/media/assets/../../outside.png",
+	} {
+		if rec := get(t, srv, p); rec.Code == http.StatusOK {
+			t.Errorf("GET %s: served the file", p)
+		}
+	}
+}
+
+func TestMediaWithoutProject(t *testing.T) {
+	srv, err := newServer("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := get(t, srv, "/media/x.png"); rec.Code != http.StatusBadRequest {
+		t.Errorf("status %d, want 400", rec.Code)
+	}
+}
+
+func TestMediaMissingFile(t *testing.T) {
+	srv, _ := testServer(t)
+	if rec := get(t, srv, "/media/assets/nope.png"); rec.Code != http.StatusNotFound {
+		t.Errorf("status %d, want 404", rec.Code)
 	}
 }
 

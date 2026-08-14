@@ -592,6 +592,7 @@ textarea.file-content {
 
 .markdown-preview img {
   max-width: 100%;
+  height: auto;
 }
 
 .markdown-preview hr {

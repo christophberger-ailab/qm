@@ -33,6 +33,10 @@ constraints:
       3-2: The preview follows the editor's content as the user types
       3-3: A toggle button above the editor opens and closes the preview; the choice is remembered across sessions
       3-4: The preview is rendered in the browser from the embedded marked library; it approximates the page, it is not a Quarto render
+      3-5: The preview shows the page's images, served from the project by the `/media` route
+      3-5-1: A website-absolute image path such as `/assets/images/x.png` resolves against the project root, the way the rendered site and the flattened book resolve it
+      3-5-2: A relative image path resolves against the folder the edited page sits in
+      3-5-3: The route serves image files only, and only from inside the open project
       4: The tree is polled for outside changes and refreshed when the project changed on disk
       5: The render panel selects book folders, their profiles, the output formats, and whether slides are rendered
       5-1: The selection is remembered per project in `<user config dir>/qm/render.json`

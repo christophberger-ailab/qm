@@ -172,11 +172,15 @@ function applyPreview() {
 }
 
 // updatePreview re-renders the preview from what the editor currently holds.
+// The page's path travels with the render: the preview resolves the page's
+// image paths against it. It is read from the form rather than from
+// currentPath so that it always describes the editor actually on screen.
 function updatePreview() {
   var preview = document.getElementById('preview');
   var editor = document.querySelector('#content textarea.file-content');
   if (preview && editor) {
-    renderPreview(preview, editor.value);
+    var path = document.querySelector('#content input[name="path"]');
+    renderPreview(preview, editor.value, path ? path.value : '');
   }
 }
 
