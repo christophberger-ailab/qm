@@ -73,6 +73,7 @@ func newServer(prefsFile string) (*server, error) {
 	s.mux.HandleFunc("POST /create", s.create)
 	s.mux.HandleFunc("POST /delete", s.delete)
 	s.mux.HandleFunc("GET /content", s.content)
+	s.mux.HandleFunc("GET /media/{path...}", s.media)
 	s.mux.HandleFunc("POST /save", s.save)
 	s.mux.HandleFunc("POST /render", s.startRender)
 	s.mux.HandleFunc("POST /render/select", s.selectRender)
@@ -352,6 +353,35 @@ func (s *server) resolvePath(rel string) (string, error) {
 		return "", fmt.Errorf("invalid path")
 	}
 	return filepath.Join(s.root, filepath.FromSlash(rel)), nil
+}
+
+// mediaExts are the file types /media serves. The route exists so that the
+// preview can show a page's images; keeping it to what an <img> displays
+// stops it from becoming a reader for the rest of the project.
+var mediaExts = map[string]bool{
+	".png": true, ".jpg": true, ".jpeg": true, ".gif": true,
+	".webp": true, ".avif": true, ".svg": true,
+}
+
+// media serves an image out of the open project. The preview rewrites the
+// image paths of a page to this route: the pages address their media
+// website-absolute (`/assets/images/x.png`, relative to the project root,
+// which is what makes the flattened book render), and the browser has no
+// other way to reach a file on disk.
+func (s *server) media(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rel := r.PathValue("path")
+	abs, err := s.resolvePath(rel)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if !mediaExts[strings.ToLower(path.Ext(rel))] {
+		http.NotFound(w, r)
+		return
+	}
+	http.ServeFile(w, r, abs)
 }
 
 func (s *server) content(w http.ResponseWriter, r *http.Request) {

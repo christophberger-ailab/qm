@@ -7,6 +7,8 @@
 //   - YAML frontmatter is shown verbatim in a small header block,
 //   - Pandoc fenced divs (`::: {.callout-note}`) become real <div>s so their
 //     content is laid out instead of printed as literal colons,
+//   - image sources are pointed at the server's /media route so that the
+//     page's images show up (see mediaURL),
 //   - everything else is CommonMark/GFM as the embedded marked library reads
 //     it. Shortcodes, citations, and math stay as written.
 
@@ -134,8 +136,69 @@ function sanitize(root) {
   });
 }
 
+// normalizePath resolves the "." and ".." segments of a slash-separated
+// path. A path climbing past the root keeps its leading "..", which marks it
+// as leaving the project.
+function normalizePath(p) {
+  var out = [];
+  p.split('/').forEach(function (seg) {
+    if (seg === '' || seg === '.') {
+      return;
+    }
+    if (seg === '..' && out.length > 0 && out[out.length - 1] !== '..') {
+      out.pop();
+      return;
+    }
+    out.push(seg);
+  });
+  return out.join('/');
+}
+
+// mediaURL turns the source of an image on a page into a URL the server
+// serves it from. Pages address their media the way the rendered website
+// does -- `/assets/images/x.png`, relative to the project root, which is
+// what makes the flattened book render -- so a leading slash means the
+// root, and anything else is relative to the folder the page sits in.
+// External and inline sources are left alone, and so is anything that
+// climbs out of the project: the server would refuse it anyway.
+function mediaURL(src, baseDir) {
+  if (src === '' || /^[a-z][a-z0-9+.-]*:/i.test(src) || src.slice(0, 2) === '//') {
+    return src;
+  }
+  var rel = src.charAt(0) === '/' ? src.slice(1) : baseDir + '/' + src;
+
+  // A query or fragment is not part of the path and must not be escaped
+  // along with it.
+  var suffix = '';
+  var mark = rel.search(/[?#]/);
+  if (mark >= 0) {
+    suffix = rel.slice(mark);
+    rel = rel.slice(0, mark);
+  }
+
+  rel = normalizePath(rel);
+  if (rel === '' || rel === '..' || rel.slice(0, 3) === '../') {
+    return src;
+  }
+  return '/media/' + rel.split('/').map(encodeURIComponent).join('/') + suffix;
+}
+
+// resolveMedia points the images of the rendered page at /media, the only
+// route that reaches a file inside the project. pagePath is the edited
+// page's path relative to the project root; relative image paths resolve
+// against the folder it sits in.
+function resolveMedia(root, pagePath) {
+  var cut = (pagePath || '').lastIndexOf('/');
+  var baseDir = cut < 0 ? '' : pagePath.slice(0, cut);
+  root.querySelectorAll('img[src]').forEach(function (img) {
+    img.setAttribute('src', mediaURL(img.getAttribute('src'), baseDir));
+  });
+}
+
 // renderPreview fills el with the preview of the Quarto Markdown in text.
-function renderPreview(el, text) {
+// pagePath is the edited page's path relative to the project root, which is
+// what the image paths resolve against.
+function renderPreview(el, text, pagePath) {
   if (typeof marked === 'undefined') { // asset missing: show the source
     el.textContent = text;
     return;
@@ -147,5 +210,8 @@ function renderPreview(el, text) {
   }
   html += marked.parse(convertDivs(page.body));
   el.innerHTML = html;
+  // Order matters: sanitize drops the sources that must never be fetched,
+  // and only what survives is worth pointing at /media.
   sanitize(el);
+  resolveMedia(el, pagePath);
 }
