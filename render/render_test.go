@@ -111,6 +111,21 @@ func TestBuildOptionsProfileFlagAppliesToEveryBook(t *testing.T) {
 	if !slices.Equal(opts.Profiles["chapter2"], []string{"chapter2-fw"}) {
 		t.Errorf("profiles = %v, want chapter2-fw", opts.Profiles["chapter2"])
 	}
+	if !opts.CombineProfiles {
+		t.Error("profiles named on the command line are not combined into one run")
+	}
+}
+
+// The profiles named after a book are variants of it and stay separate.
+func TestBuildOptionsKeepsDefaultProfilesSeparate(t *testing.T) {
+	root := fixture(t)
+	opts, err := BuildOptions(root, []string{"chapter2"}, nil, []string{"pdf"}, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if opts.CombineProfiles {
+		t.Error("the book's own profiles must not be combined into one run")
+	}
 }
 
 func TestBuildOptionsRejectsUnknownBook(t *testing.T) {
@@ -137,7 +152,9 @@ func TestBuildOptionsNeedsBookFolders(t *testing.T) {
 	}
 }
 
-// Run flattens the book and calls quarto once per profile and format.
+// Run flattens the book and calls quarto once per profile and format. The
+// flat document is not named on the command line — the project renders, and
+// its top-level index.qmd includes the document.
 func TestRunInvokesQuartoPerProfileAndFormat(t *testing.T) {
 	log := fakeQuarto(t)
 	root := fixture(t)
@@ -147,8 +164,8 @@ func TestRunInvokesQuartoPerProfileAndFormat(t *testing.T) {
 	}
 	got := calls(t, log)
 	for _, want := range []string{
-		"args: render _book-build-chapter2.qmd --to pdf --no-clean --profile chapter2\n",
-		"args: render _book-build-chapter2.qmd --to pdf --no-clean --profile chapter2-fw\n",
+		"args: render --to pdf --no-clean --profile chapter2\n",
+		"args: render --to pdf --no-clean --profile chapter2-fw\n",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing invocation %q, got:\n%s", want, got)
@@ -157,6 +174,26 @@ func TestRunInvokesQuartoPerProfileAndFormat(t *testing.T) {
 	// The flat document is temporary and gone once the render is done.
 	if _, err := os.Stat(filepath.Join(root, "_book-build-chapter2.qmd")); !os.IsNotExist(err) {
 		t.Error("_book-build-chapter2.qmd not cleaned up")
+	}
+}
+
+// --profile hands Quarto every profile of the list, in one run: the profiles
+// compose one configuration, and a missing one costs the render whatever
+// that profile holds — the book's chapter list, for instance.
+func TestRunPassesEveryNamedProfileToQuarto(t *testing.T) {
+	log := fakeQuarto(t)
+	root := fixture(t)
+
+	profiles := []string{"web", "chapter2-fw"}
+	if err := Run(root, []string{"chapter2"}, profiles, []string{"pdf"}, false); err != nil {
+		t.Fatalf("render failed: %v", err)
+	}
+	got := calls(t, log)
+	if want := "args: render --to pdf --no-clean --profile web,chapter2-fw\n"; !strings.Contains(got, want) {
+		t.Errorf("missing invocation %q, got:\n%s", want, got)
+	}
+	if n := strings.Count(got, "args:"); n != 1 {
+		t.Errorf("%d quarto runs, want 1:\n%s", n, got)
 	}
 }
 

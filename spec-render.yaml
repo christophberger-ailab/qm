@@ -29,14 +29,16 @@ constraints:
       5-1: The flat document is named `_book-build-<book>.qmd`; the leading underscore keeps Quarto from rendering it as project content
       5-2: With --slides, the slides extracted from the book's pages are written to `_slides-build-<book>.qmd`
       5-3: Both files are removed once the book is rendered
-      6: Each book is rendered with `quarto render <flat document> --to <format> --no-clean [--profile <name>]`
-      6-1: --no-clean keeps a run from deleting the output of the runs before it
-      6-2: Output paths and file names are left to the profile configuration; no --output or --output-dir is passed
-      7: A book is rendered once per profile and format, because a book's profiles select alternative variants of it rather than combining into one document
-      7-1: With --profile, the named profiles apply to every book being rendered
+      6: Each book is rendered with `quarto render --to <format> --no-clean [--profile <names>]`, run in the project root
+      6-1: The flat document is not named on the command line; the project's top-level index.qmd includes it, which leaves the chapter list to the profile configuration
+      6-2: --no-clean keeps a run from deleting the output of the runs before it
+      6-3: Output paths and file names are left to the profile configuration; no --output or --output-dir is passed
+      7: Every profile of a render run reaches Quarto, as one comma-separated --profile argument
+      7-1: With --profile, the named profiles apply to every book being rendered, and all of them go into a single render run per format, because such a list composes one configuration out of several profiles
       7-2: Without --profile, a book is rendered with the profiles named after it: `<book>` and `<book>-*`
-      7-3: A book with no profile is rendered once, without --profile
-      7-4: With --slides, the deck is rendered to revealjs once per profile
+      7-3: The profiles named after a book are alternative variants of it, so the book is rendered once per profile and format
+      7-4: A book with no profile is rendered once, without --profile
+      7-5: With --slides, the deck is rendered to revealjs once per render run, with the same profiles as the book
       8: If neither a format nor --slides is selected, issue an error
       9: Progress, the quarto invocations, and their output are written to stdout
       10: A failing book does not stop the remaining books; the command reports how many books failed and exits with an error

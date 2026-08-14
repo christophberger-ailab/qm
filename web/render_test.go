@@ -14,9 +14,10 @@ import (
 )
 
 // fakeQuarto installs a stub `quarto` that appends its arguments to a log
-// file and notes whether the input file it was pointed at exists, which is
-// how the tests check that the flat document is present while Quarto runs
-// and gone afterwards.
+// file and notes which flat documents exist in the project root it runs in,
+// which is how the tests check that the flat document is present while
+// Quarto runs and gone afterwards. The stub runs in the project root, so the
+// build files are found relative to it.
 func fakeQuarto(t *testing.T) string {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -27,9 +28,16 @@ func fakeQuarto(t *testing.T) string {
 	stub := filepath.Join(dir, "quarto")
 	script := "#!/bin/sh\n" +
 		"echo \"args: $*\" >> " + log + "\n" +
-		"if [ -f \"$2\" ]; then echo \"present: $2\" >> " + log + "; fi\n" +
-		"if [ -f \"$2\" ]; then cat \"$2\" >> " + log + ".input; fi\n" +
-		"echo \"pandoc output for $2\"\n"
+		"case \"$2\" in\n" +
+		// A run without an input file renders the project; what it feeds on
+		// is the flat book the project's index.qmd includes.
+		"  ''|--*) set -- render _book-build-*.qmd ;;\n" +
+		"esac\n" +
+		"if [ -f \"$2\" ]; then\n" +
+		"  echo \"present: $2\" >> " + log + "\n" +
+		"  cat \"$2\" >> " + log + ".input\n" +
+		"fi\n" +
+		"echo \"pandoc output\"\n"
 	if err := os.WriteFile(stub, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +97,7 @@ func TestRenderFlattensAndRunsQuarto(t *testing.T) {
 	}
 
 	got := calls(t, log)
-	if !strings.Contains(got, "args: render _book-build-chapter2.qmd --to pdf --no-clean --profile chapter2") {
+	if !strings.Contains(got, "args: render --to pdf --no-clean --profile chapter2") {
 		t.Errorf("unexpected quarto invocation:\n%s", got)
 	}
 	// The flat document has to be a real file while Quarto reads it.
@@ -190,7 +198,7 @@ func TestRenderWithoutProfile(t *testing.T) {
 	}
 
 	got := calls(t, log)
-	if !strings.Contains(got, "args: render _book-build-chapter2.qmd --to pdf --no-clean\n") {
+	if !strings.Contains(got, "args: render --to pdf --no-clean\n") {
 		t.Errorf("unexpected quarto invocation:\n%s", got)
 	}
 	if strings.Contains(got, "--profile") {
