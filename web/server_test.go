@@ -3,11 +3,14 @@ package web
 import (
 	"bytes"
 	"encoding/base64"
+	iofs "io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -191,6 +194,137 @@ func TestPreviewAssetsAreServed(t *testing.T) {
 			t.Errorf("GET %s: status %d, want 200", asset, rec.Code)
 		}
 	}
+}
+
+// The editor is CodeMirror, whose library, modes, addons, and vim keymap
+// are embedded alongside the rest. A missing file leaves the page with a
+// bare textarea and no sign of why, so check every one of them.
+func TestEditorAssetsAreServed(t *testing.T) {
+	srv, _ := testServer(t)
+	page := get(t, srv, "/").Body.String()
+
+	scripts := []string{
+		"/static/codemirror/codemirror.js",
+		"/static/codemirror/overlay.js",
+		"/static/codemirror/xml.js",
+		"/static/codemirror/meta.js",
+		"/static/codemirror/yaml.js",
+		"/static/codemirror/markdown.js",
+		"/static/codemirror/gfm.js",
+		"/static/codemirror/yaml-frontmatter.js",
+		"/static/codemirror/dialog.js",
+		"/static/codemirror/searchcursor.js",
+		"/static/codemirror/matchbrackets.js",
+		"/static/codemirror/continuelist.js",
+		"/static/codemirror/vim.js",
+		"/static/editor.js",
+	}
+	for _, asset := range scripts {
+		if !strings.Contains(page, `src="`+asset+`"`) {
+			t.Errorf("page does not load %s", asset)
+		}
+		if rec := get(t, srv, asset); rec.Code != http.StatusOK {
+			t.Errorf("GET %s: status %d, want 200", asset, rec.Code)
+		}
+	}
+	for _, asset := range []string{
+		"/static/codemirror/codemirror.css",
+		"/static/codemirror/dialog.css",
+	} {
+		if !strings.Contains(page, `href="`+asset+`"`) {
+			t.Errorf("page does not load %s", asset)
+		}
+		if rec := get(t, srv, asset); rec.Code != http.StatusOK {
+			t.Errorf("GET %s: status %d, want 200", asset, rec.Code)
+		}
+	}
+}
+
+// CodeMirror's files declare what they build on. A mode or addon whose
+// dependency was never vendored throws only once the editor is constructed
+// in a browser -- the page keeps its bare textarea and says nothing about
+// why -- so the dependencies are checked here instead.
+func TestEditorAssetsHaveTheirDependencies(t *testing.T) {
+	dir := "assets/static/codemirror"
+	entries, err := iofs.ReadDir(assets, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	have := map[string]bool{}
+	for _, e := range entries {
+		have[e.Name()] = true
+	}
+
+	// The CommonJS branch of each file's UMD wrapper names its
+	// dependencies by path, e.g. require("../../addon/mode/overlay").
+	requires := regexp.MustCompile(`require\("([^"]+)"\)`)
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".js") {
+			continue
+		}
+		src, err := iofs.ReadFile(assets, dir+"/"+e.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range requires.FindAllStringSubmatch(string(src), -1) {
+			dep := strings.TrimSuffix(path.Base(m[1]), ".js") + ".js"
+			if !have[dep] {
+				t.Errorf("%s requires %s, which is not vendored", e.Name(), dep)
+			}
+		}
+	}
+}
+
+// A dependency has to be loaded before whatever builds on it: these files
+// register themselves with CodeMirror as they run.
+func TestEditorAssetOrder(t *testing.T) {
+	page := get(t, mustServer(t), "/").Body.String()
+	before := func(first, second string) {
+		t.Helper()
+		i, j := strings.Index(page, first), strings.Index(page, second)
+		switch {
+		case i < 0:
+			t.Errorf("page does not load %s", first)
+		case j < 0:
+			t.Errorf("page does not load %s", second)
+		case i > j:
+			t.Errorf("%s is loaded after %s", first, second)
+		}
+	}
+	cm := "/static/codemirror/"
+	for _, dep := range []string{
+		"overlay.js", "xml.js", "meta.js", "yaml.js", "markdown.js", "gfm.js",
+		"yaml-frontmatter.js", "dialog.js", "searchcursor.js",
+		"matchbrackets.js", "continuelist.js", "vim.js",
+	} {
+		before(cm+"codemirror.js", cm+dep)
+		before(cm+dep, "/static/editor.js")
+	}
+	before(cm+"overlay.js", cm+"gfm.js")
+	before(cm+"markdown.js", cm+"gfm.js")
+	before(cm+"yaml.js", cm+"yaml-frontmatter.js")
+	for _, dep := range []string{"searchcursor.js", "dialog.js", "matchbrackets.js"} {
+		before(cm+dep, cm+"vim.js")
+	}
+}
+
+// The editor pane carries the vim toggle, which starts unpressed: vim mode
+// is a choice the user makes, not the default.
+func TestContentServesVimToggle(t *testing.T) {
+	srv, _ := testServer(t)
+	body := get(t, srv, "/content?path=index.qmd").Body.String()
+	if !strings.Contains(body, `id="vim-toggle"`) {
+		t.Error("editor pane has no vim toggle")
+	}
+	if !strings.Contains(body, `id="vim-toggle" aria-pressed="false"`) {
+		t.Error("vim toggle does not start unpressed")
+	}
+}
+
+func mustServer(t *testing.T) *server {
+	t.Helper()
+	srv, _ := testServer(t)
+	return srv
 }
 
 // onePixelPNG is a 1x1 transparent PNG. The media route copies bytes, so

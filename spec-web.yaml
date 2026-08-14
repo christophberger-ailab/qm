@@ -37,6 +37,11 @@ constraints:
       3-5-1: A website-absolute image path such as `/assets/images/x.png` resolves against the project root, the way the rendered site and the flattened book resolve it
       3-5-2: A relative image path resolves against the folder the edited page sits in
       3-5-3: The route serves image files only, and only from inside the open project
+      3-6: The editor is CodeMirror, embedded in the binary like the other assets, and highlights the page's YAML frontmatter and Markdown
+      3-6-1: A toggle button above the editor switches Vim keybindings on and off; the choice is remembered across sessions
+      3-6-2: Vim mode is off unless the user turns it on
+      3-6-3: `:w` saves the page immediately instead of waiting for the autosave delay
+      3-6-4: The textarea remains the field the edit form posts, so autosave and the preview are unaffected by the editor
       4: The tree is polled for outside changes and refreshed when the project changed on disk
       5: The render panel selects book folders, their profiles, the output formats, and whether slides are rendered
       5-1: The selection is remembered per project in `<user config dir>/qm/render.json`

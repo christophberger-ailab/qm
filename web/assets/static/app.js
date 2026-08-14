@@ -125,6 +125,7 @@ function initDivider(dividerID, paneID, key, side) {
       var raw = side === 'right' ? panes.right - e.clientX : e.clientX - panes.left;
       var width = Math.max(Math.min(raw, panes.width - 200), 0);
       pane.style.width = width + 'px';
+      refreshEditor(); // CodeMirror measures its own width
     }
 
     function onUp() {
@@ -213,6 +214,7 @@ document.addEventListener('DOMContentLoaded', function () {
   loadCollapsed();
   initTree();
   initDivider('divider', 'tree-pane', 'treePaneWidth', 'left');
+  initEditor();
   applyPreview();
 });
 
@@ -226,9 +228,11 @@ document.body.addEventListener('htmx:afterSwap', function (evt) {
     var input = evt.detail.target.querySelector('input[name="path"]');
     currentPath = input ? input.value : null;
     applySelection();
+    initEditor(); // mount before the preview reads the editor's text
     applyPreview();
   }
   if (id === 'main') {
+    initEditor();
     applyPreview();
   }
 });
@@ -253,6 +257,7 @@ document.body.addEventListener('htmx:afterSettle', function (evt) {
   if (id === 'content') { // the editor/preview split comes with the editor
     initDivider('preview-divider', 'preview', 'previewWidth', 'right');
     applyPreview();
+    refreshEditor(); // the saved pane width has just been applied
   }
 });
 
@@ -272,6 +277,13 @@ document.body.addEventListener('click', function (evt) {
     previewOpen = !previewOpen;
     localStorage.setItem(PREVIEW_KEY, previewOpen ? 'open' : 'closed');
     applyPreview();
+    refreshEditor(); // the editor just gained or lost half the pane
+    return;
+  }
+
+  // Vim toggle: switch the editor's keymap.
+  if (evt.target.closest('#vim-toggle')) {
+    toggleVim();
     return;
   }
 

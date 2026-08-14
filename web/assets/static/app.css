@@ -13,6 +13,7 @@
   --fence-warn: #c2703a;
   --danger: #dc2626;
   --input-bg: #ffffff;
+  --code-atom: #7c3aed;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -28,6 +29,7 @@
     --fence-warn: #cf8a5b;
     --danger: #f87171;
     --input-bg: #1b1e24;
+    --code-atom: #c4b5fd;
   }
 }
 
@@ -488,6 +490,111 @@ textarea.file-content {
   min-height: 12rem;
 }
 
+/* CodeMirror
+ *
+ * The editor mounts on the textarea, which stays in the form -- hidden --
+ * as the field /save posts. So CodeMirror has to take over the textarea's
+ * look: the same font, frame, and background.
+ *
+ * CodeMirror's own stylesheet is light-only and sizes the editor to a fixed
+ * 300px. Both are overridden here: the height so the editor fills the pane
+ * the way the textarea did, the colors so it follows the system theme like
+ * the rest of the app.
+ */
+.editor-split .CodeMirror {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  background: var(--hover);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.75rem 0;
+}
+
+.CodeMirror-gutters {
+  background: var(--hover);
+  border-right: 1px solid var(--border);
+}
+
+.CodeMirror-linenumber {
+  color: var(--muted);
+}
+
+.CodeMirror-cursor {
+  border-left-color: var(--fg);
+}
+
+/* Vim's normal mode draws a block cursor over the character instead of a
+   bar between two. */
+.cm-fat-cursor .CodeMirror-cursor {
+  background: var(--accent);
+}
+
+/* CodeMirror sets the selection colour on a focus-qualified selector, so
+   overriding it takes the same specificity. */
+.CodeMirror-focused div.CodeMirror-selected,
+div.CodeMirror-selected {
+  background: var(--accent-bg);
+}
+
+.CodeMirror-line::selection,
+.CodeMirror-line > span::selection,
+.CodeMirror-line > span > span::selection {
+  background: var(--accent-bg);
+}
+
+.cm-s-default .cm-header,
+.cm-s-default .cm-keyword,
+.cm-s-default .cm-meta,
+.cm-s-default .cm-link {
+  color: var(--accent);
+}
+
+.cm-s-default .cm-header {
+  font-weight: 600;
+}
+
+.cm-s-default .cm-comment,
+.cm-s-default .cm-url {
+  color: var(--muted);
+}
+
+.cm-s-default .cm-quote {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.cm-s-default .cm-string,
+.cm-s-default .cm-tag {
+  color: var(--warn);
+}
+
+.cm-s-default .cm-atom,
+.cm-s-default .cm-number {
+  color: var(--code-atom);
+}
+
+.cm-s-default .cm-variable-2,
+.cm-s-default .cm-variable-3 {
+  color: var(--fg);
+}
+
+/* The `:` command line the vim keymap opens. */
+.CodeMirror-dialog {
+  background: var(--bg);
+  color: var(--fg);
+  border-bottom: 1px solid var(--border);
+}
+
+.CodeMirror-dialog input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--fg);
+}
+
 /* Markdown preview */
 
 /* The editor and the preview share the content pane, split by their own
@@ -518,8 +625,9 @@ textarea.file-content {
   display: none;
 }
 
-/* The toggle carries the preview's state: pressed means open. */
-.preview-toggle[aria-pressed="true"] {
+/* The toggles carry their state: pressed means preview open, vim on. */
+.preview-toggle[aria-pressed="true"],
+.vim-toggle[aria-pressed="true"] {
   background: var(--accent-bg);
   border-color: var(--accent);
   color: var(--accent);
