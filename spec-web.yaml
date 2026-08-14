@@ -29,6 +29,10 @@ constraints:
       1: The page tree shows the project's .qmd pages in website order, nested by folder
       2: Dragging a page updates the `order` frontmatter of the affected pages and the Markdown heading levels of the moved page
       3: Pages can be created, deleted, and edited in place
+      3-1: A Markdown preview of the edited page sits to the right of the editor, separated by a draggable divider
+      3-2: The preview follows the editor's content as the user types
+      3-3: A toggle button above the editor opens and closes the preview; the choice is remembered across sessions
+      3-4: The preview is rendered in the browser from the embedded marked library; it approximates the page, it is not a Quarto render
       4: The tree is polled for outside changes and refreshed when the project changed on disk
       5: The render panel selects book folders, their profiles, the output formats, and whether slides are rendered
       5-1: The selection is remembered per project in `<user config dir>/qm/render.json`

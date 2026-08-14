@@ -97,17 +97,18 @@ function initTree() {
   });
 }
 
-// initDivider makes the vertical divider between the tree pane and the
-// content pane draggable. The chosen width is kept in localStorage so it
-// survives reloads and the #main re-render on /open.
-function initDivider() {
-  var divider = document.getElementById('divider');
-  var pane = document.getElementById('tree-pane');
+// initDivider makes a vertical divider draggable: dragging it resizes the
+// pane next to it, which sits on the divider's left ('left') or right
+// ('right') side. The chosen width is kept in localStorage under key so it
+// survives reloads and the re-renders that replace the pane.
+function initDivider(dividerID, paneID, key, side) {
+  var divider = document.getElementById(dividerID);
+  var pane = document.getElementById(paneID);
   if (!divider || !pane) {
     return;
   }
 
-  var saved = localStorage.getItem('treePaneWidth');
+  var saved = localStorage.getItem(key);
   if (saved) {
     pane.style.width = saved;
   }
@@ -119,9 +120,10 @@ function initDivider() {
 
     function onMove(e) {
       var panes = pane.parentElement.getBoundingClientRect();
-      // Keep the content pane usable; the tree pane's CSS min-width
-      // provides the lower bound.
-      var width = Math.max(Math.min(e.clientX - panes.left, panes.width - 200), 0);
+      // Keep the pane on the other side usable; the resized pane's CSS
+      // min-width provides the lower bound.
+      var raw = side === 'right' ? panes.right - e.clientX : e.clientX - panes.left;
+      var width = Math.max(Math.min(raw, panes.width - 200), 0);
       pane.style.width = width + 'px';
     }
 
@@ -129,7 +131,7 @@ function initDivider() {
       divider.removeEventListener('pointermove', onMove);
       divider.removeEventListener('pointerup', onUp);
       divider.classList.remove('dragging');
-      localStorage.setItem('treePaneWidth', pane.style.width);
+      localStorage.setItem(key, pane.style.width);
     }
 
     divider.addEventListener('pointermove', onMove);
@@ -137,6 +139,62 @@ function initDivider() {
   });
 }
     
+// Markdown preview
+//
+// The preview lives to the right of the editor and is rendered in the
+// browser from the textarea's text (see preview.js), so it follows typing
+// without a round trip. Whether it is open is kept in localStorage: the
+// editor pane is re-rendered on every page switch, and the choice should
+// outlive that -- and the session.
+
+var PREVIEW_KEY = 'previewOpen';
+
+var previewOpen = localStorage.getItem(PREVIEW_KEY) !== 'closed';
+
+var previewTimer = null;
+
+// applyPreview brings the pane and the toggle button in line with
+// previewOpen. It runs after every swap that replaces the editor, both on
+// afterSwap (so nothing flashes) and on afterSettle (which restores the
+// swapped-in button's attributes, including aria-pressed).
+function applyPreview() {
+  var pane = document.getElementById('content-pane');
+  if (pane) {
+    pane.classList.toggle('preview-off', !previewOpen);
+  }
+  var button = document.getElementById('preview-toggle');
+  if (button) {
+    button.setAttribute('aria-pressed', previewOpen ? 'true' : 'false');
+  }
+  if (previewOpen) {
+    updatePreview();
+  }
+}
+
+// updatePreview re-renders the preview from what the editor currently holds.
+function updatePreview() {
+  var preview = document.getElementById('preview');
+  var editor = document.querySelector('#content textarea.file-content');
+  if (preview && editor) {
+    renderPreview(preview, editor.value);
+  }
+}
+
+// schedulePreview coalesces the keystrokes of fast typing into one render.
+function schedulePreview() {
+  if (!previewOpen) {
+    return;
+  }
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(updatePreview, 150);
+}
+
+document.body.addEventListener('input', function (evt) {
+  if (evt.target.classList.contains('file-content')) {
+    schedulePreview();
+  }
+});
+
 // currentPath is the page open in the editor; applySelection re-highlights
 // it after every tree re-render (moves, saves, reloads).
 var currentPath = null;
@@ -150,7 +208,8 @@ function applySelection() {
 document.addEventListener('DOMContentLoaded', function () {
   loadCollapsed();
   initTree();
-  initDivider();
+  initDivider('divider', 'tree-pane', 'treePaneWidth', 'left');
+  applyPreview();
 });
 
 document.body.addEventListener('htmx:afterSwap', function (evt) {
@@ -163,6 +222,10 @@ document.body.addEventListener('htmx:afterSwap', function (evt) {
     var input = evt.detail.target.querySelector('input[name="path"]');
     currentPath = input ? input.value : null;
     applySelection();
+    applyPreview();
+  }
+  if (id === 'main') {
+    applyPreview();
   }
 });
 
@@ -181,7 +244,11 @@ document.body.addEventListener('htmx:configRequest', function (evt) {
 document.body.addEventListener('htmx:afterSettle', function (evt) {
   var id = evt.detail && evt.detail.target && evt.detail.target.id;
   if (id === 'main') {
-    initDivider();
+    initDivider('divider', 'tree-pane', 'treePaneWidth', 'left');
+  }
+  if (id === 'content') { // the editor/preview split comes with the editor
+    initDivider('preview-divider', 'preview', 'previewWidth', 'right');
+    applyPreview();
   }
 });
 
@@ -196,6 +263,14 @@ document.body.addEventListener('htmx:oobAfterSwap', function (evt) {
 });
 
 document.body.addEventListener('click', function (evt) {
+  // Preview toggle: open or close the preview beside the editor.
+  if (evt.target.closest('#preview-toggle')) {
+    previewOpen = !previewOpen;
+    localStorage.setItem(PREVIEW_KEY, previewOpen ? 'open' : 'closed');
+    applyPreview();
+    return;
+  }
+
   // Expand all: forget every collapsed branch and reveal each subtree.
   if (evt.target.closest('#expand-all')) {
     collapsed.clear();

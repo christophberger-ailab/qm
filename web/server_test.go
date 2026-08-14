@@ -159,6 +159,38 @@ func TestContent(t *testing.T) {
 	}
 }
 
+// The editor is served with the preview pane and its toggle beside it; the
+// preview itself is filled in the browser from the textarea (preview.js).
+func TestContentServesPreviewPane(t *testing.T) {
+	srv, _ := testServer(t)
+	body := get(t, srv, "/content?path=chapter2/second.qmd").Body.String()
+	for _, want := range []string{
+		`class="editor-split"`,
+		`id="preview-toggle"`,
+		`id="preview-divider"`,
+		`id="preview"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("editor missing %q:\n%s", want, body)
+		}
+	}
+}
+
+// The preview renders in the browser, so its two scripts must be embedded
+// in the binary and loaded by the page.
+func TestPreviewAssetsAreServed(t *testing.T) {
+	srv, _ := testServer(t)
+	page := get(t, srv, "/").Body.String()
+	for _, asset := range []string{"/static/marked.umd.js", "/static/preview.js"} {
+		if !strings.Contains(page, `src="`+asset+`"`) {
+			t.Errorf("page does not load %s", asset)
+		}
+		if rec := get(t, srv, asset); rec.Code != http.StatusOK {
+			t.Errorf("GET %s: status %d, want 200", asset, rec.Code)
+		}
+	}
+}
+
 func TestSave(t *testing.T) {
 	srv, root := testServer(t)
 	newBody := "---\ntitle: Second\norder: 1\n---\n# Second updated\n"

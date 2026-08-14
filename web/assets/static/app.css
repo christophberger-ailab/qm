@@ -198,8 +198,9 @@ button:hover {
   padding: 0.5rem;
 }
 
-/* The divider between the panes: a 1px line with a wider grab area. */
-#divider {
+/* The dividers between the panes: a 1px line with a wider grab area. */
+#divider,
+#preview-divider {
   flex: none;
   width: 5px;
   cursor: col-resize;
@@ -211,7 +212,9 @@ button:hover {
 }
 
 #divider:hover,
-#divider.dragging {
+#divider.dragging,
+#preview-divider:hover,
+#preview-divider.dragging {
   background-color: var(--accent);
 }
 
@@ -483,5 +486,149 @@ textarea.file-content {
   color: var(--fg);
   resize: vertical;
   min-height: 12rem;
+}
+
+/* Markdown preview */
+
+/* The editor and the preview share the content pane, split by their own
+   divider. */
+.editor-split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.editor-split .edit-form {
+  min-width: 12rem;
+}
+
+#preview {
+  flex: none;
+  width: 50%;
+  min-width: 12rem;
+  overflow-y: auto;
+  padding: 0 0.2rem 0 1rem;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+/* Closing the preview leaves the editor the whole pane. */
+#content-pane.preview-off #preview,
+#content-pane.preview-off #preview-divider {
+  display: none;
+}
+
+/* The toggle carries the preview's state: pressed means open. */
+.preview-toggle[aria-pressed="true"] {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.markdown-preview > :first-child {
+  margin-top: 0;
+}
+
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3,
+.markdown-preview h4,
+.markdown-preview h5,
+.markdown-preview h6 {
+  line-height: 1.25;
+  margin: 1.2em 0 0.5em;
+}
+
+.markdown-preview h1 { font-size: 1.5rem; }
+.markdown-preview h2 { font-size: 1.25rem; }
+.markdown-preview h3 { font-size: 1.1rem; }
+.markdown-preview h4,
+.markdown-preview h5,
+.markdown-preview h6 { font-size: 1rem; }
+
+.markdown-preview a {
+  color: var(--accent);
+}
+
+.markdown-preview code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  background: var(--hover);
+  border-radius: 3px;
+  padding: 0.1em 0.3em;
+}
+
+.markdown-preview pre {
+  background: var(--hover);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  overflow-x: auto;
+}
+
+.markdown-preview pre code {
+  background: none;
+  padding: 0;
+}
+
+.markdown-preview blockquote {
+  margin: 0.8em 0;
+  padding-left: 0.8rem;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+
+.markdown-preview table {
+  border-collapse: collapse;
+  margin: 0.8em 0;
+}
+
+.markdown-preview th,
+.markdown-preview td {
+  border: 1px solid var(--border);
+  padding: 0.25rem 0.5rem;
+  text-align: left;
+}
+
+.markdown-preview img {
+  max-width: 100%;
+}
+
+.markdown-preview hr {
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+/* The page's YAML frontmatter, shown above the rendered body. */
+.preview-frontmatter {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: pre-wrap;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  margin: 0 0 1rem;
+}
+
+/* Pandoc fenced divs (::: blocks), callouts among them. */
+.markdown-preview .qdiv {
+  margin: 0.8em 0;
+  padding: 0.1rem 0.7rem;
+  border-left: 3px solid var(--border);
+}
+
+.markdown-preview .callout-note,
+.markdown-preview .callout-tip {
+  border-left-color: var(--accent);
+}
+
+.markdown-preview .callout-warning,
+.markdown-preview .callout-caution {
+  border-left-color: var(--warn);
+}
+
+.markdown-preview .callout-important {
+  border-left-color: var(--danger);
 }
 
