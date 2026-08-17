@@ -83,6 +83,47 @@ func renderForm() url.Values {
 	}
 }
 
+// bookFieldset returns the render panel fieldset for one book folder.
+func bookFieldset(t *testing.T, body, book string) string {
+	t.Helper()
+	marker := `name="book" value="` + book + `"`
+	i := strings.Index(body, marker)
+	if i < 0 {
+		t.Fatalf("render panel has no book %q:\n%s", book, body)
+	}
+	start := strings.LastIndex(body[:i], `<fieldset class="book">`)
+	if start < 0 {
+		t.Fatalf("book %q has no fieldset:\n%s", book, body)
+	}
+	end := strings.Index(body[i:], `</fieldset>`)
+	if end < 0 {
+		t.Fatalf("book %q fieldset is not closed:\n%s", book, body)
+	}
+	return body[start : i+end+len(`</fieldset>`)]
+}
+
+// writeBook adds a first-level book folder to the fixture project.
+func writeBook(t *testing.T, root, book string) {
+	t.Helper()
+	p := filepath.Join(root, book, "index.qmd")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	src := "---\ntitle: " + book + "\norder: 1\n---\n# " + book + "\n"
+	if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// writeBookProfile adds a book profile to the fixture project.
+func writeBookProfile(t *testing.T, root, profile string) {
+	t.Helper()
+	cfg := "book:\n  chapters:\n    - index.qmd\n"
+	if err := os.WriteFile(filepath.Join(root, "_quarto-"+profile+".yml"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRenderFlattensAndRunsQuarto(t *testing.T) {
 	log := fakeQuarto(t)
 	srv, root := testServer(t)
@@ -277,8 +318,88 @@ func TestRenderPanelListsBooks(t *testing.T) {
 	}
 }
 
+func TestRenderPanelShowsVariantSubmenuByBook(t *testing.T) {
+	srv, root := testServer(t)
+	writeBook(t, root, "audience")
+	writeBook(t, root, "other")
+	writeBookProfile(t, root, "audience-fw")
+	writeBookProfile(t, root, "audience-pol")
+	writeBookProfile(t, root, "other")
+
+	body := get(t, srv, "/").Body.String()
+	section := bookFieldset(t, body, "audience")
+	if !strings.Contains(section, `class="variants"`) {
+		t.Fatalf("variant submenu missing:\n%s", section)
+	}
+	if !strings.Contains(section, `<summary>variants (2)</summary>`) {
+		t.Errorf("submenu summary missing:\n%s", section)
+	}
+	for _, want := range []string{
+		`name="profile.audience" value="audience-fw" checked`,
+		`name="profile.audience" value="audience-pol" checked`,
+	} {
+		if !strings.Contains(section, want) {
+			t.Errorf("variant profile missing %q:\n%s", want, section)
+		}
+	}
+	for _, other := range []string{`value="chapter2"`, `value="other"`} {
+		if strings.Contains(section, other) {
+			t.Errorf("other book's profile offered under audience:\n%s", section)
+		}
+	}
+}
+
+func TestSingleProfileBookSubmitsHiddenProfile(t *testing.T) {
+	log := fakeQuarto(t)
+	srv, _ := testServer(t)
+
+	section := bookFieldset(t, get(t, srv, "/").Body.String(), "chapter2")
+	if strings.Contains(section, `class="variants"`) {
+		t.Errorf("single profile book has a submenu:\n%s", section)
+	}
+	if strings.Contains(section, `type="checkbox" name="profile.chapter2"`) {
+		t.Errorf("single profile book has a profile checkbox:\n%s", section)
+	}
+	if !strings.Contains(section, `<input type="hidden" name="profile.chapter2" value="chapter2">`) {
+		t.Fatalf("single profile book does not submit its profile:\n%s", section)
+	}
+
+	if rec := post(t, srv, "/render", renderForm()); rec.Code != http.StatusOK {
+		t.Fatalf("render: status %d: %s", rec.Code, rec.Body)
+	}
+	if st := waitForRender(t, srv); st.Failed {
+		t.Fatalf("render failed:\n%s", strings.Join(st.Lines, "\n"))
+	}
+	if got := calls(t, log); !strings.Contains(got, "args: render --to pdf --no-clean --profile chapter2") {
+		t.Errorf("hidden profile was not passed to quarto:\n%s", got)
+	}
+}
+
+func TestProfilesOfOtherBooksNeverAppearUnderBook(t *testing.T) {
+	srv, root := testServer(t)
+	writeBook(t, root, "appendix")
+	writeBookProfile(t, root, "appendix")
+	writeBookProfile(t, root, "appendix-fw")
+	writeBookProfile(t, root, "chapter2-pol")
+
+	body := get(t, srv, "/").Body.String()
+	chapter := bookFieldset(t, body, "chapter2")
+	for _, other := range []string{`value="appendix"`, `value="appendix-fw"`} {
+		if strings.Contains(chapter, other) {
+			t.Errorf("appendix profile offered under chapter2:\n%s", chapter)
+		}
+	}
+	appendix := bookFieldset(t, body, "appendix")
+	for _, other := range []string{`value="chapter2"`, `value="chapter2-pol"`} {
+		if strings.Contains(appendix, other) {
+			t.Errorf("chapter2 profile offered under appendix:\n%s", appendix)
+		}
+	}
+}
+
 func TestRenderSelectionPersistsPerProject(t *testing.T) {
 	root := fixture(t)
+	writeBookProfile(t, root, "chapter2-pol")
 	prefs := filepath.Join(t.TempDir(), "render.json")
 
 	srv, err := newServer(prefs)
@@ -307,10 +428,15 @@ func TestRenderSelectionPersistsPerProject(t *testing.T) {
 			t.Errorf("selection not restored, missing %q:\n%s", want, body)
 		}
 	}
-	// The profile was deliberately left unchecked, so the name-matched
+	// The variants were deliberately left unchecked, so the name-matched
 	// default must not come back.
-	if strings.Contains(body, `name="profile.chapter2" value="chapter2" checked`) {
-		t.Errorf("deselected profile restored as checked:\n%s", body)
+	for _, bad := range []string{
+		`name="profile.chapter2" value="chapter2" checked`,
+		`name="profile.chapter2" value="chapter2-pol" checked`,
+	} {
+		if strings.Contains(body, bad) {
+			t.Errorf("deselected profile restored as checked:\n%s", body)
+		}
 	}
 	if strings.Contains(body, `name="format" value="pdf" checked`) {
 		t.Errorf("deselected format restored as checked:\n%s", body)
@@ -332,9 +458,10 @@ func TestRenderSelectionPersistsPerProject(t *testing.T) {
 // it must neither show up nor break the restore.
 func TestSavedSelectionIgnoresRemovedEntries(t *testing.T) {
 	root := fixture(t)
+	writeBookProfile(t, root, "other")
 	prefs := filepath.Join(t.TempDir(), "render.json")
 	saved := `{"` + root + `":{"books":["chapter2","gone"],` +
-		`"profiles":{"chapter2":["chapter2","gone"]},"formats":["pdf"]}}`
+		`"profiles":{"chapter2":["chapter2","other","gone"]},"formats":["pdf"]}}`
 	if err := os.WriteFile(prefs, []byte(saved), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -345,10 +472,12 @@ func TestSavedSelectionIgnoresRemovedEntries(t *testing.T) {
 	}
 	post(t, srv, "/open", url.Values{"path": {root}})
 	body := get(t, srv, "/").Body.String()
-	if strings.Contains(body, `value="gone"`) {
-		t.Errorf("deleted entry rendered:\n%s", body)
+	for _, bad := range []string{`value="gone"`, `value="other"`} {
+		if strings.Contains(body, bad) {
+			t.Errorf("removed or non-matching entry rendered:\n%s", body)
+		}
 	}
-	if !strings.Contains(body, `name="profile.chapter2" value="chapter2" checked`) {
+	if !strings.Contains(body, `<input type="hidden" name="profile.chapter2" value="chapter2">`) {
 		t.Errorf("surviving profile not restored:\n%s", body)
 	}
 }

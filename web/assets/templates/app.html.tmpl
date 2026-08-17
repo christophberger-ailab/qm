@@ -53,7 +53,14 @@
       {{range $book := .Books}}
       <fieldset class="book">
         <legend><label><input type="checkbox" name="book" value="{{$book.Name}}"{{if $book.Selected}} checked{{end}}> {{$book.Name}}</label></legend>
-        {{range $book.Profiles}}<label class="profile" title="One quarto render run per checked profile"><input type="checkbox" name="profile.{{$book.Name}}" value="{{.Name}}"{{if .Selected}} checked{{end}}> {{.Name}}</label>
+        {{if gt (len $book.Profiles) 1}}
+        <details class="variants">
+          <summary>variants ({{len $book.Profiles}})</summary>
+          {{range $book.Profiles}}<label class="profile" title="One quarto render run per checked profile"><input type="checkbox" name="profile.{{$book.Name}}" value="{{.Name}}"{{if .Selected}} checked{{end}}> {{.Name}}</label>
+          {{end}}
+        </details>
+        {{else if eq (len $book.Profiles) 1}}
+        {{range $book.Profiles}}<input type="hidden" name="profile.{{$book.Name}}" value="{{.Name}}">{{end}}
         {{else}}<span class="empty">no book profiles</span>{{end}}
       </fieldset>
       {{end}}

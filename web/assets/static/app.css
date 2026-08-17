@@ -130,6 +130,23 @@ body {
   color: var(--muted);
 }
 
+.render-body .variants {
+  margin-top: 0.25rem;
+  padding-top: 0.25rem;
+  border-top: 1px solid var(--border);
+}
+
+.render-body .variants > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-bottom: 0.25rem;
+}
+
+.render-body .variants > summary:hover {
+  color: var(--fg);
+}
+
 .render-output {
   max-height: 20rem;
   overflow: auto;

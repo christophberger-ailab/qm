@@ -94,14 +94,15 @@ type state struct {
 }
 
 // renderView is what the render panel shows: the project's book folders
-// with the profiles and formats currently selected for them.
+// with the name-matched profiles and formats currently selected for them.
 type renderView struct {
 	Books   []bookView
 	Formats []checkbox
 	Slides  bool
 }
 
-// bookView is one book folder in the render panel.
+// bookView is one book folder in the render panel. Profiles holds only the
+// Quarto profiles that belong to the folder by name.
 type bookView struct {
 	Name     string
 	Selected bool
@@ -139,8 +140,9 @@ func (s *server) renderView() renderView {
 	v := renderView{Slides: prefs.Slides}
 	for _, name := range bookrender.Books(s.root) {
 		b := bookView{Name: name, Selected: slices.Contains(prefs.Books, name)}
+		matching := bookrender.DefaultProfiles(name, available)
 		on := prefs.profilesFor(name, available)
-		for _, p := range available {
+		for _, p := range matching {
 			b.Profiles = append(b.Profiles, checkbox{p, slices.Contains(on, p)})
 		}
 		v.Books = append(v.Books, b)
