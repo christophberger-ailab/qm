@@ -52,3 +52,10 @@ constraints:
       5-6: A book with no matching profile has no profile inputs and renders with the project's default configuration
       6: A render runs in the background; the panel polls its log while it runs
       6-1: Only one render runs at a time
+      7: The top bar shows a Config button at the far right
+      7-1: The Config button opens a full config page whose entries are presented as a list that can grow
+      7-2: The config list contains an entry named "Preview: Custom CSS" that opens the custom preview stylesheet editor
+      7-3: The custom preview stylesheet editor uses the embedded CodeMirror CSS mode, offers Save, and links back to the config page and the app
+      7-4: The custom preview stylesheet is stored beside the render prefs as `<user config dir>/qm/preview.css`
+      7-5: The app links the custom preview stylesheet route document-wide after `/static/app.css`, the route serves only that stored stylesheet as `text/css`, and an empty or absent stylesheet has no effect
+      7-6: The editor tells the user to scope rules with `.markdown-preview` when they should affect only the preview

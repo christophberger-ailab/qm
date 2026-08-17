@@ -40,6 +40,10 @@ type server struct {
 	prefsFile string
 	prefs     map[string]renderPrefs
 
+	// previewCSSFile persists the user's preview stylesheet next to the
+	// render prefs; empty disables persistence and serves an empty sheet.
+	previewCSSFile string
+
 	// job is the background render. It has its own lock: a render takes
 	// minutes and must not block the tree handlers.
 	job job
@@ -58,7 +62,12 @@ func newServer(prefsFile string) (*server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &server{mux: http.NewServeMux(), tmpl: tmpl, prefsFile: prefsFile}
+	s := &server{
+		mux:            http.NewServeMux(),
+		tmpl:           tmpl,
+		prefsFile:      prefsFile,
+		previewCSSFile: previewCSSFileForPrefs(prefsFile),
+	}
 	s.loadPrefs()
 	static, err := iofs.Sub(assets, "assets/static")
 	if err != nil {
@@ -66,6 +75,10 @@ func newServer(prefsFile string) (*server, error) {
 	}
 	s.mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(static))))
 	s.mux.HandleFunc("GET /{$}", s.page)
+	s.mux.HandleFunc("GET /config", s.config)
+	s.mux.HandleFunc("GET /config/preview-css", s.previewCSSEditor)
+	s.mux.HandleFunc("POST /config/preview-css", s.savePreviewCSSHandler)
+	s.mux.HandleFunc("GET /config/preview.css", s.previewStylesheet)
 	s.mux.HandleFunc("POST /open", s.open)
 	s.mux.HandleFunc("GET /tree", s.treeHandler)
 	s.mux.HandleFunc("GET /watch", s.watch)
@@ -91,6 +104,25 @@ type state struct {
 	Tree   *project.Tree
 	Render renderView
 	Error  string
+}
+
+// configView is the list of configuration entries shown by /config.
+type configView struct {
+	Entries []configEntry
+}
+
+// configEntry is one link from the config overview to a concrete editor.
+type configEntry struct {
+	Title       string
+	Description string
+	Href        string
+}
+
+// previewCSSView is the page data for the custom preview stylesheet editor.
+type previewCSSView struct {
+	CSS     string
+	Message string
+	Error   string
 }
 
 // renderView is what the render panel shows: the project's book folders
@@ -207,6 +239,54 @@ func (s *server) page(w http.ResponseWriter, r *http.Request) {
 		st.Error = err.Error()
 	}
 	s.render(w, "page", st)
+}
+
+func (s *server) config(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.render(w, "config-page", configView{Entries: []configEntry{{
+		Title:       "Preview: Custom CSS",
+		Description: "Override the built-in Markdown preview styles.",
+		Href:        "/config/preview-css",
+	}}})
+}
+
+func (s *server) previewCSSEditor(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.render(w, "preview-css-page", previewCSSView{CSS: s.loadPreviewCSS()})
+}
+
+// savePreviewCSSHandler writes the user's stylesheet. It parses explicitly
+// because the stylesheet is the user's own text, and a failed or malformed
+// form must not read as "save succeeded" by replacing it with an empty file.
+func (s *server) savePreviewCSSHandler(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := r.ParseForm(); err != nil {
+		s.render(w, "preview-css-page", previewCSSView{CSS: s.loadPreviewCSS(), Error: err.Error()})
+		return
+	}
+	if !r.PostForm.Has("css") {
+		s.render(w, "preview-css-page", previewCSSView{CSS: s.loadPreviewCSS(), Error: "missing css field"})
+		return
+	}
+	css := r.PostForm.Get("css")
+	view := previewCSSView{CSS: css, Message: "Saved."}
+	if err := s.savePreviewCSS(css); err != nil {
+		view.Message = ""
+		view.Error = err.Error()
+	}
+	s.render(w, "preview-css-page", view)
+}
+
+func (s *server) previewStylesheet(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	w.Header().Set("Content-Type", "text/css")
+	// The stylesheet changes underfoot, so a stale browser copy reads like a lost save.
+	w.Header().Set("Cache-Control", "no-store")
+	fmt.Fprint(w, s.loadPreviewCSS())
 }
 
 func (s *server) open(w http.ResponseWriter, r *http.Request) {

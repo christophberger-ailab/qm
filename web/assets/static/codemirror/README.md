@@ -18,6 +18,7 @@ require a bundler, and with it a Node build step in a Go repository.
 | `codemirror.js`, `codemirror.css` | `lib/` |
 | `vim.js` | `keymap/vim.js` |
 | `markdown.js`, `gfm.js`, `yaml.js`, `yaml-frontmatter.js`, `xml.js` | `mode/` |
+| `css.js` | `mode/css/css.js` |
 | `meta.js` | `mode/meta.js` |
 | `overlay.js` | `addon/mode/overlay.js` |
 | `dialog.js`, `dialog.css` | `addon/dialog/` |
@@ -25,12 +26,12 @@ require a bundler, and with it a Node build step in a Go repository.
 | `matchbrackets.js`, `continuelist.js` | `addon/edit/` |
 | `LICENSE` | `LICENSE` |
 
-The set is what the editor needs and no more. `yaml-frontmatter` over `gfm`
-is the mode a `.qmd` page is read with; `overlay` is what `gfm` composes
-with; `dialog`, `searchcursor`, and `matchbrackets` are what the vim keymap
-builds on. Per-language modes for fenced code blocks are deliberately left
-out -- that set has no end -- so a fenced block is highlighted as plain
-text.
+The set is what the editors need and no more. `yaml-frontmatter` over `gfm`
+is the mode a `.qmd` page is read with; `css` is used by the custom preview
+stylesheet editor; `overlay` is what `gfm` composes with; `dialog`,
+`searchcursor`, and `matchbrackets` are what the vim keymap builds on.
+Per-language modes for fenced code blocks are deliberately left out -- that
+set has no end -- so a fenced block is highlighted as plain text.
 
 `TestEditorAssetsHaveTheirDependencies` in `web/server_test.go` reads the
 `require(...)` calls out of these files and fails if one of them names a
