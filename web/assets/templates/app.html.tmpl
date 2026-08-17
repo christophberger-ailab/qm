@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/static/codemirror/codemirror.css">
   <link rel="stylesheet" href="/static/codemirror/dialog.css">
   <link rel="stylesheet" href="/static/app.css">
-  <link rel="stylesheet" href="/config/preview.css">
+  <link rel="stylesheet" id="preview-css-link" href="/config/preview.css?file={{.ActiveCSS}}">
   <script src="/static/htmx.min.js"></script>
   <script src="/static/sortable.min.js"></script>
   <script src="/static/marked.umd.js"></script>
@@ -142,13 +142,27 @@
     <p class="config-intro">The stylesheet is loaded document-wide after the app's own stylesheet; scope rules with <code>.markdown-preview</code> to affect only the preview, for example <code>.markdown-preview h1 { color: rebeccapurple; }</code>.</p>
     {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
     {{if .Message}}<div class="notice">{{.Message}}</div>{{end}}
+    {{if gt (len .Files) 1}}
+    <form class="css-file-switch" method="get" action="/config/preview-css">
+      <label for="css-file-select">Editing:</label>
+      <select name="file" id="css-file-select" onchange="this.form.submit()">
+        {{range .Files}}<option value="{{.}}"{{if eq . $.File}} selected{{end}}>{{.}}</option>{{end}}
+      </select>
+    </form>
+    {{end}}
     <form class="config-editor" method="post" action="/config/preview-css">
+      <input type="hidden" name="file" value="{{.File}}">
       <textarea name="css" class="preview-css-content" spellcheck="false">{{.CSS}}</textarea>
       <div class="config-actions">
         <button type="submit">Save</button>
         <a class="button" href="/config">Back to Config</a>
         <a class="button" href="/">Back to App</a>
       </div>
+    </form>
+    <form class="css-new-file" method="post" action="/config/preview-css/new">
+      <label for="css-new-name">Add an alternate stylesheet:</label>
+      <input type="text" name="name" id="css-new-name" placeholder="dark.css" required>
+      <button type="submit">Add stylesheet</button>
     </form>
   </main>
 </body>
@@ -218,5 +232,12 @@
     <textarea name="body" class="file-content">{{.Body}}</textarea>
   </form>
   <div id="preview-divider" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
-  <article class="markdown-preview" id="preview"></article>
+  <div class="preview-column" id="preview-column">
+    {{if gt (len .CSSFiles) 1}}
+    <select id="preview-css-select" class="preview-css-select" title="Switch the custom CSS applied to the preview">
+      {{range .CSSFiles}}<option value="{{.}}"{{if eq . $.ActiveCSS}} selected{{end}}>{{.}}</option>{{end}}
+    </select>
+    {{end}}
+    <article class="markdown-preview" id="preview"></article>
+  </div>
 </div>{{end}}

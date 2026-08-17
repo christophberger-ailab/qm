@@ -200,6 +200,28 @@ document.body.addEventListener('input', function (evt) {
   }
 });
 
+// The stylesheet dropdown only shows up above the preview when more than
+// one custom CSS file exists (see the "content" template). Switching it
+// swaps the document-wide <link> to the chosen file, remembers the choice
+// server-side so it survives a restart and a fresh /open, and re-renders
+// the preview so it reflects the new styles immediately.
+document.body.addEventListener('change', function (evt) {
+  if (evt.target.id !== 'preview-css-select') {
+    return;
+  }
+  var name = evt.target.value;
+  var link = document.getElementById('preview-css-link');
+  if (link) {
+    link.href = '/config/preview.css?file=' + encodeURIComponent(name) + '&v=' + Date.now();
+  }
+  fetch('/config/active-css', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'file=' + encodeURIComponent(name)
+  });
+  updatePreview();
+});
+
 // currentPath is the page open in the editor; applySelection re-highlights
 // it after every tree re-render (moves, saves, reloads).
 var currentPath = null;

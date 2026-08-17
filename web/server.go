@@ -40,9 +40,10 @@ type server struct {
 	prefsFile string
 	prefs     map[string]projectPrefs
 
-	// previewCSSFile persists the user's preview stylesheet next to the
-	// render prefs; empty disables persistence and serves an empty sheet.
-	previewCSSFile string
+	// cssDir holds the custom preview stylesheets, next to the render
+	// prefs; empty disables persistence and serves the baked-in default
+	// from memory instead.
+	cssDir string
 
 	// job is the background render. It has its own lock: a render takes
 	// minutes and must not block the tree handlers.
@@ -63,11 +64,12 @@ func newServer(prefsFile string) (*server, error) {
 		return nil, err
 	}
 	s := &server{
-		mux:            http.NewServeMux(),
-		tmpl:           tmpl,
-		prefsFile:      prefsFile,
-		previewCSSFile: previewCSSFileForPrefs(prefsFile),
+		mux:    http.NewServeMux(),
+		tmpl:   tmpl,
+		prefsFile: prefsFile,
+		cssDir: cssDirForPrefs(prefsFile),
 	}
+	ensureDefaultCSS(s.cssDir)
 	s.loadPrefs()
 	static, err := iofs.Sub(assets, "assets/static")
 	if err != nil {
@@ -78,7 +80,9 @@ func newServer(prefsFile string) (*server, error) {
 	s.mux.HandleFunc("GET /config", s.config)
 	s.mux.HandleFunc("GET /config/preview-css", s.previewCSSEditor)
 	s.mux.HandleFunc("POST /config/preview-css", s.savePreviewCSSHandler)
+	s.mux.HandleFunc("POST /config/preview-css/new", s.newPreviewCSSHandler)
 	s.mux.HandleFunc("GET /config/preview.css", s.previewStylesheet)
+	s.mux.HandleFunc("POST /config/active-css", s.setActiveCSSHandler)
 	s.mux.HandleFunc("POST /open", s.open)
 	s.mux.HandleFunc("GET /tree", s.treeHandler)
 	s.mux.HandleFunc("GET /watch", s.watch)
@@ -107,14 +111,22 @@ type state struct {
 	Page   *contentView
 	Render renderView
 	Error  string
+	// CSSFiles are the custom preview stylesheets available; ActiveCSS is
+	// the one currently shown by the preview. A dropdown to switch between
+	// them appears above the preview only when there is more than one.
+	CSSFiles  []string
+	ActiveCSS string
 }
 
 // contentView is the editor pane: a page's title, its project-relative
-// path, and its text.
+// path, and its text, plus the custom stylesheet choices the preview
+// dropdown above it needs.
 type contentView struct {
-	Title string
-	Path  string
-	Body  string
+	Title     string
+	Path      string
+	Body      string
+	CSSFiles  []string
+	ActiveCSS string
 }
 
 // configView is the list of configuration entries shown by /config.
@@ -131,6 +143,10 @@ type configEntry struct {
 
 // previewCSSView is the page data for the custom preview stylesheet editor.
 type previewCSSView struct {
+	// File is the stylesheet currently being edited; Files lists all of
+	// them so the editor can offer a way to switch and to add another.
+	File    string
+	Files   []string
 	CSS     string
 	Message string
 	Error   string
@@ -160,7 +176,7 @@ type checkbox struct {
 
 // load builds the current template state; the caller must hold s.mu.
 func (s *server) load() (state, error) {
-	st := state{Root: s.root}
+	st := state{Root: s.root, CSSFiles: s.cssFiles(), ActiveCSS: s.activeCSS()}
 	if s.root == "" {
 		return st, nil
 	}
@@ -189,7 +205,13 @@ func (s *server) lastPage() *contentView {
 	if err != nil {
 		return nil
 	}
-	return &contentView{project.ParseFrontmatter(body).Title, rel, string(body)}
+	return &contentView{
+		Title:     project.ParseFrontmatter(body).Title,
+		Path:      rel,
+		Body:      string(body),
+		CSSFiles:  s.cssFiles(),
+		ActiveCSS: s.activeCSS(),
+	}
 }
 
 // renderView assembles the render panel from the project's book folders and
@@ -287,30 +309,72 @@ func (s *server) config(w http.ResponseWriter, r *http.Request) {
 func (s *server) previewCSSEditor(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.render(w, "preview-css-page", previewCSSView{CSS: s.loadPreviewCSS()})
+	file := s.cssFileParam(r.URL.Query().Get("file"))
+	s.render(w, "preview-css-page", previewCSSView{File: file, Files: s.cssFiles(), CSS: s.loadCSS(file)})
 }
 
-// savePreviewCSSHandler writes the user's stylesheet. It parses explicitly
+// cssFileParam validates a requested stylesheet name against the ones that
+// exist, falling back to the active stylesheet when the request names none
+// or an unknown one. The caller must hold s.mu.
+func (s *server) cssFileParam(name string) string {
+	if name != "" && slices.Contains(s.cssFiles(), name) {
+		return name
+	}
+	return s.activeCSS()
+}
+
+// savePreviewCSSHandler writes the named stylesheet. It parses explicitly
 // because the stylesheet is the user's own text, and a failed or malformed
 // form must not read as "save succeeded" by replacing it with an empty file.
 func (s *server) savePreviewCSSHandler(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := r.ParseForm(); err != nil {
-		s.render(w, "preview-css-page", previewCSSView{CSS: s.loadPreviewCSS(), Error: err.Error()})
+		file := s.cssFileParam(r.FormValue("file"))
+		s.render(w, "preview-css-page", previewCSSView{File: file, Files: s.cssFiles(), CSS: s.loadCSS(file), Error: err.Error()})
 		return
 	}
+	file := s.cssFileParam(r.PostForm.Get("file"))
 	if !r.PostForm.Has("css") {
-		s.render(w, "preview-css-page", previewCSSView{CSS: s.loadPreviewCSS(), Error: "missing css field"})
+		s.render(w, "preview-css-page", previewCSSView{File: file, Files: s.cssFiles(), CSS: s.loadCSS(file), Error: "missing css field"})
 		return
 	}
 	css := r.PostForm.Get("css")
-	view := previewCSSView{CSS: css, Message: "Saved."}
-	if err := s.savePreviewCSS(css); err != nil {
+	view := previewCSSView{File: file, Files: s.cssFiles(), CSS: css, Message: "Saved."}
+	if err := s.saveCSS(file, css); err != nil {
 		view.Message = ""
 		view.Error = err.Error()
 	}
 	s.render(w, "preview-css-page", view)
+}
+
+// newPreviewCSSHandler adds an alternate custom stylesheet, named by the
+// form, and opens it in the editor.
+func (s *server) newPreviewCSSHandler(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r.ParseForm()
+	name, err := s.createCSS(r.FormValue("name"))
+	if err != nil {
+		file := s.activeCSS()
+		s.render(w, "preview-css-page", previewCSSView{File: file, Files: s.cssFiles(), CSS: s.loadCSS(file), Error: err.Error()})
+		return
+	}
+	s.render(w, "preview-css-page", previewCSSView{File: name, Files: s.cssFiles(), CSS: s.loadCSS(name), Message: "Created."})
+}
+
+// setActiveCSSHandler remembers which stylesheet the live preview shows.
+// It is posted by the dropdown above the preview whenever the user
+// switches stylesheets.
+func (s *server) setActiveCSSHandler(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r.ParseForm()
+	if err := s.setActiveCSS(r.FormValue("file")); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *server) previewStylesheet(w http.ResponseWriter, r *http.Request) {
@@ -319,7 +383,8 @@ func (s *server) previewStylesheet(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/css")
 	// The stylesheet changes underfoot, so a stale browser copy reads like a lost save.
 	w.Header().Set("Cache-Control", "no-store")
-	fmt.Fprint(w, s.loadPreviewCSS())
+	file := s.cssFileParam(r.URL.Query().Get("file"))
+	fmt.Fprint(w, s.loadCSS(file))
 }
 
 func (s *server) open(w http.ResponseWriter, r *http.Request) {
@@ -521,7 +586,13 @@ func (s *server) content(w http.ResponseWriter, r *http.Request) {
 	title := project.ParseFrontmatter(body).Title
 	// Opening a page is what makes it the one to come back to.
 	s.rememberPage(rel)
-	s.render(w, "content", contentView{title, rel, string(body)})
+	s.render(w, "content", contentView{
+		Title:     title,
+		Path:      rel,
+		Body:      string(body),
+		CSSFiles:  s.cssFiles(),
+		ActiveCSS: s.activeCSS(),
+	})
 	// The reload button also refreshes the tree: outside edits may have
 	// changed titles or the chapter order.
 	if r.URL.Query().Get("reload") != "" {

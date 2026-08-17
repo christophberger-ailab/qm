@@ -60,6 +60,8 @@ constraints:
       7-1: The Config button opens a full config page whose entries are presented as a list that can grow
       7-2: 'The config list contains an entry named "Preview: Custom CSS" that opens the custom preview stylesheet editor'
       7-3: The custom preview stylesheet editor uses the embedded CodeMirror CSS mode, offers Save, and links back to the config page and the app
-      7-4: The custom preview stylesheet is stored beside the render prefs as `<user config dir>/qm/preview.css`
-      7-5: The app links the custom preview stylesheet route document-wide after `/static/app.css`, the route serves only that stored stylesheet as `text/css`, and an empty or absent stylesheet has no effect
+      7-4: Custom preview stylesheets are stored beside the render prefs as `<user config dir>/qm/custom-css/*.css`; the app ships a baked-in default that is materialized as `custom.css` the first time the app runs with a config directory that does not exist yet, and is never rewritten afterwards
+      7-4-1: The editor lets the user add an alternate stylesheet by name and switch which one it is editing once more than one exists
+      7-5: The app links the active custom preview stylesheet document-wide after `/static/app.css`, the route serves only the requested stored stylesheet as `text/css`, and an empty or absent stylesheet has no effect
       7-6: The editor tells the user to scope rules with `.markdown-preview` when they should affect only the preview
+      7-7: When more than one custom CSS file exists, a dropdown above the Markdown preview lets the user switch which one is active; the choice is remembered across restarts and the preview reloads to apply the newly selected stylesheet
