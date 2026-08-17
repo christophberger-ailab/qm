@@ -10,8 +10,9 @@ import (
 	"github.com/cboct/qm/internal/bookrender"
 )
 
-// renderPrefs is a project's remembered render selection.
-type renderPrefs struct {
+// projectPrefs is what the UI remembers about a project: the render
+// selection and the page last opened in the editor.
+type projectPrefs struct {
 	// Books are the selected book folder names.
 	Books []string `json:"books"`
 	// Profiles maps a book folder name to its selected Quarto profiles.
@@ -20,6 +21,9 @@ type renderPrefs struct {
 	Formats []string `json:"formats"`
 	// Slides selects the deck built from the pages' ::: slide blocks.
 	Slides bool `json:"slides"`
+	// Page is the project-relative path of the page last opened in the
+	// editor.
+	Page string `json:"page,omitempty"`
 }
 
 // renderFormats are the book output formats the UI offers.
@@ -28,14 +32,14 @@ var renderFormats = []string{"pdf", "docx"}
 // defaultPrefs is what a project gets before the user picks anything: no
 // book selected, so the Render button never kicks off a long run by
 // accident, but the usual pair of formats ready to go.
-func defaultPrefs() renderPrefs {
-	return renderPrefs{Formats: slices.Clone(renderFormats)}
+func defaultPrefs() projectPrefs {
+	return projectPrefs{Formats: slices.Clone(renderFormats)}
 }
 
 // profilesFor returns the profiles selected for a book, defaulting — for a
 // book the user never configured — to the profiles named after it:
 // `dispatcher` and `dispatcher-fw` both belong to the `dispatcher` folder.
-func (p renderPrefs) profilesFor(book string, available []string) []string {
+func (p projectPrefs) profilesFor(book string, available []string) []string {
 	matching := bookrender.DefaultProfiles(book, available)
 	if sel, ok := p.Profiles[book]; ok {
 		return intersect(sel, matching)
@@ -56,8 +60,10 @@ func intersect(sel, available []string) []string {
 	return out
 }
 
-// defaultPrefsFile returns the render selections file in the user's config
-// directory, or "" if no config directory is available.
+// defaultPrefsFile returns the per-project preferences file in the user's
+// config directory, or "" if no config directory is available. The file is
+// still called render.json: it began as the render selection alone, and
+// renaming it would drop every selection users have already made.
 func defaultPrefsFile() string {
 	dir, err := os.UserConfigDir()
 	if err != nil {
@@ -77,14 +83,14 @@ func previewCSSFileForPrefs(prefsFile string) string {
 
 // prefsFor returns the saved selection of the open project, or the default
 // one. The caller must hold s.mu.
-func (s *server) prefsFor(root string) renderPrefs {
+func (s *server) prefsFor(root string) projectPrefs {
 	if p, ok := s.prefs[root]; ok {
 		return p
 	}
 	return defaultPrefs()
 }
 
-// savePrefs writes the per-project render selections to the prefs file.
+// savePrefs writes the per-project preferences to the prefs file.
 // Persistence is best effort: the in-memory state is already updated, so a
 // write failure only loses the selection across restarts. The caller must
 // hold s.mu.
@@ -105,12 +111,41 @@ func (s *server) savePrefs() {
 // loadPrefs reads the prefs file. A missing or unreadable file just means
 // no saved selections yet.
 func (s *server) loadPrefs() {
-	s.prefs = map[string]renderPrefs{}
+	s.prefs = map[string]projectPrefs{}
 	if s.prefsFile == "" {
 		return
 	}
 	if b, err := os.ReadFile(s.prefsFile); err == nil {
 		json.Unmarshal(b, &s.prefs)
+	}
+}
+
+// rememberPage records the page the editor now shows, so the app comes back
+// to it: after a restart, and after the trip to the config pages and back,
+// which leaves and reloads the app page. The caller must hold s.mu.
+func (s *server) rememberPage(rel string) {
+	if s.root == "" {
+		return
+	}
+	p := s.prefsFor(s.root)
+	if p.Page == rel {
+		return
+	}
+	p.Page = rel
+	s.prefs[s.root] = p
+	s.savePrefs()
+}
+
+// forgetPage drops the remembered page when it is the one named by rel, so
+// a deleted page does not stay on record. The caller must hold s.mu.
+func (s *server) forgetPage(rel string) {
+	if s.root == "" {
+		return
+	}
+	if p := s.prefsFor(s.root); p.Page == rel {
+		p.Page = ""
+		s.prefs[s.root] = p
+		s.savePrefs()
 	}
 }
 

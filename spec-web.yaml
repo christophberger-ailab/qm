@@ -40,8 +40,12 @@ constraints:
       3-6: The editor is CodeMirror, embedded in the binary like the other assets, and highlights the page's YAML frontmatter and Markdown
       3-6-1: A toggle button in the editor's own column, above the editor text, switches Vim keybindings on and off; the choice is remembered across sessions
       3-6-2: Vim mode is off unless the user turns it on
-      3-6-3: `:w` saves the page immediately instead of waiting for the autosave delay
+      3-6-3: "`:w` saves the page immediately instead of waiting for the autosave delay"
       3-6-4: The textarea remains the field the edit form posts, so autosave and the preview are unaffected by the editor
+      3-7: The page open in the editor is remembered per project and reopened when the app page loads, so a restart, or a visit to the config pages and back, returns to the page the user was working on
+      3-7-1: The reopened page is selected in the page tree, and collapsed branches above it are expanded
+      3-7-2: A remembered page that is no longer there is forgotten, and the editor starts empty
+      3-7-3: The remembered page is stored with the render selection in `<user config dir>/qm/render.json`
       4: The tree is polled for outside changes and refreshed when the project changed on disk
       5: The render panel selects book folders, their matching profiles, the output formats, and whether slides are rendered
       5-1: The selection is remembered per project in `<user config dir>/qm/render.json`
@@ -54,7 +58,7 @@ constraints:
       6-1: Only one render runs at a time
       7: The top bar shows a Config button at the far right
       7-1: The Config button opens a full config page whose entries are presented as a list that can grow
-      7-2: The config list contains an entry named "Preview: Custom CSS" that opens the custom preview stylesheet editor
+      7-2: 'The config list contains an entry named "Preview: Custom CSS" that opens the custom preview stylesheet editor'
       7-3: The custom preview stylesheet editor uses the embedded CodeMirror CSS mode, offers Save, and links back to the config page and the app
       7-4: The custom preview stylesheet is stored beside the render prefs as `<user config dir>/qm/preview.css`
       7-5: The app links the custom preview stylesheet route document-wide after `/static/app.css`, the route serves only that stored stylesheet as `text/css`, and an empty or absent stylesheet has no effect

@@ -164,6 +164,113 @@ func TestContent(t *testing.T) {
 	}
 }
 
+// A page opened in the editor is remembered per project and served with the
+// app page again: the user comes back to what they were working on, whether
+// after a restart or after a trip to the config pages, which leaves and
+// reloads the app page.
+func TestLastOpenedPageIsRestored(t *testing.T) {
+	root := fixture(t)
+	prefs := filepath.Join(t.TempDir(), "render.json")
+	srv, err := newServer(prefs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	post(t, srv, "/open", url.Values{"path": {root}})
+
+	// Nothing opened yet: the editor pane starts empty.
+	if body := get(t, srv, "/").Body.String(); !strings.Contains(body, "Select a page to view its content.") {
+		t.Errorf("fresh project does not start with an empty editor:\n%s", body)
+	}
+
+	get(t, srv, "/content?path=chapter2/second.qmd")
+	assertServesPage(t, get(t, srv, "/").Body.String(), "chapter2/second.qmd", "# Second")
+
+	// A new server reading the same prefs file is a restart.
+	srv2, err := newServer(prefs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	post(t, srv2, "/open", url.Values{"path": {root}})
+	assertServesPage(t, get(t, srv2, "/").Body.String(), "chapter2/second.qmd", "# Second")
+}
+
+// assertServesPage checks that body carries the editor pane for rel, filled
+// with the page's text.
+func assertServesPage(t *testing.T, body, rel, text string) {
+	t.Helper()
+	for _, want := range []string{
+		`<input type="hidden" name="path" value="` + rel + `">`,
+		text,
+		`class="editor-split"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page does not open %s, missing %q:\n%s", rel, want, body)
+		}
+	}
+}
+
+// Every project comes back to its own page, and switching projects brings
+// the other one's page along with the swapped-in panes.
+func TestLastOpenedPageIsPerProject(t *testing.T) {
+	one, two := fixture(t), fixture(t)
+	srv, err := newServer(filepath.Join(t.TempDir(), "render.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	post(t, srv, "/open", url.Values{"path": {one}})
+	get(t, srv, "/content?path=chapter2/second.qmd")
+
+	rec := post(t, srv, "/open", url.Values{"path": {two}})
+	if strings.Contains(rec.Body.String(), `value="chapter2/second.qmd"`) {
+		t.Errorf("open page leaked into another project:\n%s", rec.Body)
+	}
+	get(t, srv, "/content?path=chapter2/third.qmd")
+	assertServesPage(t, get(t, srv, "/").Body.String(), "chapter2/third.qmd", "# Third")
+
+	rec = post(t, srv, "/open", url.Values{"path": {one}})
+	assertServesPage(t, rec.Body.String(), "chapter2/second.qmd", "# Second")
+}
+
+// A remembered page may be gone by the time the app is opened again --
+// deleted from the tree, or moved away outside the app. The editor then
+// starts empty instead of reporting an error.
+func TestLastOpenedPageGone(t *testing.T) {
+	srv, root := testServer(t)
+	get(t, srv, "/content?path=chapter2/second.qmd")
+	if rec := post(t, srv, "/delete", url.Values{"path": {"chapter2/second.qmd"}}); rec.Code != http.StatusOK {
+		t.Fatalf("delete: status %d: %s", rec.Code, rec.Body)
+	}
+	body := get(t, srv, "/").Body.String()
+	if strings.Contains(body, `value="chapter2/second.qmd"`) {
+		t.Errorf("deleted page reopened:\n%s", body)
+	}
+	if !strings.Contains(body, "Select a page to view its content.") {
+		t.Errorf("editor does not start empty after the page went away:\n%s", body)
+	}
+
+	// A page that vanishes behind the app's back is dropped just as quietly.
+	get(t, srv, "/content?path=chapter2/third.qmd")
+	if err := os.Remove(filepath.Join(root, "chapter2", "third.qmd")); err != nil {
+		t.Fatal(err)
+	}
+	body = get(t, srv, "/").Body.String()
+	if strings.Contains(body, `value="chapter2/third.qmd"`) {
+		t.Errorf("missing page reopened:\n%s", body)
+	}
+}
+
+// The render panel posts its selection on every change; that must not wipe
+// the page the project has open.
+func TestRenderSelectionKeepsOpenPage(t *testing.T) {
+	srv, _ := testServer(t)
+	get(t, srv, "/content?path=chapter2/second.qmd")
+	form := url.Values{"book": {"chapter2"}, "format": {"pdf"}}
+	if rec := post(t, srv, "/render/select", form); rec.Code != http.StatusNoContent {
+		t.Fatalf("select: status %d: %s", rec.Code, rec.Body)
+	}
+	assertServesPage(t, get(t, srv, "/").Body.String(), "chapter2/second.qmd", "# Second")
+}
+
 // The editor is served with the preview pane and its toggle beside it; the
 // preview itself is filled in the browser from the textarea (preview.js).
 func TestContentServesPreviewPane(t *testing.T) {

@@ -170,7 +170,7 @@
   </div>
 </section>
 <div id="divider" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
-<section id="content-pane"><div id="content"><p class="empty">Select a page to view its content.</p></div></section>
+<section id="content-pane"><div id="content">{{if .Page}}{{template "content" .Page}}{{else}}<p class="empty">Select a page to view its content.</p>{{end}}</div></section>
 {{else}}
 <section id="tree-pane"><p class="empty">Open a Quarto project to get started.</p></section>
 <div id="divider" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
@@ -213,7 +213,7 @@
   <form class="edit-form" hx-post="/save" hx-trigger="input delay:1s from:find textarea" hx-swap="none">
     <input type="hidden" name="path" value="{{.Path}}">
     <div class="editor-toolbar">
-      <button type="button" class="vim-toggle" id="vim-toggle" aria-pressed="false" title="Vim keybindings in the editor">⌨ Vim</button>
+      <button type="button" class="vim-toggle" id="vim-toggle" aria-pressed="false" title="Vim keybindings in the editor">⌨ Vim Mode</button>
     </div>
     <textarea name="body" class="file-content">{{.Body}}</textarea>
   </form>

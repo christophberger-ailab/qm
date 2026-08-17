@@ -38,7 +38,7 @@ type server struct {
 	// prefsFile persists the render selection per project root across
 	// restarts; empty disables persistence. prefs holds its content.
 	prefsFile string
-	prefs     map[string]renderPrefs
+	prefs     map[string]projectPrefs
 
 	// previewCSSFile persists the user's preview stylesheet next to the
 	// render prefs; empty disables persistence and serves an empty sheet.
@@ -100,10 +100,21 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // state bundles everything the page templates need.
 type state struct {
-	Root   string
-	Tree   *project.Tree
+	Root string
+	Tree *project.Tree
+	// Page is the page the editor opens with — the one this project last
+	// had open — or nil when there is none to restore.
+	Page   *contentView
 	Render renderView
 	Error  string
+}
+
+// contentView is the editor pane: a page's title, its project-relative
+// path, and its text.
+type contentView struct {
+	Title string
+	Path  string
+	Body  string
 }
 
 // configView is the list of configuration entries shown by /config.
@@ -154,9 +165,31 @@ func (s *server) load() (state, error) {
 		return st, nil
 	}
 	st.Render = s.renderView()
+	st.Page = s.lastPage()
 	tree, err := project.Load(s.root)
 	st.Tree = tree
 	return st, err
+}
+
+// lastPage is the editor pane the app page starts with: the page this
+// project last had open. It returns nil when the project never had one, or
+// when the page has since been deleted, moved, or renamed — the app then
+// opens with an empty editor instead of an error. The caller must hold
+// s.mu.
+func (s *server) lastPage() *contentView {
+	rel := s.prefsFor(s.root).Page
+	if rel == "" {
+		return nil
+	}
+	abs, err := s.resolvePath(rel)
+	if err != nil {
+		return nil
+	}
+	body, err := os.ReadFile(abs)
+	if err != nil {
+		return nil
+	}
+	return &contentView{project.ParseFrontmatter(body).Title, rel, string(body)}
 }
 
 // renderView assembles the render panel from the project's book folders and
@@ -420,8 +453,13 @@ func (s *server) create(w http.ResponseWriter, r *http.Request) {
 func (s *server) delete(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	rel := r.FormValue("path")
 	s.apply(w, func(t *project.Tree) error {
-		return t.DeletePage(r.FormValue("path"))
+		if err := t.DeletePage(rel); err != nil {
+			return err
+		}
+		s.forgetPage(rel)
+		return nil
 	})
 }
 
@@ -481,9 +519,9 @@ func (s *server) content(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	title := project.ParseFrontmatter(body).Title
-	s.render(w, "content", struct {
-		Title, Path, Body string
-	}{title, rel, string(body)})
+	// Opening a page is what makes it the one to come back to.
+	s.rememberPage(rel)
+	s.render(w, "content", contentView{title, rel, string(body)})
 	// The reload button also refreshes the tree: outside edits may have
 	// changed titles or the chapter order.
 	if r.URL.Query().Get("reload") != "" {
@@ -524,16 +562,15 @@ func (s *server) save(w http.ResponseWriter, r *http.Request) {
 	s.rememberFP()
 }
 
-// formValues reads the render panel's form into a selection. The profile
-// boxes of a book are named "profile.<book>" so that each book keeps its
-// own set.
-func formValues(form map[string][]string, root string) renderPrefs {
-	p := renderPrefs{
-		Books:    form["book"],
-		Formats:  form["format"],
-		Profiles: map[string][]string{},
-		Slides:   len(form["slides"]) > 0,
-	}
+// formValues reads the render panel's form into the given preferences,
+// replacing their render selection and leaving everything else the project
+// remembers — the open page — alone. The profile boxes of a book are named
+// "profile.<book>" so that each book keeps its own set.
+func formValues(p projectPrefs, form map[string][]string, root string) projectPrefs {
+	p.Books = form["book"]
+	p.Formats = form["format"]
+	p.Profiles = map[string][]string{}
+	p.Slides = len(form["slides"]) > 0
 	for _, b := range bookrender.Books(root) {
 		if sel := form["profile."+b]; len(sel) > 0 {
 			p.Profiles[b] = sel
@@ -557,7 +594,7 @@ func (s *server) selectRender(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.ParseForm()
-	s.prefs[s.root] = formValues(r.Form, s.root)
+	s.prefs[s.root] = formValues(s.prefsFor(s.root), r.Form, s.root)
 	s.savePrefs()
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -572,7 +609,7 @@ func (s *server) startRender(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.ParseForm()
-	prefs := formValues(r.Form, s.root)
+	prefs := formValues(s.prefsFor(s.root), r.Form, s.root)
 	s.prefs[s.root] = prefs
 	s.savePrefs()
 

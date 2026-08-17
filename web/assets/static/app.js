@@ -204,35 +204,75 @@ document.body.addEventListener('input', function (evt) {
 // it after every tree re-render (moves, saves, reloads).
 var currentPath = null;
 
+// syncCurrentPath reads the path out of the editor pane now on screen. The
+// pane arrives either from a click on a tree entry or, when the app page is
+// loaded, already filled with the page the project last had open; both must
+// leave the same entry selected in the tree.
+function syncCurrentPath() {
+  var input = document.querySelector('#content input[name="path"]');
+  currentPath = input ? input.value : null;
+}
+
 function applySelection() {
   document.querySelectorAll('#tree li.page').forEach(function (li) {
     li.classList.toggle('selected', !!currentPath && li.dataset.path === currentPath);
   });
 }
 
+// revealSelection expands the collapsed branches above the selected page,
+// so a restored page is not hidden inside one.
+function revealSelection() {
+  var li = currentPath && document.querySelector('#tree li.page.selected');
+  if (!li) {
+    return;
+  }
+  for (var node = li.parentElement; node; node = node.parentElement) {
+    if (node.id === 'tree') {
+      break;
+    }
+    if (node.classList && node.classList.contains('collapsed')) {
+      node.classList.remove('collapsed');
+      collapsed.delete(node.dataset.key);
+      saveCollapsed();
+    }
+  }
+}
+
 document.addEventListener('DOMContentLoaded', function () {
   loadCollapsed();
   initTree();
   initDivider('divider', 'tree-pane', 'treePaneWidth', 'left');
+  // The editor pane comes with the page when a project has a page to
+  // restore, so it needs the same setup a swapped-in one gets.
+  syncCurrentPath();
+  applySelection();
+  revealSelection();
+  initDivider('preview-divider', 'preview', 'previewWidth', 'right');
   initEditor();
   applyPreview();
+  refreshEditor();
 });
 
 document.body.addEventListener('htmx:afterSwap', function (evt) {
   var id = evt.detail && evt.detail.target && evt.detail.target.id;
+  if (id === 'main') {
+    // /open replaces both panes at once: the tree of the project just
+    // opened, and the editor holding the page that project last had open.
+    syncCurrentPath();
+  }
   if (id === 'tree' || id === 'main') { // /open swaps #main, everything else #tree
     initTree();
     applySelection();
   }
-  if (id === 'content') { // track whatever the editor now shows
-    var input = evt.detail.target.querySelector('input[name="path"]');
-    currentPath = input ? input.value : null;
-    applySelection();
-    initEditor(); // mount before the preview reads the editor's text
-    applyPreview();
-  }
   if (id === 'main') {
-    initEditor();
+    revealSelection();
+  }
+  if (id === 'content') { // track whatever the editor now shows
+    syncCurrentPath();
+    applySelection();
+  }
+  if (id === 'content' || id === 'main') {
+    initEditor(); // mount before the preview reads the editor's text
     applyPreview();
   }
 });
@@ -254,7 +294,7 @@ document.body.addEventListener('htmx:afterSettle', function (evt) {
   if (id === 'main') {
     initDivider('divider', 'tree-pane', 'treePaneWidth', 'left');
   }
-  if (id === 'content') { // the editor/preview split comes with the editor
+  if (id === 'content' || id === 'main') { // the editor/preview split comes with the editor
     initDivider('preview-divider', 'preview', 'previewWidth', 'right');
     applyPreview();
     refreshEditor(); // the saved pane width has just been applied
