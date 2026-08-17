@@ -43,8 +43,12 @@ constraints:
       3-6-3: `:w` saves the page immediately instead of waiting for the autosave delay
       3-6-4: The textarea remains the field the edit form posts, so autosave and the preview are unaffected by the editor
       4: The tree is polled for outside changes and refreshed when the project changed on disk
-      5: The render panel selects book folders, their profiles, the output formats, and whether slides are rendered
+      5: The render panel selects book folders, their matching profiles, the output formats, and whether slides are rendered
       5-1: The selection is remembered per project in `<user config dir>/qm/render.json`
-      5-2: A book the user never configured defaults to the profiles named after it
+      5-2: For each book folder, only profiles named `<folder>` or `<folder>-<suffix>` are offered or submitted for that folder
+      5-3: A book the user never configured defaults to the profiles named after it
+      5-4: A book with two or more matching profiles shows them in a nested checkbox submenu, and each checked profile is one render run
+      5-5: A book with exactly one matching profile has no submenu, but the form submits that profile through a hidden input
+      5-6: A book with no matching profile has no profile inputs and renders with the project's default configuration
       6: A render runs in the background; the panel polls its log while it runs
       6-1: Only one render runs at a time

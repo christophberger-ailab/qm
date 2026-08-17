@@ -35,15 +35,16 @@ func defaultPrefs() renderPrefs {
 // book the user never configured — to the profiles named after it:
 // `dispatcher` and `dispatcher-fw` both belong to the `dispatcher` folder.
 func (p renderPrefs) profilesFor(book string, available []string) []string {
+	matching := bookrender.DefaultProfiles(book, available)
 	if sel, ok := p.Profiles[book]; ok {
-		return intersect(sel, available)
+		return intersect(sel, matching)
 	}
-	return bookrender.DefaultProfiles(book, available)
+	return matching
 }
 
 // intersect keeps the entries of sel that still exist in available, so a
-// saved selection naming a profile or book that has since been deleted
-// neither shows up nor breaks the restore.
+// saved selection naming a deleted or no longer matching profile neither
+// shows up nor breaks the restore.
 func intersect(sel, available []string) []string {
 	out := make([]string, 0, len(sel))
 	for _, s := range sel {
