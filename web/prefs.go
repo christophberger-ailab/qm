@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -64,6 +65,15 @@ func defaultPrefsFile() string {
 	return filepath.Join(dir, "qm", "render.json")
 }
 
+// previewCSSFileForPrefs returns the custom preview stylesheet path that
+// lives beside the render prefs, or "" when persistence is disabled.
+func previewCSSFileForPrefs(prefsFile string) string {
+	if prefsFile == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(prefsFile), "preview.css")
+}
+
 // prefsFor returns the saved selection of the open project, or the default
 // one. The caller must hold s.mu.
 func (s *server) prefsFor(root string) renderPrefs {
@@ -101,4 +111,31 @@ func (s *server) loadPrefs() {
 	if b, err := os.ReadFile(s.prefsFile); err == nil {
 		json.Unmarshal(b, &s.prefs)
 	}
+}
+
+// loadPreviewCSS reads the user stylesheet. Missing or unreadable files
+// behave like an empty stylesheet because the preview must still load.
+// The caller must hold s.mu.
+func (s *server) loadPreviewCSS() string {
+	if s.previewCSSFile == "" {
+		return ""
+	}
+	b, err := os.ReadFile(s.previewCSSFile)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// savePreviewCSS writes the user stylesheet. The caller reports failures in
+// the UI; the in-memory request has already been handled, so the server
+// keeps running even when persistence fails. The caller must hold s.mu.
+func (s *server) savePreviewCSS(css string) error {
+	if s.previewCSSFile == "" {
+		return errors.New("no config directory available")
+	}
+	if err := os.MkdirAll(filepath.Dir(s.previewCSSFile), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(s.previewCSSFile, []byte(css), 0o644)
 }

@@ -68,6 +68,17 @@ body {
   white-space: nowrap;
 }
 
+.topbar-config,
+.topbar-nav {
+  margin-left: auto;
+}
+
+.topbar-nav {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 .open-form {
   display: flex;
   gap: 0.4rem;
@@ -168,7 +179,11 @@ input:not([type]),
   color: var(--fg);
 }
 
-button {
+button,
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-size: 0.85rem;
   padding: 0.3rem 0.6rem;
   border: 1px solid var(--border);
@@ -176,10 +191,89 @@ button {
   background: var(--hover);
   color: var(--fg);
   cursor: pointer;
+  text-decoration: none;
 }
 
-button:hover {
+button:hover,
+.button:hover {
   background: var(--accent-bg);
+}
+
+.error,
+.notice {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  margin: 0.8rem 0;
+}
+
+.error {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.notice {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Config pages */
+
+.config-main {
+  width: min(54rem, 100%);
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+.config-main h2 {
+  margin: 0 0 0.4rem;
+}
+
+.config-intro {
+  margin: 0 0 1.2rem;
+  color: var(--muted);
+}
+
+.config-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.config-entry {
+  display: block;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--fg);
+  text-decoration: none;
+  background: var(--bg);
+}
+
+.config-entry:hover {
+  background: var(--hover);
+  border-color: var(--accent);
+}
+
+.config-entry-title {
+  display: block;
+  font-weight: 600;
+}
+
+.config-entry-description {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.config-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
 }
 
 /* Panes */
@@ -490,6 +584,22 @@ textarea.file-content {
   min-height: 12rem;
 }
 
+textarea.preview-css-content {
+  width: 100%;
+  min-height: 24rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--hover);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.75rem;
+  margin: 0;
+  color: var(--fg);
+  resize: vertical;
+}
+
 /* CodeMirror
  *
  * The editor mounts on the textarea, which stays in the form -- hidden --
@@ -505,6 +615,20 @@ textarea.file-content {
   flex: 1;
   min-height: 0;
   height: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  background: var(--hover);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.75rem 0;
+}
+
+/* The config editor is not inside the split pane, so it needs its own
+   height while reusing the themed CodeMirror frame. */
+.config-editor .CodeMirror {
+  height: 24rem;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.85rem;
   line-height: 1.5;
@@ -740,4 +864,3 @@ div.CodeMirror-selected {
 .markdown-preview .callout-important {
   border-left-color: var(--danger);
 }
-

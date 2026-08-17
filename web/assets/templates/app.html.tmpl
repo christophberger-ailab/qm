@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/static/codemirror/codemirror.css">
   <link rel="stylesheet" href="/static/codemirror/dialog.css">
   <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/config/preview.css">
   <script src="/static/htmx.min.js"></script>
   <script src="/static/sortable.min.js"></script>
   <script src="/static/marked.umd.js"></script>
@@ -39,6 +40,7 @@
       <button type="submit">Open</button>
     </form>
     <div id="render-panel">{{template "render" .}}</div>
+    <a class="button topbar-config" href="/config">Config</a>
   </header>
   <main class="panes" id="main">
     {{template "main" .}}
@@ -76,6 +78,74 @@
   {{else if .Failed}}<span class="render-status failed">Render failed</span>
   {{else if .Lines}}<span class="render-status ok">Done</span>{{end}}
 </div>{{end}}
+
+{{define "config-page"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quarto Sorter Config</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Quarto Sorter</h1>
+    <nav class="topbar-nav"><a class="button" href="/">App</a></nav>
+  </header>
+  <main class="config-main">
+    <h2>Config</h2>
+    <p class="config-intro">Choose a configuration area.</p>
+    <ul class="config-list">
+      {{range .Entries}}<li>
+        <a class="config-entry" href="{{.Href}}">
+          <span class="config-entry-title">{{.Title}}</span>
+          <span class="config-entry-description">{{.Description}}</span>
+        </a>
+      </li>{{end}}
+    </ul>
+  </main>
+</body>
+</html>{{end}}
+
+{{define "preview-css-page"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Preview Custom CSS</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/codemirror/codemirror.css">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/codemirror/codemirror.js"></script>
+  <script src="/static/codemirror/css.js"></script>
+  <script src="/static/config.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>Quarto Sorter</h1>
+    <nav class="topbar-nav">
+      <a class="button" href="/config">Config</a>
+      <a class="button" href="/">App</a>
+    </nav>
+  </header>
+  <main class="config-main">
+    <h2>Preview: Custom CSS</h2>
+    <p class="config-intro">Add CSS that should override the built-in Markdown preview styles.</p>
+    <p class="config-intro">The stylesheet is loaded document-wide after the app's own stylesheet; scope rules with <code>.markdown-preview</code> to affect only the preview, for example <code>.markdown-preview h1 { color: rebeccapurple; }</code>.</p>
+    {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
+    {{if .Message}}<div class="notice">{{.Message}}</div>{{end}}
+    <form class="config-editor" method="post" action="/config/preview-css">
+      <textarea name="css" class="preview-css-content" spellcheck="false">{{.CSS}}</textarea>
+      <div class="config-actions">
+        <button type="submit">Save</button>
+        <a class="button" href="/config">Back to Config</a>
+        <a class="button" href="/">Back to App</a>
+      </div>
+    </form>
+  </main>
+</body>
+</html>{{end}}
 
 {{define "main"}}{{if .Tree}}
 <section id="tree-pane">
