@@ -466,6 +466,15 @@ p.empty {
 
 /* Content editor */
 
+/* The editor's own toolbar, above the text and inside the editor column, so
+   its buttons line up with the editor rather than with the preview. */
+.editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: none;
+}
+
 .edit-form {
   display: flex;
   flex-direction: column;

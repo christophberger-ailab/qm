@@ -309,7 +309,10 @@ func TestEditorAssetOrder(t *testing.T) {
 }
 
 // The editor pane carries the vim toggle, which starts unpressed: vim mode
-// is a choice the user makes, not the default.
+// is a choice the user makes, not the default. The toggle sits in the
+// editor's own column -- between the form that holds the text and the
+// divider the preview begins after -- so that it stands above the editor it
+// acts on rather than above the preview.
 func TestContentServesVimToggle(t *testing.T) {
 	srv, _ := testServer(t)
 	body := get(t, srv, "/content?path=index.qmd").Body.String()
@@ -318,6 +321,12 @@ func TestContentServesVimToggle(t *testing.T) {
 	}
 	if !strings.Contains(body, `id="vim-toggle" aria-pressed="false"`) {
 		t.Error("vim toggle does not start unpressed")
+	}
+	form := strings.Index(body, `class="edit-form"`)
+	toggle := strings.Index(body, `id="vim-toggle"`)
+	divider := strings.Index(body, `id="preview-divider"`)
+	if !(form < toggle && toggle < divider) {
+		t.Errorf("vim toggle is not in the editor column:\n%s", body)
 	}
 }
 

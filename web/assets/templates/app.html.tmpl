@@ -127,12 +127,17 @@
   <h2 class="content-title" id="content-title">{{template "content-heading" .}}</h2>
   <span class="save-status" id="save-status"></span>
   <button type="button" class="preview-toggle" id="preview-toggle" aria-pressed="true" title="Show or hide the Markdown preview">👁 Preview</button>
-  <button type="button" class="vim-toggle" id="vim-toggle" aria-pressed="false" title="Vim keybindings in the editor">⌨ Vim</button>
   <button class="reload" title="Reload from disk" hx-get="/content?path={{.Path}}&reload=1" hx-target="#content" hx-swap="innerHTML">↻ Reload</button>
 </div>
 <div class="editor-split">
+  {{/* The vim toggle sits in the editor's own column so that it stands
+       above what it acts on; the content header spans both columns and put
+       it above the preview. */ -}}
   <form class="edit-form" hx-post="/save" hx-trigger="input delay:1s from:find textarea" hx-swap="none">
     <input type="hidden" name="path" value="{{.Path}}">
+    <div class="editor-toolbar">
+      <button type="button" class="vim-toggle" id="vim-toggle" aria-pressed="false" title="Vim keybindings in the editor">⌨ Vim</button>
+    </div>
     <textarea name="body" class="file-content">{{.Body}}</textarea>
   </form>
   <div id="preview-divider" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
