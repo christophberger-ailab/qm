@@ -293,6 +293,120 @@ function registerSpanExtension() {
   });
 }
 
+// matchImage looks for a Markdown image at the start of src and, if one is
+// found, for a Pandoc attribute block (`{width=50%}`) immediately after it.
+// Only the attributed form is of interest here -- a plain `![alt](src)` is
+// left to marked's own image tokenizer -- so callers get null both when src
+// does not start with an image and when it does but no attributes follow.
+var imageRE = /^!\[((?:\\.|[^\[\]\\])*)\]\(\s*(<(?:\\.|[^<>\\])*>|(?:\\.|[^()\s\\])*)(?:\s+"((?:\\.|[^"\\])*)"|\s+'((?:\\.|[^'\\])*)')?\s*\)/;
+
+function matchImage(src) {
+  var m = imageRE.exec(src);
+  if (!m) {
+    return null;
+  }
+  var attrs = /^\{([^}\n]*)\}/.exec(src.slice(m[0].length));
+  if (!attrs) {
+    return null; // not immediately followed by an attribute block
+  }
+  var href = m[2];
+  if (href.charAt(0) === '<' && href.charAt(href.length - 1) === '>') {
+    href = href.slice(1, -1);
+  }
+  return {
+    raw: m[0] + attrs[0],
+    alt: m[1],
+    href: href,
+    title: m[3] !== undefined ? m[3] : m[4],
+    attrs: attrs[1]
+  };
+}
+
+// imageAttrsToHTML turns the attribute text following an image
+// (`{width=50%}`) into HTML attributes. Unlike attrsToHTML (used for divs
+// and spans), key/value pairs are not dropped: since image attributes
+// almost always name a CSS property -- width and height above all -- each
+// becomes part of a style attribute instead, and an explicit `style` value
+// is folded in the same way.
+function imageAttrsToHTML(attrs) {
+  var classes = [];
+  var id = '';
+  var styles = [];
+  attrs.trim().split(/\s+/).forEach(function (token) {
+    if (token === '') {
+      return;
+    }
+    var eq = token.indexOf('=');
+    if (eq >= 0) {
+      var key = token.slice(0, eq);
+      var value = token.slice(eq + 1).replace(/^["']|["']$/g, '');
+      styles.push(key === 'style' ? value.replace(/;\s*$/, '') : key + ': ' + value);
+      return;
+    }
+    if (token.charAt(0) === '#') {
+      id = token.slice(1);
+    } else if (token.charAt(0) === '.') {
+      classes.push(token.slice(1));
+    } else {
+      classes.push(token);
+    }
+  });
+  var out = '';
+  if (classes.length > 0) {
+    out += ' class="' + escapeHTML(classes.join(' ')) + '"';
+  }
+  if (id !== '') {
+    out += ' id="' + escapeHTML(id) + '"';
+  }
+  if (styles.length > 0) {
+    out += ' style="' + escapeHTML(styles.join('; ')) + '"';
+  }
+  return out;
+}
+
+var imageExtensionRegistered = false;
+
+// registerImageExtension teaches marked about the attribute block that may
+// follow an image. It runs once, the first time marked is available, since
+// marked.use() adds the extension for good.
+function registerImageExtension() {
+  if (imageExtensionRegistered || typeof marked === 'undefined') {
+    return;
+  }
+  imageExtensionRegistered = true;
+  marked.use({
+    extensions: [{
+      name: 'quartoImage',
+      level: 'inline',
+      start: function (src) {
+        var match = src.match(/!\[/);
+        return match ? match.index : -1;
+      },
+      tokenizer: function (src) {
+        var img = matchImage(src);
+        if (!img) {
+          return undefined; // no attributes: let marked's own tokenizer render it
+        }
+        return {
+          type: 'quartoImage',
+          raw: img.raw,
+          href: img.href,
+          title: img.title,
+          alt: img.alt,
+          attrs: img.attrs
+        };
+      },
+      renderer: function (token) {
+        var out = '<img src="' + escapeHTML(token.href) + '" alt="' + escapeHTML(token.alt) + '"';
+        if (token.title) {
+          out += ' title="' + escapeHTML(token.title) + '"';
+        }
+        return out + imageAttrsToHTML(token.attrs) + '>';
+      }
+    }]
+  });
+}
+
 // renderPreview fills el with the preview of the Quarto Markdown in text.
 // pagePath is the edited page's path relative to the project root, which is
 // what the image paths resolve against.
@@ -302,6 +416,7 @@ function renderPreview(el, text, pagePath) {
     return;
   }
   registerSpanExtension();
+  registerImageExtension();
   var page = splitFrontmatter(text);
   var html = '';
   if (page.front.trim() !== '') {
