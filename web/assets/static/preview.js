@@ -7,6 +7,8 @@
 //   - YAML frontmatter is shown verbatim in a small header block,
 //   - Pandoc fenced divs (`::: {.callout-note}`) become real <div>s so their
 //     content is laid out instead of printed as literal colons,
+//   - Pandoc bracketed spans (`[text]{.class}`) become real <span>s the
+//     same way,
 //   - image sources are pointed at the server's /media route so that the
 //     page's images show up (see mediaURL),
 //   - everything else is CommonMark/GFM as the embedded marked library reads
@@ -46,12 +48,14 @@ function splitFrontmatter(text) {
   return { front: '', body: text }; // unterminated: treat it all as body
 }
 
-// divAttrs turns the attribute text of an opening div fence into HTML
-// attributes. Both spellings Pandoc accepts are handled: the shorthand
-// `::: slide` and the explicit `::: {#id .slide key="value"}`. Key/value
+// parseAttrs reads the attribute text of a fenced div or bracketed span --
+// both spellings Pandoc accepts are handled: the shorthand `::: slide` /
+// `[text]{.slide}` and the explicit `::: {#id .slide key="value"}`. Key/value
 // attributes are dropped -- the preview only needs the classes to style by.
-function divAttrs(attrs) {
-  var classes = ['qdiv'];
+// Every match gets the `quarto` class, marking it as one of these
+// Quarto-specific constructs regardless of which named class(es) follow.
+function parseAttrs(attrs) {
+  var classes = ['quarto'];
   var id = '';
   attrs.replace(/^\{|\}$/g, '').split(/\s+/).forEach(function (token) {
     if (token === '' || token.indexOf('=') >= 0) {
@@ -65,11 +69,24 @@ function divAttrs(attrs) {
       classes.push(token); // shorthand: the bare word is the class
     }
   });
-  var out = ' class="' + escapeHTML(classes.join(' ')) + '"';
-  if (id !== '') {
-    out += ' id="' + escapeHTML(id) + '"';
+  return { classes: classes, id: id };
+}
+
+// attrsToHTML renders the attribute text of a fenced div or bracketed span
+// as the class (and, if present, id) attributes of an HTML tag.
+function attrsToHTML(attrs) {
+  var parsed = parseAttrs(attrs);
+  var out = ' class="' + escapeHTML(parsed.classes.join(' ')) + '"';
+  if (parsed.id !== '') {
+    out += ' id="' + escapeHTML(parsed.id) + '"';
   }
   return out;
+}
+
+// divAttrs turns the attribute text of an opening div fence into HTML
+// attributes.
+function divAttrs(attrs) {
+  return attrsToHTML(attrs);
 }
 
 // convertDivs rewrites fenced divs into HTML block tags, surrounded by blank
@@ -195,6 +212,87 @@ function resolveMedia(root, pagePath) {
   });
 }
 
+// matchSpan looks for a Pandoc bracketed span (`[text]{.class}`) at the
+// start of src. Brackets are matched by depth rather than a regexp so that
+// spans wrapping their own bracketed content -- an image, say, as in
+// `[![alt](img.png)]{.pol}` -- are still recognized. Returns null when src
+// does not start with a complete `[...]{...}`.
+function matchSpan(src) {
+  if (src.charAt(0) !== '[') {
+    return null;
+  }
+  var depth = 0;
+  var i = 0;
+  for (; i < src.length; i++) {
+    var ch = src.charAt(i);
+    if (ch === '\\') {
+      i++; // an escaped character never opens/closes a bracket
+      continue;
+    }
+    if (ch === '\n') {
+      return null; // spans do not cross line breaks
+    }
+    if (ch === '[') {
+      depth++;
+    } else if (ch === ']') {
+      depth--;
+      if (depth === 0) {
+        break;
+      }
+    }
+  }
+  if (depth !== 0 || i >= src.length) {
+    return null; // no closing bracket, or brackets never balance
+  }
+  var attrs = /^\{([^}\n]*)\}/.exec(src.slice(i + 1));
+  if (!attrs) {
+    return null; // not immediately followed by an attribute block
+  }
+  return {
+    text: src.slice(1, i),
+    attrs: attrs[1],
+    raw: src.slice(0, i + 1 + attrs[0].length)
+  };
+}
+
+var spanExtensionRegistered = false;
+
+// registerSpanExtension teaches marked about bracketed spans. It runs once,
+// the first time marked is available, since marked.use() adds the
+// extension for good.
+function registerSpanExtension() {
+  if (spanExtensionRegistered || typeof marked === 'undefined') {
+    return;
+  }
+  spanExtensionRegistered = true;
+  marked.use({
+    extensions: [{
+      name: 'quartoSpan',
+      level: 'inline',
+      start: function (src) {
+        var match = src.match(/\[/);
+        return match ? match.index : -1;
+      },
+      tokenizer: function (src) {
+        var span = matchSpan(src);
+        if (!span) {
+          return undefined;
+        }
+        return {
+          type: 'quartoSpan',
+          raw: span.raw,
+          attrs: span.attrs,
+          tokens: this.lexer.inlineTokens(span.text)
+        };
+      },
+      renderer: function (token) {
+        return '<span' + attrsToHTML(token.attrs) + '>' +
+          this.parser.parseInline(token.tokens) + '</span>';
+      }
+    }]
+  });
+}
+
 // renderPreview fills el with the preview of the Quarto Markdown in text.
 // pagePath is the edited page's path relative to the project root, which is
 // what the image paths resolve against.
@@ -203,6 +301,7 @@ function renderPreview(el, text, pagePath) {
     el.textContent = text;
     return;
   }
+  registerSpanExtension();
   var page = splitFrontmatter(text);
   var html = '';
   if (page.front.trim() !== '') {

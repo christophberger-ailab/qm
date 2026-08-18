@@ -892,8 +892,9 @@ div.CodeMirror-selected {
   margin: 0 0 1rem;
 }
 
-/* Pandoc fenced divs (::: blocks), callouts among them. */
-.markdown-preview .qdiv {
+/* Pandoc fenced divs (::: blocks) and bracketed spans ([text]{.class}),
+   callouts among them. */
+.markdown-preview .quarto {
   margin: 0.8em 0;
   padding: 0.1rem 0.7rem;
   border-left: 3px solid var(--border);

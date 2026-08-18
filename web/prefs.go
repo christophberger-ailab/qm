@@ -159,49 +159,49 @@ func (s *server) forgetPage(rel string) {
 const defaultCSSName = "custom.css"
 
 // defaultCustomCSS is the stylesheet baked into the app as the default
-// content of custom.css. It ships the qdiv (::: slide, ::: pol, ...)
+// content of custom.css. It ships the quarto (::: slide, ::: pol, ...)
 // preview styling that used to be a hand-written custom.css; a fresh
 // install now looks the same without any setup.
-const defaultCustomCSS = `.qdiv.slide {
+const defaultCustomCSS = `.quarto.slide {
     background: linear-gradient(135deg, #fefefe 0%, #f0f0f3 50%, #fefefe 100%);
 }
-.qdiv.slide:before {
+.quarto.slide:before {
     content: "🖥️ SLIDE"
 }
-.qdiv.pol {
+.quarto.pol {
     background: lightblue;
 }
-.qdiv.pol:before {
+.quarto.pol:before {
     content: "🚔"
 }
-.qdiv.fw {
+.quarto.fw {
     background: lightpink;
 }
-.qdiv.fw:before {
+.quarto.fw:before {
     content: "🚒"
 }
-.qdiv.perle {
+.quarto.perle {
     background: lightgreen;
 }
-.qdiv.perle:before {
+.quarto.perle:before {
     content: "[⛲PERLE]"
 }
-.qdiv.tutorial {
+.quarto.tutorial {
     background: blanchedalmond;
 }
-.qdiv.tutorial:before {
+.quarto.tutorial:before {
     content: "🎓 TUTORIAL"
 }
-.qdiv.howto {
+.quarto.howto {
     background: ghostwhite;
 }
-.qdiv.howto:before {
+.quarto.howto:before {
     content: "🔨 HOWTO"
 }
-.qdiv.reference {
+.quarto.reference {
     background: lemonchiffon;
 }
-.qdiv.reference:before {
+.quarto.reference:before {
     content: "📃 REFERENCE"
 }
 `
