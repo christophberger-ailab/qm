@@ -1,0 +1,25 @@
+feature:
+  name: flatten
+  description: Write the build documents of one topic without rendering
+
+components:
+  COMMAND:
+    description: qm flatten <topic>
+    requirements:
+      1: Object name is "flatten"
+      2: No subcommand
+      3: Flag --project sets the path to the document tree. Defaults to the current directory
+      4: One positional argument names the topic. Required
+
+constraints:
+  STANDARD: See the constraints in spec.yaml.
+
+  PROCESS:
+    requirements:
+      1: Use the same flattening behavior as `qm prepare`
+      2: Write `_build/book.qmd` and `_build/slides.qmd`, the same documents a render feeds on
+      3: The content folder is the topic profile's `qm: folder:`, or the topic name
+      4: 'The topic `none` writes the empty build documents'
+      5: A topic with no profile file is an error, and nothing is written
+      6: Only the topic profile is read, so the deck title keeps the variables the other two axes would have supplied. Resolving them is a render's job
+      7: Keep the generated files and exit without invoking Quarto

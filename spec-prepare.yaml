@@ -1,0 +1,39 @@
+feature:
+  name: prepare
+  description: The project's Quarto pre-render hook
+
+components:
+  COMMAND:
+    description: qm prepare [--profile <t>,<f>,<a>]
+    requirements:
+      1: Object name is "prepare"
+      2: No subcommand
+      3: Flag --project sets the path to the document tree. Defaults to the current directory
+      4: Flag --profile takes the comma-separated profile selection. Defaults to $QUARTO_PROFILE
+      5: 'Wired into the project as `project: pre-render: qm prepare`'
+
+constraints:
+  STANDARD: See the constraints in spec.yaml.
+
+  VALIDATION:
+    description: >
+      The more important half of the hook. Quarto's own configuration fails
+      silently in three ways, and a failing pre-render aborts the render with
+      a non-zero exit code, which turns all three into errors before anything
+      is written.
+    requirements:
+      1: $QUARTO_PROFILE is the effective selection — Quarto has already appended the defaults of any profile group the user left out — so validating it is worthwhile
+      2: Exactly one profile per axis. Quarto merges two profiles of one group without a word, concatenating their array keys
+      3: Every named profile has a `_quarto-<name>.yml`. Quarto ignores a missing one, and the variables it should have defined then resolve to the literal `?var:audience`, which lands in the output file name
+      4: Every `{{< var >}}` the selection relies on resolves. That covers `book: title`, `book: output-file`, and every value under `qm:`
+      5: The topic's content folder exists
+
+  PROCESS:
+    requirements:
+      1: Flatten the selected topic's content folder into `_build/book.qmd` and `_build/slides.qmd`
+      1-1: 'The topic `none` writes the empty build documents: index.qmd includes them whatever the profile, so they must exist and contribute nothing'
+      1-2: An empty build document holds a comment and nothing else. A heading would be picked up as the book's chapter title, which Quarto reads before the content filters run
+      1-3: The deck is given the resolved `book: title` as its document title; the divs it is built from carry none
+      2: 'Carry out the active profiles'' `qm: copy:` map, a target→source list of files copied into place before Quarto runs'
+      2-1: The target is a fixed path a format-level key can point at; the source may contain `{{< var >}}` and may therefore vary along any axis
+      2-2: 'This exists because format-level keys do not interpolate: a PPTX reference template that depends on the format (dark or not) and the audience (POL, FW) cannot be named in `format: pptx: reference-doc:`'

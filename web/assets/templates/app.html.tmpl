@@ -39,6 +39,16 @@
       <input name="path" placeholder="/path/to/quarto/project" value="{{.Root}}">
       <button type="submit">Open</button>
     </form>
+    {{/* The field carries the request itself rather than sitting in a form:
+         there is nothing to submit, the hits arrive while it is typed in,
+         and htmx sends the value of the element that asks. */}}
+    <div class="search-form">
+      <input type="search" name="q" id="search-input" placeholder="Search pages" autocomplete="off"
+             title="Highlight the pages containing every term"
+             hx-get="/search" hx-trigger="input changed delay:300ms, search"
+             hx-target="#search-results" hx-swap="innerHTML">
+      <span id="search-results" class="search-results"></span>
+    </div>
     <div id="render-panel">{{template "render" .}}</div>
     <a class="button topbar-config" href="/config">Config</a>
   </header>
@@ -49,7 +59,7 @@
 </html>{{end}}
 
 {{define "render"}}{{with .Render}}{{if .Books}}<details class="render">
-  <summary title="Build each selected book into one flat document and render it">Render</summary>
+  <summary title="Build each selected topic into one flat document and render it">Render</summary>
   <div class="render-body">
     <form id="render-form" hx-post="/render/select" hx-trigger="change" hx-swap="none">
       {{range $book := .Books}}
@@ -57,20 +67,19 @@
         <legend><label><input type="checkbox" name="book" value="{{$book.Name}}"{{if $book.Selected}} checked{{end}}> {{$book.Name}}</label></legend>
         {{if gt (len $book.Profiles) 1}}
         <details class="variants">
-          <summary>variants ({{len $book.Profiles}})</summary>
-          {{range $book.Profiles}}<label class="profile" title="One quarto render run per checked profile"><input type="checkbox" name="profile.{{$book.Name}}" value="{{.Name}}"{{if .Selected}} checked{{end}}> {{.Name}}</label>
+          <summary>audiences ({{len $book.Profiles}})</summary>
+          {{range $book.Profiles}}<label class="profile" title="One quarto render run per checked audience"><input type="checkbox" name="profile.{{$book.Name}}" value="{{.Name}}"{{if .Selected}} checked{{end}}> {{.Name}}</label>
           {{end}}
         </details>
         {{else if eq (len $book.Profiles) 1}}
         {{range $book.Profiles}}<input type="hidden" name="profile.{{$book.Name}}" value="{{.Name}}">{{end}}
-        {{else}}<span class="empty">no book profiles</span>{{end}}
+        {{else}}<span class="empty">no audiences</span>{{end}}
       </fieldset>
       {{end}}
       <fieldset class="formats">
         <legend>Formats</legend>
         {{range .Formats}}<label><input type="checkbox" name="format" value="{{.Name}}"{{if .Selected}} checked{{end}}> {{.Name}}</label>
         {{end}}
-        <label title="Also render the deck built from the pages' ::: slide blocks"><input type="checkbox" name="slides" value="1"{{if .Slides}} checked{{end}}> slides</label>
       </fieldset>
       <button type="button" id="render-run" hx-post="/render" hx-target="#render-log" hx-swap="innerHTML">Render</button>
     </form>
@@ -211,6 +220,13 @@
 </li>{{end}}
 
 {{define "treewrap"}}{{if .Error}}<div class="error">{{.Error}}</div>{{end}}{{template "tree" .Tree}}{{end}}
+
+{{/* The hits are the pages the tree highlights, so they travel as data
+     rather than as a result list of their own: app.js reads the paths and
+     marks the matching tree entries. The summary is all the search field
+     itself shows. */}}
+{{define "search-results"}}<span class="search-summary"{{if .Indexing}} data-indexing="1"{{end}}>{{.Summary}}</span>
+<ul class="search-hits" hidden>{{range .Hits}}<li data-path="{{.Path}}" data-count="{{.Count}}"></li>{{end}}</ul>{{end}}
 
 {{define "content-heading"}}{{.Title}} <span class="path">{{.Path}}</span>{{end}}
 

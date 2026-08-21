@@ -1,44 +1,42 @@
 feature:
   name: render
-  description: Render the book folders of the Quarto project
+  description: Render the project's topic × format × audience matrix
 
 components:
   COMMAND:
-    description: qm render [--profile <a>,<b>] [--to <fmt>,<fmt>] [--slides] [<book>...]
+    description: qm render [--topic <a>,<b>] [--format <f>] [--audience <a>] [--clean] [--dry-run] [<topic>...]
     requirements:
       1: Object name is "render"
       2: No subcommand
       3: Parameters
       3-1: Flag --project sets the path to the document tree. Defaults to the current directory
-      3-2: Flag --profile takes a comma-separated list of Quarto profile names. Optional
-      3-3: Flag --to takes a comma-separated list of Quarto output formats. Defaults to "pdf,docx"
-      3-4: Flag --slides also renders the deck built from the pages' ::: slide blocks. Defaults to false
-      3-5: Positional arguments name the book folders to render. Optional
+      3-2: Flag --topic takes a comma-separated list of topics. Defaults to every topic the project declares
+      3-3: Flag --format takes a comma-separated list of formats. Defaults to every format a topic takes part in
+      3-4: Flag --audience takes a comma-separated list of audiences. Defaults to every audience a topic takes part in
+      3-5: Flag --clean empties the output directories of the selected formats before the first render. Defaults to false
+      3-6: Flag --dry-run prints the quarto invocations without running them. Defaults to false
+      3-7: Positional arguments name topics and are added to --topic
 
 constraints:
   STANDARD: See the constraints in spec.yaml.
 
   PROCESS:
-    description: The render flow is shared with `qm web` (see spec-web.yaml); both drive internal/bookrender.
+    description: >
+      The render flow is shared with `qm web` (see spec-web.yaml); both drive
+      internal/bookrender. `qm render` is a matrix driver and nothing more:
+      the artefact is built and named by the project's own Quarto hooks
+      (`qm prepare`, `qm finalize`), so a plain
+      `quarto render --profile topic-x,format-y,audience-z` produces exactly
+      the same result without qm.
     requirements:
-      1: A book folder is a first-level folder of the project that holds .qmd files and has no Quarto project config of its own
-      2: If no book folder is named on the command line, render every book folder of the project
-      3: If a named folder is not a book folder, issue an error and render nothing
-      4: If the project holds no book folder at all, issue an error
-      5: Each book is flattened into a single .qmd document written to the project root, so that project-absolute media paths resolve
-      5-1: The flat document is named `_book-build-<book>.qmd`; the leading underscore keeps Quarto from rendering it as project content
-      5-2: With --slides, the slides extracted from the book's pages are written to `_slides-build-<book>.qmd`
-      5-3: Both files are removed once the book is rendered
-      6: Each book is rendered with `quarto render --to <format> --no-clean [--profile <names>]`, run in the project root
-      6-1: The flat document is not named on the command line; the project's top-level index.qmd includes it, which leaves the chapter list to the profile configuration
-      6-2: --no-clean keeps a run from deleting the output of the runs before it
-      6-3: Output paths and file names are left to the profile configuration; no --output or --output-dir is passed
-      7: Every profile of a render run reaches Quarto, as one comma-separated --profile argument
-      7-1: With --profile, the named profiles apply to every book being rendered, and all of them go into a single render run per format, because such a list composes one configuration out of several profiles
-      7-2: Without --profile, a book is rendered with the profiles named after it: `<book>` and `<book>-*`
-      7-3: The profiles named after a book are alternative variants of it, so the book is rendered once per profile and format
-      7-4: A book with no profile is rendered once, without --profile
-      7-5: With --slides, the deck is rendered to revealjs once per render run, with the same profiles as the book
-      8: If neither a format nor --slides is selected, issue an error
-      9: Progress, the quarto invocations, and their output are written to stdout
-      10: A failing book does not stop the remaining books; the command reports how many books failed and exits with an error
+      1: The matrix is the cross product of the requested topics, formats, and audiences, cut down per topic to what the topic profile declares under `qm: formats:` and `qm: audiences:`
+      1-1: A name that no `_quarto-<axis>-<value>.yml` backs is an error, not an empty result
+      1-2: The order is stable — topics outermost, then formats, then audiences — and follows the project's own order on each axis, not the order a profile happened to spell its list in
+      2: 'Each combination is one invocation: `quarto render --profile topic-<t>,format-<f>,audience-<a> --no-clean`, run in the project root'
+      2-1: No input file is named; the project renders and its index.qmd includes the flattened topic
+      2-2: No --to is passed; the format profile declares the output formats and Quarto renders them in one pass
+      2-3: No --output or --output-dir is passed; output paths are left to the configuration and to `qm finalize`
+      2-4: --no-clean is not optional. Several topics and audiences share one output directory, so a cleaning run would delete what the run before it produced. Quarto has no configuration key for this
+      3: With --clean, each selected format's output directory is emptied once, before the first render
+      4: Progress, the quarto invocations, and their output are written to stdout
+      5: A failing combination does not stop the remaining ones; the command reports how many failed and exits with an error

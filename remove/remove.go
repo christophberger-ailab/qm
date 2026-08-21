@@ -16,8 +16,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/cboct/qm/internal/cli"
 	"github.com/cboct/qm/internal/qmcore"
-	"github.com/cboct/qm/update"
 	"github.com/christophberger/start"
 )
 
@@ -34,7 +34,7 @@ func Register(parent string, projectFlag *string) {
 			"Asks for confirmation, then tries to trash the file using the " +
 			"`trash` command, falling back to permanent deletion.",
 		Flags: []string{"project"},
-		Cmd:   cmd,
+		Cmd:   cli.Guard(cmd),
 	})
 }
 
@@ -108,16 +108,7 @@ func Run(docPath, folderPath string, order int, in io.Reader, out io.Writer) err
 	}
 	fmt.Fprintf(out, "Removed %s\n", target.RelPath)
 
-	folderName, err := update.FolderName(docPath, folderPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: cannot determine top-level folder for %s: %v\n", folderPath, err)
-		return nil
-	}
-	pattern, err := update.CompileExclude()
-	if err != nil {
-		return err
-	}
-	return update.UpdateFolderProfiles(docPath, folderName, pattern)
+	return nil
 }
 
 func readYesNo(in io.Reader) (bool, error) {

@@ -2,23 +2,26 @@
 //
 // Usage: qm <object> <subcommand> [flags] [args]
 //
-// The object "chapters" carries the subcommands `update`, `insert`,
-// `move`, and `remove`; the objects "lint", "render", and "web" have no
-// subcommands. The "chapters" command itself is a dummy wrapper required
-// because github.com/christophberger/start has no native notion of an
-// "object" parameter (see spec.yaml, constraint SUBCOMMANDS.3).
+// The object "chapters" carries the subcommands `insert`, `move`, and
+// `remove`; "lint", "flatten", "render", "prepare", "finalize", and "web"
+// have no subcommands. The "chapters" command itself is a dummy wrapper
+// required because github.com/christophberger/start has no native notion of
+// an "object" parameter (see spec.yaml, constraint SUBCOMMANDS.3).
 package main
 
 import (
 	"fmt"
 	"os"
 
+	"github.com/cboct/qm/finalize"
+	"github.com/cboct/qm/flatten"
 	"github.com/cboct/qm/insert"
+	"github.com/cboct/qm/internal/cli"
 	"github.com/cboct/qm/lint"
 	"github.com/cboct/qm/move"
+	"github.com/cboct/qm/prepare"
 	"github.com/cboct/qm/remove"
 	"github.com/cboct/qm/render"
-	"github.com/cboct/qm/update"
 	"github.com/cboct/qm/web"
 
 	"github.com/christophberger/start"
@@ -35,6 +38,13 @@ func main() {
 	projectFlag := flag.StringP("project", "p", ".",
 		"Path to the Quarto document tree (default: current directory)")
 
+	// The profile selection is shared by the two Quarto hooks, `prepare`
+	// and `finalize`, so it is declared once here rather than by either of
+	// them. Both default to $QUARTO_PROFILE when it is not given.
+	profileFlag := flag.String("profile", "",
+		"Comma-separated profile selection topic-<t>,format-<f>,audience-<a> "+
+			"(default: $QUARTO_PROFILE)")
+
 	start.SetDescription("qm manages a Quarto documentation tree. " +
 		"Usage: qm <object> <subcommand> [flags] [args].")
 	start.SetVersion(version)
@@ -48,15 +58,14 @@ func main() {
 	// subcommand was supplied).
 	if err := start.Add(&start.Command{
 		Name:  "chapters",
-		Short: "Manage book chapters (subcommands: update, insert, move, remove)",
+		Short: "Manage book chapters (subcommands: insert, move, remove)",
 		Long: "Manage the chapters of a Quarto book. Use one of the subcommands " +
-			"(update, insert, move, remove). With no subcommand, lists them.",
+			"(insert, move, remove). With no subcommand, lists them.",
 	}); err != nil {
 		fatal(err)
 	}
 
 	// Register each subcommand under "chapters" as its own package.
-	update.Register("chapters", projectFlag)
 	insert.Register("chapters", projectFlag)
 	move.Register("chapters", projectFlag)
 	remove.Register("chapters", projectFlag)
@@ -69,10 +78,28 @@ func main() {
 	// The `render` object also has no sub-commands.
 	render.Register(projectFlag)
 
+	// The `flatten` object saves render's generated inputs without rendering.
+	flatten.Register(projectFlag)
+
+	// `prepare` and `finalize` are the project's Quarto pre- and
+	// post-render hooks. They are what makes a plain
+	// `quarto render --profile topic-x,format-y,audience-z` produce a
+	// correctly built and correctly named artefact without qm being
+	// involved in the invocation.
+	prepare.Register(projectFlag, profileFlag)
+	finalize.Register(projectFlag, profileFlag)
+
 	// The `web` object serves the sorter UI; no sub-commands either.
 	web.Register(projectFlag)
 
 	start.Up()
+
+	// start.Up() prints a command's error and returns; it does not set an
+	// exit status. Quarto reads the pre-render hook's exit status to decide
+	// whether to abort a render, so `qm prepare` failing silently with 0
+	// would let a render continue on stale build documents. See
+	// internal/cli.
+	cli.Exit()
 }
 
 func fatal(err error) {

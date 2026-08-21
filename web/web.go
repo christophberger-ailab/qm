@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/cboct/qm/internal/cli"
 	"github.com/christophberger/start"
 	flag "github.com/spf13/pflag"
 )
@@ -45,7 +46,7 @@ func Register(projectFlag *string) {
 			"renders the project's book folders. Usage: qm web [<path>]. " +
 			"Without a path, the tree at --project is opened.",
 		Flags: []string{"project", "addr"},
-		Cmd:   cmd,
+		Cmd:   cli.Guard(cmd),
 	})
 }
 

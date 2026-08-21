@@ -26,4 +26,4 @@ constraints:
       2-2-1: Renumber the chapters after the new order number e.g. qm chapters move sysadmin 4 6 -> rename order 6 to 7, 7 to 8, etc
       2-2-2: Renumber the chapters between the original and new number to close the gap, e.g. qm chapters move sysadmin 4 6 -> rename order 5 to 4
       2-2-3: Change order number 4 to 6
-      3: Invoke the chapters-update subcommand to keep the chapters list in sync.
+      3: Nothing else. There is no book chapter list to keep in sync: a book is the folder flattened at render time (see spec.yaml, BOOKS).

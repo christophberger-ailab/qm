@@ -17,6 +17,7 @@ import (
 
 	"github.com/cboct/qm/internal/bookrender"
 	"github.com/cboct/qm/internal/project"
+	"github.com/cboct/qm/internal/qmcore"
 )
 
 //go:embed assets
@@ -48,6 +49,10 @@ type server struct {
 	// job is the background render. It has its own lock: a render takes
 	// minutes and must not block the tree handlers.
 	job job
+
+	// index is the word index the search field is answered from. Like the
+	// render, it is built in the background and locked separately.
+	index searchIndex
 }
 
 func newServer(prefsFile string) (*server, error) {
@@ -64,10 +69,10 @@ func newServer(prefsFile string) (*server, error) {
 		return nil, err
 	}
 	s := &server{
-		mux:    http.NewServeMux(),
-		tmpl:   tmpl,
+		mux:       http.NewServeMux(),
+		tmpl:      tmpl,
 		prefsFile: prefsFile,
-		cssDir: cssDirForPrefs(prefsFile),
+		cssDir:    cssDirForPrefs(prefsFile),
 	}
 	ensureDefaultCSS(s.cssDir)
 	s.loadPrefs()
@@ -90,6 +95,7 @@ func newServer(prefsFile string) (*server, error) {
 	s.mux.HandleFunc("POST /create", s.create)
 	s.mux.HandleFunc("POST /delete", s.delete)
 	s.mux.HandleFunc("GET /content", s.content)
+	s.mux.HandleFunc("GET /search", s.search)
 	s.mux.HandleFunc("GET /media/{path...}", s.media)
 	s.mux.HandleFunc("POST /save", s.save)
 	s.mux.HandleFunc("POST /render", s.startRender)
@@ -152,16 +158,16 @@ type previewCSSView struct {
 	Error   string
 }
 
-// renderView is what the render panel shows: the project's book folders
-// with the name-matched profiles and formats currently selected for them.
+// renderView is what the render panel shows: the project's topics with the
+// audiences each of them takes part in, and the project's output formats.
 type renderView struct {
 	Books   []bookView
 	Formats []checkbox
-	Slides  bool
 }
 
-// bookView is one book folder in the render panel. Profiles holds only the
-// Quarto profiles that belong to the folder by name.
+// bookView is one topic in the render panel. Profiles holds the audiences
+// the topic declares, which is what varies per topic; the formats are a
+// project-wide choice and live beside the list.
 type bookView struct {
 	Name     string
 	Selected bool
@@ -214,30 +220,43 @@ func (s *server) lastPage() *contentView {
 	}
 }
 
-// renderView assembles the render panel from the project's book folders and
-// book profiles, marked up with the saved selection. The caller must hold
-// s.mu.
+// renderView assembles the render panel from the project's topics and the
+// axes each of them declares. The caller must hold s.mu.
 func (s *server) renderView() renderView {
 	prefs := s.prefsFor(s.root)
-	available, err := project.Profiles(s.root)
-	if err != nil {
-		available = nil
-	}
+	topics, _ := qmcore.AxisValues(s.root, qmcore.AxisTopic)
+	formats, _ := qmcore.AxisValues(s.root, qmcore.AxisFormat)
 
-	v := renderView{Slides: prefs.Slides}
-	for _, name := range bookrender.Books(s.root) {
-		b := bookView{Name: name, Selected: slices.Contains(prefs.Books, name)}
-		matching := bookrender.DefaultProfiles(name, available)
-		on := prefs.profilesFor(name, available)
-		for _, p := range matching {
-			b.Profiles = append(b.Profiles, checkbox{p, slices.Contains(on, p)})
+	var v renderView
+	for _, name := range topics {
+		b := bookView{Name: name, Selected: slices.Contains(prefs.Topics, name)}
+		on := prefs.audiencesFor(name, s.audiencesOf(name))
+		for _, a := range s.audiencesOf(name) {
+			b.Profiles = append(b.Profiles, checkbox{a, slices.Contains(on, a)})
 		}
 		v.Books = append(v.Books, b)
 	}
-	for _, f := range renderFormats {
+	for _, f := range formats {
 		v.Formats = append(v.Formats, checkbox{f, slices.Contains(prefs.Formats, f)})
 	}
 	return v
+}
+
+// audiencesOf returns the audiences a topic takes part in: what its profile
+// declares under `qm: audiences:`, or every audience the project offers.
+func (s *server) audiencesOf(topic string) []string {
+	all, _ := qmcore.AxisValues(s.root, qmcore.AxisAudience)
+	p, err := qmcore.LoadProfile(s.root, qmcore.AxisTopic.ProfileName(topic))
+	if err != nil || len(p.QM.Audiences) == 0 {
+		return all
+	}
+	var out []string
+	for _, a := range all {
+		if slices.Contains(p.QM.Audiences, a) {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 func (s *server) render(w http.ResponseWriter, name string, data any) {
@@ -278,10 +297,13 @@ func fingerprint(root string) string {
 
 // rememberFP records the current on-disk fingerprint as rendered, so
 // /watch stays quiet until something changes outside the responses we
-// produce ourselves. The caller must hold s.mu.
+// produce ourselves. It is also where the search index learns that the
+// project moved on: the fingerprint is exactly the state both are built
+// from. The caller must hold s.mu.
 func (s *server) rememberFP() {
 	if s.root != "" {
 		s.fp = fingerprint(s.root)
+		s.index.rebuild(s.root, s.fp)
 	}
 }
 
@@ -622,6 +644,10 @@ func (s *server) save(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// The page just changed under the search index, which the fingerprint
+	// alone may not show: an edit that keeps the page's size within one
+	// mtime tick hashes to what it replaced.
+	s.index.expire()
 	title := project.ParseFrontmatter(body).Title
 	fmt.Fprint(w, `<h2 class="content-title" id="content-title" hx-swap-oob="true">`)
 	s.render(w, "content-heading", struct{ Title, Path string }{title, rel})
@@ -635,20 +661,20 @@ func (s *server) save(w http.ResponseWriter, r *http.Request) {
 
 // formValues reads the render panel's form into the given preferences,
 // replacing their render selection and leaving everything else the project
-// remembers — the open page — alone. The profile boxes of a book are named
-// "profile.<book>" so that each book keeps its own set.
+// remembers — the open page — alone. The audience boxes of a topic are
+// named "profile.<topic>" so that each topic keeps its own set.
 func formValues(p projectPrefs, form map[string][]string, root string) projectPrefs {
-	p.Books = form["book"]
+	p.Topics = form["book"]
 	p.Formats = form["format"]
-	p.Profiles = map[string][]string{}
-	p.Slides = len(form["slides"]) > 0
-	for _, b := range bookrender.Books(root) {
-		if sel := form["profile."+b]; len(sel) > 0 {
-			p.Profiles[b] = sel
+	p.Audiences = map[string][]string{}
+	topics, _ := qmcore.AxisValues(root, qmcore.AxisTopic)
+	for _, t := range topics {
+		if sel := form["profile."+t]; len(sel) > 0 {
+			p.Audiences[t] = sel
 		} else {
-			// An empty entry is a real choice — "render this book with no
-			// profile" — and must not fall back to the name-matched default.
-			p.Profiles[b] = []string{}
+			// An empty entry is a real choice and must not fall back to
+			// "every audience the topic declares".
+			p.Audiences[t] = []string{}
 		}
 	}
 	return p
@@ -685,21 +711,32 @@ func (s *server) startRender(w http.ResponseWriter, r *http.Request) {
 	s.savePrefs()
 
 	switch {
-	case len(prefs.Books) == 0:
-		s.renderLog(w, jobState{Lines: []string{"select at least one book to render"}, Failed: true})
+	case len(prefs.Topics) == 0:
+		s.renderLog(w, jobState{Lines: []string{"select at least one topic to render"}, Failed: true})
 		return
-	case len(prefs.Formats) == 0 && !prefs.Slides:
+	case len(prefs.Formats) == 0:
 		s.renderLog(w, jobState{Lines: []string{"select at least one output format"}, Failed: true})
 		return
 	}
 
-	opts := bookrender.Options{
-		Root:     s.root,
-		Books:    prefs.Books,
-		Profiles: prefs.Profiles,
-		Formats:  prefs.Formats,
-		Slides:   prefs.Slides,
+	// The panel's per-topic audiences cannot go into one matrix request —
+	// that would apply every topic's audiences to every other topic — so the
+	// matrix is built per topic and the results are concatenated.
+	var sels []qmcore.Selection
+	for _, t := range prefs.Topics {
+		part, err := qmcore.BuildMatrix(s.root, qmcore.Matrix{
+			Topics:    []string{t},
+			Formats:   prefs.Formats,
+			Audiences: prefs.audiencesFor(t, s.audiencesOf(t)),
+		})
+		if err != nil {
+			s.renderLog(w, jobState{Lines: []string{err.Error()}, Failed: true})
+			return
+		}
+		sels = append(sels, part...)
 	}
+
+	opts := bookrender.Options{Root: s.root, Selections: sels}
 	if !s.job.start(opts) {
 		s.renderLog(w, s.job.state())
 		return

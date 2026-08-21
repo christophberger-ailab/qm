@@ -14,10 +14,9 @@ import (
 )
 
 // fakeQuarto installs a stub `quarto` that appends its arguments to a log
-// file and notes which flat documents exist in the project root it runs in,
-// which is how the tests check that the flat document is present while
-// Quarto runs and gone afterwards. The stub runs in the project root, so the
-// build files are found relative to it.
+// file. Building the input is no longer the render's job — the project's
+// pre-render hook does that — so the stub only has to record how it was
+// called.
 func fakeQuarto(t *testing.T) string {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -26,18 +25,7 @@ func fakeQuarto(t *testing.T) string {
 	dir := t.TempDir()
 	log := filepath.Join(dir, "calls.log")
 	stub := filepath.Join(dir, "quarto")
-	script := "#!/bin/sh\n" +
-		"echo \"args: $*\" >> " + log + "\n" +
-		"case \"$2\" in\n" +
-		// A run without an input file renders the project; what it feeds on
-		// is the flat book the project's index.qmd includes.
-		"  ''|--*) set -- render _book-build-*.qmd ;;\n" +
-		"esac\n" +
-		"if [ -f \"$2\" ]; then\n" +
-		"  echo \"present: $2\" >> " + log + "\n" +
-		"  cat \"$2\" >> " + log + ".input\n" +
-		"fi\n" +
-		"echo \"pandoc output\"\n"
+	script := "#!/bin/sh\necho \"args: $*\" >> " + log + "\necho \"pandoc output\"\n"
 	if err := os.WriteFile(stub, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -74,59 +62,49 @@ func waitForRender(t *testing.T, s *server) jobState {
 	return jobState{}
 }
 
-// renderForm is the panel's form for rendering chapter2 as PDF.
+// renderForm is the panel's form for rendering chapter2 as pdf.
 func renderForm() url.Values {
 	return url.Values{
 		"book":             {"chapter2"},
-		"profile.chapter2": {"chapter2"},
+		"profile.chapter2": {"std"},
 		"format":           {"pdf"},
 	}
 }
 
-// bookFieldset returns the render panel fieldset for one book folder.
+// bookFieldset returns the render panel fieldset for one topic.
 func bookFieldset(t *testing.T, body, book string) string {
 	t.Helper()
 	marker := `name="book" value="` + book + `"`
 	i := strings.Index(body, marker)
 	if i < 0 {
-		t.Fatalf("render panel has no book %q:\n%s", book, body)
+		t.Fatalf("render panel has no topic %q:\n%s", book, body)
 	}
 	start := strings.LastIndex(body[:i], `<fieldset class="book">`)
 	if start < 0 {
-		t.Fatalf("book %q has no fieldset:\n%s", book, body)
+		t.Fatalf("topic %q has no fieldset:\n%s", book, body)
 	}
 	end := strings.Index(body[i:], `</fieldset>`)
 	if end < 0 {
-		t.Fatalf("book %q fieldset is not closed:\n%s", book, body)
+		t.Fatalf("topic %q fieldset is not closed:\n%s", book, body)
 	}
 	return body[start : i+end+len(`</fieldset>`)]
 }
 
-// writeBook adds a first-level book folder to the fixture project.
-func writeBook(t *testing.T, root, book string) {
+// writeProfile adds a profile to the fixture project.
+func writeProfile(t *testing.T, root, name, body string) {
 	t.Helper()
-	p := filepath.Join(root, book, "index.qmd")
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	src := "---\ntitle: " + book + "\norder: 1\n---\n# " + book + "\n"
-	if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "_quarto-"+name+".yml"),
+		[]byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// writeBookProfile adds a book profile to the fixture project.
-func writeBookProfile(t *testing.T, root, profile string) {
-	t.Helper()
-	cfg := "book:\n  chapters:\n    - index.qmd\n"
-	if err := os.WriteFile(filepath.Join(root, "_quarto-"+profile+".yml"), []byte(cfg), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestRenderFlattensAndRunsQuarto(t *testing.T) {
+// One `quarto render --profile topic-<t>,format-<f>,audience-<a>` per
+// selection: no input file, no --to, no --output-dir. Everything the render
+// needs beyond that is the project's own pre- and post-render hooks.
+func TestRenderRunsQuartoPerSelection(t *testing.T) {
 	log := fakeQuarto(t)
-	srv, root := testServer(t)
+	srv, _ := testServer(t)
 
 	rec := post(t, srv, "/render", renderForm())
 	if rec.Code != http.StatusOK {
@@ -138,43 +116,24 @@ func TestRenderFlattensAndRunsQuarto(t *testing.T) {
 	}
 
 	got := calls(t, log)
-	if !strings.Contains(got, "args: render --to pdf --no-clean --profile chapter2") {
+	want := "args: render --profile topic-chapter2,format-pdf,audience-std --no-clean\n"
+	if !strings.Contains(got, want) {
 		t.Errorf("unexpected quarto invocation:\n%s", got)
 	}
-	// The flat document has to be a real file while Quarto reads it.
-	if !strings.Contains(got, "present: _book-build-chapter2.qmd") {
-		t.Errorf("flat document missing while quarto ran:\n%s", got)
-	}
-	// And it is the flattened book, not one of the source pages.
-	input, err := os.ReadFile(log + ".input")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"# Chapter 2", "Second", "Third"} {
-		if !strings.Contains(string(input), want) {
-			t.Errorf("flat document missing %q:\n%s", want, input)
-		}
-	}
-
-	// It is removed once the render is done.
-	if _, err := os.Stat(filepath.Join(root, "_book-build-chapter2.qmd")); !os.IsNotExist(err) {
-		t.Error("_book-build-chapter2.qmd not cleaned up")
+	if n := strings.Count(got, "args: render"); n != 1 {
+		t.Errorf("got %d render runs, want 1:\n%s", n, got)
 	}
 }
 
-// Every checked profile gets a render run of its own: a book's profiles
-// select alternative variants of it rather than combining into one document.
-func TestRenderRunsOncePerProfileAndFormat(t *testing.T) {
+// Every checked format and audience is a combination of its own.
+func TestRenderExpandsTheSelectedMatrix(t *testing.T) {
 	log := fakeQuarto(t)
 	srv, root := testServer(t)
-	cfg := "book:\n  chapters:\n    - index.qmd\n"
-	if err := os.WriteFile(filepath.Join(root, "_quarto-chapter2-pol.yml"), []byte(cfg), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeProfile(t, root, "audience-pol", "_quarto-vars:\n  audience: \"-pol\"\n")
 
 	form := url.Values{
 		"book":             {"chapter2"},
-		"profile.chapter2": {"chapter2", "chapter2-pol"},
+		"profile.chapter2": {"std", "pol"},
 		"format":           {"pdf", "docx"},
 	}
 	if rec := post(t, srv, "/render", form); rec.Code != http.StatusOK {
@@ -186,10 +145,10 @@ func TestRenderRunsOncePerProfileAndFormat(t *testing.T) {
 
 	got := calls(t, log)
 	for _, want := range []string{
-		"--to pdf --no-clean --profile chapter2\n",
-		"--to docx --no-clean --profile chapter2\n",
-		"--to pdf --no-clean --profile chapter2-pol",
-		"--to docx --no-clean --profile chapter2-pol",
+		"--profile topic-chapter2,format-pdf,audience-pol",
+		"--profile topic-chapter2,format-pdf,audience-std",
+		"--profile topic-chapter2,format-docx,audience-pol",
+		"--profile topic-chapter2,format-docx,audience-std",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing render run %q:\n%s", want, got)
@@ -218,41 +177,18 @@ func TestRenderKeepsProfileOutput(t *testing.T) {
 	if !strings.Contains(got, "--no-clean") {
 		t.Errorf("quarto called without --no-clean:\n%s", got)
 	}
-	for _, flag := range []string{"--output", "--output-dir"} {
+	for _, flag := range []string{"--output", "--output-dir", "--to"} {
 		if strings.Contains(got, flag) {
-			t.Errorf("%s overrides the profile's output setting:\n%s", flag, got)
+			t.Errorf("%s overrides the profile's own setting:\n%s", flag, got)
 		}
 	}
 }
 
-// A book with no profile checked still renders once, without --profile.
-func TestRenderWithoutProfile(t *testing.T) {
-	log := fakeQuarto(t)
-	srv, _ := testServer(t)
-
-	form := url.Values{"book": {"chapter2"}, "format": {"pdf"}}
-	if rec := post(t, srv, "/render", form); rec.Code != http.StatusOK {
-		t.Fatalf("render: status %d: %s", rec.Code, rec.Body)
-	}
-	if st := waitForRender(t, srv); st.Failed {
-		t.Fatalf("render failed:\n%s", strings.Join(st.Lines, "\n"))
-	}
-
-	got := calls(t, log)
-	if !strings.Contains(got, "args: render --to pdf --no-clean\n") {
-		t.Errorf("unexpected quarto invocation:\n%s", got)
-	}
-	if strings.Contains(got, "--profile") {
-		t.Errorf("unchecked profile still passed:\n%s", got)
-	}
-}
-
-// A failing quarto run is reported and does not leave the flat document
-// behind.
 func TestRenderReportsFailure(t *testing.T) {
 	fakeQuarto(t)
-	srv, root := testServer(t)
-	if err := os.WriteFile(bookrender.QuartoCommand, []byte("#!/bin/sh\necho boom >&2\nexit 1\n"), 0o755); err != nil {
+	srv, _ := testServer(t)
+	if err := os.WriteFile(bookrender.QuartoCommand,
+		[]byte("#!/bin/sh\necho boom >&2\nexit 1\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -266,19 +202,16 @@ func TestRenderReportsFailure(t *testing.T) {
 	if out := strings.Join(st.Lines, "\n"); !strings.Contains(out, "boom") {
 		t.Errorf("quarto stderr missing from the log:\n%s", out)
 	}
-	if _, err := os.Stat(filepath.Join(root, "_book-build-chapter2.qmd")); !os.IsNotExist(err) {
-		t.Error("flat document left behind after a failed render")
-	}
 }
 
 // Rendering nothing is a mistake worth naming rather than a no-op.
-func TestRenderNeedsBookAndFormat(t *testing.T) {
+func TestRenderNeedsTopicAndFormat(t *testing.T) {
 	fakeQuarto(t)
 	srv, _ := testServer(t)
 
 	rec := post(t, srv, "/render", url.Values{"format": {"pdf"}})
-	if !strings.Contains(rec.Body.String(), "select at least one book") {
-		t.Errorf("no book selected: %s", rec.Body)
+	if !strings.Contains(rec.Body.String(), "select at least one topic") {
+		t.Errorf("no topic selected: %s", rec.Body)
 	}
 	rec = post(t, srv, "/render", url.Values{"book": {"chapter2"}})
 	if !strings.Contains(rec.Body.String(), "select at least one output format") {
@@ -289,117 +222,73 @@ func TestRenderNeedsBookAndFormat(t *testing.T) {
 	}
 }
 
-// The render panel lists the project's book folders and book profiles.
-func TestRenderPanelListsBooks(t *testing.T) {
+// The render panel lists the project's topics, their audiences, and the
+// project's formats — the three axes a render is addressed along.
+func TestRenderPanelListsTheAxes(t *testing.T) {
 	srv, _ := testServer(t)
 	body := get(t, srv, "/").Body.String()
 	for _, want := range []string{
 		`name="book" value="chapter2"`,
-		`name="profile.chapter2" value="chapter2"`,
+		`name="profile.chapter2" value="std"`,
 		`name="format" value="pdf"`,
 		`name="format" value="docx"`,
-		`name="slides"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("render panel missing %q:\n%s", want, body)
 		}
 	}
-	// _quarto-web.yml has no book key, so it is not a book profile.
-	if strings.Contains(body, `value="web"`) {
-		t.Errorf("profile without a book key offered:\n%s", body)
+	// A `_quarto-*.yml` that is not on one of the three axes is not a
+	// render selection and is not offered.
+	if strings.Contains(body, `value="not-an-axis-web"`) {
+		t.Errorf("a non-axis profile was offered:\n%s", body)
 	}
-	// Formats are checked by default, books are not: Render must not kick
-	// off a long run before the user has chosen anything.
-	if !strings.Contains(body, `name="format" value="pdf" checked`) {
-		t.Errorf("pdf not selected by default:\n%s", body)
-	}
+	// Nothing is selected by default: Render must not kick off a long run
+	// before the user has chosen anything.
 	if strings.Contains(body, `name="book" value="chapter2" checked`) {
-		t.Errorf("book selected by default:\n%s", body)
+		t.Errorf("topic selected by default:\n%s", body)
 	}
 }
 
-func TestRenderPanelShowsVariantSubmenuByBook(t *testing.T) {
+// A topic offers only the audiences it declares.
+func TestRenderPanelShowsTheTopicsOwnAudiences(t *testing.T) {
 	srv, root := testServer(t)
-	writeBook(t, root, "audience")
-	writeBook(t, root, "other")
-	writeBookProfile(t, root, "audience-fw")
-	writeBookProfile(t, root, "audience-pol")
-	writeBookProfile(t, root, "other")
+	writeProfile(t, root, "audience-pol", "_quarto-vars:\n  audience: \"-pol\"\n")
+	writeProfile(t, root, "audience-fw", "_quarto-vars:\n  audience: \"-fw\"\n")
+	writeProfile(t, root, "topic-agency",
+		"book:\n  title: Agency\nqm:\n  audiences: [pol, fw]\n")
+	writeProfile(t, root, "topic-common",
+		"book:\n  title: Common\nqm:\n  audiences: [std]\n")
 
 	body := get(t, srv, "/").Body.String()
-	section := bookFieldset(t, body, "audience")
-	if !strings.Contains(section, `class="variants"`) {
-		t.Fatalf("variant submenu missing:\n%s", section)
-	}
-	if !strings.Contains(section, `<summary>variants (2)</summary>`) {
-		t.Errorf("submenu summary missing:\n%s", section)
+	section := bookFieldset(t, body, "agency")
+	if !strings.Contains(section, `<summary>audiences (2)</summary>`) {
+		t.Errorf("audience submenu missing:\n%s", section)
 	}
 	for _, want := range []string{
-		`name="profile.audience" value="audience-fw" checked`,
-		`name="profile.audience" value="audience-pol" checked`,
+		`name="profile.agency" value="fw" checked`,
+		`name="profile.agency" value="pol" checked`,
 	} {
 		if !strings.Contains(section, want) {
-			t.Errorf("variant profile missing %q:\n%s", want, section)
+			t.Errorf("audience missing %q:\n%s", want, section)
 		}
 	}
-	for _, other := range []string{`value="chapter2"`, `value="other"`} {
-		if strings.Contains(section, other) {
-			t.Errorf("other book's profile offered under audience:\n%s", section)
-		}
-	}
-}
-
-func TestSingleProfileBookSubmitsHiddenProfile(t *testing.T) {
-	log := fakeQuarto(t)
-	srv, _ := testServer(t)
-
-	section := bookFieldset(t, get(t, srv, "/").Body.String(), "chapter2")
-	if strings.Contains(section, `class="variants"`) {
-		t.Errorf("single profile book has a submenu:\n%s", section)
-	}
-	if strings.Contains(section, `type="checkbox" name="profile.chapter2"`) {
-		t.Errorf("single profile book has a profile checkbox:\n%s", section)
-	}
-	if !strings.Contains(section, `<input type="hidden" name="profile.chapter2" value="chapter2">`) {
-		t.Fatalf("single profile book does not submit its profile:\n%s", section)
+	if strings.Contains(section, `value="std"`) {
+		t.Errorf("an undeclared audience was offered:\n%s", section)
 	}
 
-	if rec := post(t, srv, "/render", renderForm()); rec.Code != http.StatusOK {
-		t.Fatalf("render: status %d: %s", rec.Code, rec.Body)
+	// One audience needs no submenu; it is submitted as a hidden field.
+	common := bookFieldset(t, body, "common")
+	if strings.Contains(common, `class="variants"`) {
+		t.Errorf("single-audience topic has a submenu:\n%s", common)
 	}
-	if st := waitForRender(t, srv); st.Failed {
-		t.Fatalf("render failed:\n%s", strings.Join(st.Lines, "\n"))
-	}
-	if got := calls(t, log); !strings.Contains(got, "args: render --to pdf --no-clean --profile chapter2") {
-		t.Errorf("hidden profile was not passed to quarto:\n%s", got)
-	}
-}
-
-func TestProfilesOfOtherBooksNeverAppearUnderBook(t *testing.T) {
-	srv, root := testServer(t)
-	writeBook(t, root, "appendix")
-	writeBookProfile(t, root, "appendix")
-	writeBookProfile(t, root, "appendix-fw")
-	writeBookProfile(t, root, "chapter2-pol")
-
-	body := get(t, srv, "/").Body.String()
-	chapter := bookFieldset(t, body, "chapter2")
-	for _, other := range []string{`value="appendix"`, `value="appendix-fw"`} {
-		if strings.Contains(chapter, other) {
-			t.Errorf("appendix profile offered under chapter2:\n%s", chapter)
-		}
-	}
-	appendix := bookFieldset(t, body, "appendix")
-	for _, other := range []string{`value="chapter2"`, `value="chapter2-pol"`} {
-		if strings.Contains(appendix, other) {
-			t.Errorf("chapter2 profile offered under appendix:\n%s", appendix)
-		}
+	if !strings.Contains(common, `<input type="hidden" name="profile.common" value="std">`) {
+		t.Errorf("single-audience topic does not submit its audience:\n%s", common)
 	}
 }
 
 func TestRenderSelectionPersistsPerProject(t *testing.T) {
 	root := fixture(t)
-	writeBookProfile(t, root, "chapter2-pol")
+	writeProfile(t, root, "audience-pol", "_quarto-vars:\n  audience: \"-pol\"\n")
 	prefs := filepath.Join(t.TempDir(), "render.json")
 
 	srv, err := newServer(prefs)
@@ -407,7 +296,7 @@ func TestRenderSelectionPersistsPerProject(t *testing.T) {
 		t.Fatal(err)
 	}
 	post(t, srv, "/open", url.Values{"path": {root}})
-	form := url.Values{"book": {"chapter2"}, "format": {"docx"}, "slides": {"1"}}
+	form := url.Values{"book": {"chapter2"}, "format": {"docx"}}
 	if rec := post(t, srv, "/render/select", form); rec.Code != http.StatusNoContent {
 		t.Fatalf("select: status %d: %s", rec.Code, rec.Body)
 	}
@@ -422,20 +311,19 @@ func TestRenderSelectionPersistsPerProject(t *testing.T) {
 	for _, want := range []string{
 		`name="book" value="chapter2" checked`,
 		`name="format" value="docx" checked`,
-		`name="slides" value="1" checked`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("selection not restored, missing %q:\n%s", want, body)
 		}
 	}
-	// The variants were deliberately left unchecked, so the name-matched
-	// default must not come back.
+	// The audiences were deliberately left unchecked, so the default must
+	// not come back.
 	for _, bad := range []string{
-		`name="profile.chapter2" value="chapter2" checked`,
-		`name="profile.chapter2" value="chapter2-pol" checked`,
+		`name="profile.chapter2" value="std" checked`,
+		`name="profile.chapter2" value="pol" checked`,
 	} {
 		if strings.Contains(body, bad) {
-			t.Errorf("deselected profile restored as checked:\n%s", body)
+			t.Errorf("deselected audience restored as checked:\n%s", body)
 		}
 	}
 	if strings.Contains(body, `name="format" value="pdf" checked`) {
@@ -454,14 +342,13 @@ func TestRenderSelectionPersistsPerProject(t *testing.T) {
 	}
 }
 
-// A saved selection may name a book or profile that has since been deleted;
-// it must neither show up nor break the restore.
+// A saved selection may name a topic or audience that has since been
+// deleted; it must neither show up nor break the restore.
 func TestSavedSelectionIgnoresRemovedEntries(t *testing.T) {
 	root := fixture(t)
-	writeBookProfile(t, root, "other")
 	prefs := filepath.Join(t.TempDir(), "render.json")
-	saved := `{"` + root + `":{"books":["chapter2","gone"],` +
-		`"profiles":{"chapter2":["chapter2","other","gone"]},"formats":["pdf"]}}`
+	saved := `{"` + root + `":{"topics":["chapter2","gone"],` +
+		`"audiences":{"chapter2":["std","gone"]},"formats":["pdf"]}}`
 	if err := os.WriteFile(prefs, []byte(saved), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -472,63 +359,10 @@ func TestSavedSelectionIgnoresRemovedEntries(t *testing.T) {
 	}
 	post(t, srv, "/open", url.Values{"path": {root}})
 	body := get(t, srv, "/").Body.String()
-	for _, bad := range []string{`value="gone"`, `value="other"`} {
-		if strings.Contains(body, bad) {
-			t.Errorf("removed or non-matching entry rendered:\n%s", body)
-		}
+	if strings.Contains(body, `value="gone"`) {
+		t.Errorf("removed entry rendered:\n%s", body)
 	}
-	if !strings.Contains(body, `<input type="hidden" name="profile.chapter2" value="chapter2">`) {
-		t.Errorf("surviving profile not restored:\n%s", body)
-	}
-}
-
-// The slide deck is built from the pages' ::: slide blocks and rendered to
-// revealjs, not to the book's formats.
-func TestRenderSlides(t *testing.T) {
-	log := fakeQuarto(t)
-	srv, root := testServer(t)
-	page := "---\ntitle: Second\norder: 1\n---\n# Second\n\n::: slide\n## A slide\n:::\n"
-	if err := os.WriteFile(filepath.Join(root, "chapter2", "second.qmd"), []byte(page), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	form := url.Values{"book": {"chapter2"}, "format": {"pdf"}, "slides": {"1"}}
-	if rec := post(t, srv, "/render", form); rec.Code != http.StatusOK {
-		t.Fatalf("render: status %d: %s", rec.Code, rec.Body)
-	}
-	if st := waitForRender(t, srv); st.Failed {
-		t.Fatalf("render failed:\n%s", strings.Join(st.Lines, "\n"))
-	}
-
-	got := calls(t, log)
-	if !strings.Contains(got, "args: render _slides-build-chapter2.qmd --to revealjs --no-clean") {
-		t.Errorf("slides not rendered:\n%s", got)
-	}
-	// The slide content leaves the book.
-	input, _ := os.ReadFile(log + ".input")
-	if strings.Count(string(input), "A slide") != 1 {
-		t.Errorf("slide content should appear in the deck only:\n%s", input)
-	}
-	if _, err := os.Stat(filepath.Join(root, "_slides-build-chapter2.qmd")); !os.IsNotExist(err) {
-		t.Error("_slides-build-chapter2.qmd not cleaned up")
-	}
-}
-
-// A book without a single ::: slide block gets no deck, and says so.
-func TestRenderSlidesWithoutSlideBlocks(t *testing.T) {
-	log := fakeQuarto(t)
-	srv, _ := testServer(t)
-
-	form := url.Values{"book": {"chapter2"}, "format": {"pdf"}, "slides": {"1"}}
-	post(t, srv, "/render", form)
-	st := waitForRender(t, srv)
-	if st.Failed {
-		t.Fatalf("render failed:\n%s", strings.Join(st.Lines, "\n"))
-	}
-	if strings.Contains(calls(t, log), "slides-build") {
-		t.Error("a deck was rendered although there are no slide blocks")
-	}
-	if !strings.Contains(strings.Join(st.Lines, "\n"), "no ::: slide blocks") {
-		t.Errorf("missing note about the absent deck:\n%s", strings.Join(st.Lines, "\n"))
+	if !strings.Contains(body, `<input type="hidden" name="profile.chapter2" value="std">`) {
+		t.Errorf("surviving audience not restored:\n%s", body)
 	}
 }

@@ -198,6 +198,10 @@ document.body.addEventListener('input', function (evt) {
   if (evt.target.classList.contains('file-content')) {
     schedulePreview();
   }
+  if (evt.target.id === 'search-input') {
+    // The field asks for its own hits; this only remembers the query.
+    localStorage.setItem(SEARCH_KEY, evt.target.value);
+  }
 });
 
 // The stylesheet dropdown only shows up above the preview when more than
@@ -260,6 +264,127 @@ function revealSelection() {
   }
 }
 
+// Search
+//
+// The search field in the top bar is answered by /search with the pages
+// that match, as data rather than as a result list: the tree already shows
+// every page of the project, so the hits are shown by highlighting the
+// entries that have them. That is also what makes a result outlast
+// everything that re-renders the tree -- the two-second watch, moves,
+// saves, page switches -- because the highlighting is re-applied from here
+// after every swap, the way the selection and the collapsed branches are.
+
+var SEARCH_KEY = 'searchQuery';
+
+// searchHits maps a page's path to its number of hits, for the query the
+// field currently holds.
+var searchHits = new Map();
+
+var searchRetry = null;
+
+function searchQuery() {
+  var input = document.getElementById('search-input');
+  return input ? input.value : '';
+}
+
+// searchWords splits a query into terms the way the index splits page text,
+// dropping the single letters the server drops, so the editor highlights
+// exactly what the tree counted.
+function searchWords(q) {
+  return q.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(function (word) {
+    return word.length > 1;
+  });
+}
+
+// runSearch asks for the hits of whatever the field holds. The field posts
+// itself as it is typed in; this is for the times the field did not change
+// but the answer did -- the query restored on startup, and the retry while
+// the index is still being built.
+function runSearch() {
+  htmx.ajax('GET', '/search?q=' + encodeURIComponent(searchQuery()), {
+    target: '#search-results',
+    swap: 'innerHTML'
+  });
+}
+
+// readHits takes an answer apart and applies it to the tree and to the
+// editor.
+function readHits() {
+  searchHits = new Map();
+  document.querySelectorAll('#search-results .search-hits li').forEach(function (li) {
+    searchHits.set(li.dataset.path, Number(li.dataset.count));
+  });
+  applyHits();
+  setSearchTerms(searchWords(searchQuery()));
+
+  // The index is rebuilt in the background whenever the project changed on
+  // disk. Until the new one is in, the answer describes the project as it
+  // was a moment ago, and is worth asking for again.
+  clearTimeout(searchRetry);
+  if (document.querySelector('#search-results [data-indexing]')) {
+    searchRetry = setTimeout(runSearch, 400);
+  }
+}
+
+// applyHits marks the pages that matched, each with its number of hits. A
+// branch holding hits is shown open for as long as they are there -- a hit
+// inside a collapsed branch would be invisible -- but the remembered
+// collapsed state is left alone, so clearing the search returns the tree to
+// the shape the user gave it.
+function applyHits() {
+  var tree = document.getElementById('tree');
+  if (!tree) {
+    return;
+  }
+  tree.querySelectorAll('li.page').forEach(function (li) {
+    li.classList.remove('hit', 'hit-branch');
+    var row = li.querySelector(':scope > .row');
+    if (row) {
+      row.removeAttribute('data-hits');
+    }
+  });
+  tree.querySelectorAll('li.page').forEach(function (li) {
+    var count = searchHits.get(li.dataset.path);
+    if (!count) {
+      return;
+    }
+    li.classList.add('hit');
+    var row = li.querySelector(':scope > .row');
+    if (row) {
+      row.dataset.hits = count;
+    }
+    for (var node = li.parentElement; node && node.id !== 'tree'; node = node.parentElement) {
+      if (node.classList.contains('page')) {
+        node.classList.add('hit-branch');
+      }
+    }
+  });
+}
+
+// refreshHits re-applies the current search to a tree that has just been
+// rendered again, and asks for the hits anew: what the tree shows changed,
+// which is why it was rendered again, so the counts may have changed too.
+function refreshHits() {
+  applyHits();
+  if (searchQuery()) {
+    runSearch();
+  }
+}
+
+// initSearch puts the last query back into the field and runs it. Nothing
+// re-renders the field, but a reload starts it empty, and a search the user
+// never cleared is one they are still working with.
+function initSearch() {
+  var input = document.getElementById('search-input');
+  if (!input) {
+    return;
+  }
+  input.value = localStorage.getItem(SEARCH_KEY) || '';
+  if (input.value) {
+    runSearch();
+  }
+}
+
 document.addEventListener('DOMContentLoaded', function () {
   loadCollapsed();
   initTree();
@@ -273,6 +398,7 @@ document.addEventListener('DOMContentLoaded', function () {
   initEditor();
   applyPreview();
   refreshEditor();
+  initSearch();
 });
 
 document.body.addEventListener('htmx:afterSwap', function (evt) {
@@ -285,9 +411,13 @@ document.body.addEventListener('htmx:afterSwap', function (evt) {
   if (id === 'tree' || id === 'main') { // /open swaps #main, everything else #tree
     initTree();
     applySelection();
+    refreshHits(); // the tree was rebuilt; the current search still stands
   }
   if (id === 'main') {
     revealSelection();
+  }
+  if (id === 'search-results') {
+    readHits();
   }
   if (id === 'content') { // track whatever the editor now shows
     syncCurrentPath();
@@ -330,6 +460,7 @@ document.body.addEventListener('htmx:oobAfterSwap', function (evt) {
   if (id === 'tree') {
     initTree();
     applySelection();
+    refreshHits();
   }
 });
 

@@ -9,22 +9,28 @@ import (
 	"testing"
 
 	"github.com/cboct/qm/internal/bookrender"
+	"github.com/cboct/qm/internal/qmcore"
 )
 
-// fixture builds a small project with two book folders and a profile for
-// each: `chapter2` carries `_quarto-chapter2*.yml`, `extra` has none.
+// fixture builds a small project with two topics. `chapter2` takes part in
+// both formats and both audiences; `extra` declares a narrower matrix.
 func fixture(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 	files := map[string]string{
-		"index.qmd":               "---\ntitle: Home\norder: 1\n---\n# Home\n",
-		"chapter2/index.qmd":      "---\ntitle: Chapter 2\norder: 2\n---\n# Two\n",
-		"chapter2/second.qmd":     "---\ntitle: Second\norder: 1\n---\n# Second\n",
-		"extra/index.qmd":         "---\ntitle: Extra\norder: 3\n---\n# Extra\n",
-		"_quarto.yml":             "project:\n  type: book\nbook:\n  chapters:\n    - index.qmd\n",
-		"_quarto-chapter2.yml":    "book:\n  chapters:\n    - index.qmd\n",
-		"_quarto-chapter2-fw.yml": "book:\n  chapters:\n    - index.qmd\n",
-		"_quarto-web.yml":         "format:\n  html: default\n",
+		"index.qmd":           "---\ntitle: Home\norder: 1\n---\n# Home\n",
+		"chapter2/index.qmd":  "---\ntitle: Chapter 2\norder: 2\n---\n# Two\n",
+		"chapter2/second.qmd": "---\ntitle: Second\norder: 1\n---\n# Second\n",
+		"extra/index.qmd":     "---\ntitle: Extra\norder: 3\n---\n# Extra\n",
+		"_quarto.yml":         "project:\n  type: book\nbook:\n  chapters:\n    - index.qmd\n",
+
+		"_quarto-topic-chapter2.yml": "book:\n  title: Two\n_quarto-vars:\n  topic: chapter2\n",
+		"_quarto-topic-extra.yml": "book:\n  title: Extra\n_quarto-vars:\n  topic: extra\n" +
+			"qm:\n  formats: [handbook]\n  audiences: [std]\n",
+		"_quarto-format-handout.yml":  "project:\n  type: book\n  output-dir: _output/handout\n",
+		"_quarto-format-handbook.yml": "project:\n  type: book\n  output-dir: _output/handbook\n",
+		"_quarto-audience-std.yml":    "_quarto-vars:\n  audience: \"\"\n",
+		"_quarto-audience-pol.yml":    "_quarto-vars:\n  audience: \"-pol\"\n",
 	}
 	for name, content := range files {
 		p := filepath.Join(root, name)
@@ -68,132 +74,111 @@ func calls(t *testing.T, log string) string {
 	return string(b)
 }
 
-func TestBuildOptionsRendersEveryBookByDefault(t *testing.T) {
+func selections(opts bookrender.Options) []string {
+	out := make([]string, 0, len(opts.Selections))
+	for _, s := range opts.Selections {
+		out = append(out, s.String())
+	}
+	return out
+}
+
+// The default is the whole matrix — but only the part each topic declares
+// it takes part in. `extra` has one format and one audience, so the full
+// cross product of 2 × 2 × 2 does not apply to it.
+func TestBuildOptionsExpandsTheDeclaredMatrix(t *testing.T) {
 	root := fixture(t)
-	opts, err := BuildOptions(root, nil, nil, DefaultFormats, false)
+	opts, err := BuildOptions(root, qmcore.Matrix{}, false, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := []string{"chapter2", "extra"}
-	if !slices.Equal(opts.Books, want) {
-		t.Errorf("Books = %v, want %v", opts.Books, want)
+	want := []string{
+		"topic-chapter2,format-handbook,audience-pol",
+		"topic-chapter2,format-handbook,audience-std",
+		"topic-chapter2,format-handout,audience-pol",
+		"topic-chapter2,format-handout,audience-std",
+		"topic-extra,format-handbook,audience-std",
 	}
-	if !slices.Equal(opts.Formats, []string{"pdf", "docx"}) {
-		t.Errorf("Formats = %v, want pdf docx", opts.Formats)
+	got := selections(opts)
+	slices.Sort(got)
+	if !slices.Equal(got, want) {
+		t.Errorf("selections =\n%v\nwant\n%v", got, want)
 	}
 }
 
-// Without --profile a book is rendered with the profiles named after it.
-func TestBuildOptionsDefaultsProfilesToTheBookName(t *testing.T) {
+func TestBuildOptionsNarrowsByFlag(t *testing.T) {
 	root := fixture(t)
-	opts, err := BuildOptions(root, nil, nil, DefaultFormats, false)
+	opts, err := BuildOptions(root, qmcore.Matrix{
+		Topics:    []string{"chapter2"},
+		Formats:   []string{"handout"},
+		Audiences: []string{"pol"},
+	}, false, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := []string{"chapter2", "chapter2-fw"}
-	if !slices.Equal(opts.Profiles["chapter2"], want) {
-		t.Errorf("profiles of chapter2 = %v, want %v", opts.Profiles["chapter2"], want)
-	}
-	// `_quarto-web.yml` declares no book, and nothing is named after
-	// `extra`, so that book renders with the project's default config.
-	if len(opts.Profiles["extra"]) != 0 {
-		t.Errorf("profiles of extra = %v, want none", opts.Profiles["extra"])
+	want := []string{"topic-chapter2,format-handout,audience-pol"}
+	if got := selections(opts); !slices.Equal(got, want) {
+		t.Errorf("selections = %v, want %v", got, want)
 	}
 }
 
-func TestBuildOptionsProfileFlagAppliesToEveryBook(t *testing.T) {
+// A topic never renders in a format it does not declare, even when the
+// flag asks for it.
+func TestBuildOptionsHonoursTheTopicsOwnAxes(t *testing.T) {
 	root := fixture(t)
-	opts, err := BuildOptions(root, []string{"chapter2"}, []string{"chapter2-fw"},
-		[]string{"pdf"}, false)
+	opts, err := BuildOptions(root, qmcore.Matrix{
+		Topics:  []string{"extra"},
+		Formats: []string{"handout", "handbook"},
+	}, false, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !slices.Equal(opts.Profiles["chapter2"], []string{"chapter2-fw"}) {
-		t.Errorf("profiles = %v, want chapter2-fw", opts.Profiles["chapter2"])
-	}
-	if !opts.CombineProfiles {
-		t.Error("profiles named on the command line are not combined into one run")
+	want := []string{"topic-extra,format-handbook,audience-std"}
+	if got := selections(opts); !slices.Equal(got, want) {
+		t.Errorf("selections = %v, want %v", got, want)
 	}
 }
 
-// The profiles named after a book are variants of it and stay separate.
-func TestBuildOptionsKeepsDefaultProfilesSeparate(t *testing.T) {
+func TestBuildOptionsRejectsUnknownNames(t *testing.T) {
 	root := fixture(t)
-	opts, err := BuildOptions(root, []string{"chapter2"}, nil, []string{"pdf"}, false)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if opts.CombineProfiles {
-		t.Error("the book's own profiles must not be combined into one run")
-	}
-}
-
-func TestBuildOptionsRejectsUnknownBook(t *testing.T) {
-	root := fixture(t)
-	if _, err := BuildOptions(root, []string{"nope"}, nil, DefaultFormats, false); err == nil {
-		t.Fatal("expected an error for a folder that is not a book")
+	for _, req := range []qmcore.Matrix{
+		{Topics: []string{"nope"}},
+		{Formats: []string{"nope"}},
+		{Audiences: []string{"nope"}},
+	} {
+		if _, err := BuildOptions(root, req, false, false); err == nil {
+			t.Errorf("%+v: expected an error for a name no profile backs", req)
+		}
 	}
 }
 
-func TestBuildOptionsNeedsAnOutput(t *testing.T) {
-	root := fixture(t)
-	if _, err := BuildOptions(root, nil, nil, nil, false); err == nil {
-		t.Fatal("expected an error when neither formats nor slides are selected")
-	}
-	// --slides alone is a complete request.
-	if _, err := BuildOptions(root, nil, nil, nil, true); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+func TestBuildOptionsNeedsProfiles(t *testing.T) {
+	if _, err := BuildOptions(t.TempDir(), qmcore.Matrix{}, false, false); err == nil {
+		t.Fatal("expected an error for a project without profiles")
 	}
 }
 
-func TestBuildOptionsNeedsBookFolders(t *testing.T) {
-	if _, err := BuildOptions(t.TempDir(), nil, nil, DefaultFormats, false); err == nil {
-		t.Fatal("expected an error for a project without book folders")
-	}
-}
-
-// Run flattens the book and calls quarto once per profile and format. The
-// flat document is not named on the command line — the project renders, and
-// its top-level index.qmd includes the document.
-func TestRunInvokesQuartoPerProfileAndFormat(t *testing.T) {
+// One `quarto render --profile <t>,<f>,<a>` per selection, and nothing
+// else: no input file, no --to, no --output-dir.
+func TestRunInvokesQuartoPerSelection(t *testing.T) {
 	log := fakeQuarto(t)
 	root := fixture(t)
 
-	if err := Run(root, []string{"chapter2"}, nil, []string{"pdf"}, false); err != nil {
+	err := Run(root, qmcore.Matrix{Topics: []string{"chapter2"}, Formats: []string{"handout"}},
+		false, false)
+	if err != nil {
 		t.Fatalf("render failed: %v", err)
 	}
 	got := calls(t, log)
 	for _, want := range []string{
-		"args: render --to pdf --no-clean --profile chapter2\n",
-		"args: render --to pdf --no-clean --profile chapter2-fw\n",
+		"args: render --profile topic-chapter2,format-handout,audience-pol --no-clean\n",
+		"args: render --profile topic-chapter2,format-handout,audience-std --no-clean\n",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing invocation %q, got:\n%s", want, got)
 		}
 	}
-	// The flat document is temporary and gone once the render is done.
-	if _, err := os.Stat(filepath.Join(root, "_book-build-chapter2.qmd")); !os.IsNotExist(err) {
-		t.Error("_book-build-chapter2.qmd not cleaned up")
-	}
-}
-
-// --profile hands Quarto every profile of the list, in one run: the profiles
-// compose one configuration, and a missing one costs the render whatever
-// that profile holds — the book's chapter list, for instance.
-func TestRunPassesEveryNamedProfileToQuarto(t *testing.T) {
-	log := fakeQuarto(t)
-	root := fixture(t)
-
-	profiles := []string{"web", "chapter2-fw"}
-	if err := Run(root, []string{"chapter2"}, profiles, []string{"pdf"}, false); err != nil {
-		t.Fatalf("render failed: %v", err)
-	}
-	got := calls(t, log)
-	if want := "args: render --to pdf --no-clean --profile web,chapter2-fw\n"; !strings.Contains(got, want) {
-		t.Errorf("missing invocation %q, got:\n%s", want, got)
-	}
-	if n := strings.Count(got, "args:"); n != 1 {
-		t.Errorf("%d quarto runs, want 1:\n%s", n, got)
+	if n := strings.Count(got, "args:"); n != 2 {
+		t.Errorf("%d quarto runs, want 2:\n%s", n, got)
 	}
 }
 
@@ -204,7 +189,7 @@ func TestRunReportsFailure(t *testing.T) {
 		[]byte("#!/bin/sh\necho boom >&2\nexit 1\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := Run(root, []string{"chapter2"}, nil, []string{"pdf"}, false); err == nil {
+	if err := Run(root, qmcore.Matrix{Topics: []string{"extra"}}, false, false); err == nil {
 		t.Fatal("expected an error when quarto fails")
 	}
 }

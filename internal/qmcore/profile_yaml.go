@@ -2,64 +2,15 @@ package qmcore
 
 import (
 	"fmt"
-	"os"
 
 	"gopkg.in/yaml.v3"
 )
 
-// UpdateProfileYaml reads the profile yaml, sets book.chapters to the given
-// list (creating the file/section if missing), and writes it back.
-func UpdateProfileYaml(profilePath string, chapters []string) error {
-	var root yaml.Node
-
-	data, err := os.ReadFile(profilePath)
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("cannot read %q: %w", profilePath, err)
-	}
-
-	if len(data) > 0 {
-		if err := yaml.Unmarshal(data, &root); err != nil {
-			return fmt.Errorf("cannot parse %q: %w", profilePath, err)
-		}
-	}
-
-	if root.Kind == 0 {
-		root = yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{
-			{Kind: yaml.MappingNode},
-		}}
-	}
-	if root.Kind != yaml.DocumentNode || len(root.Content) == 0 {
-		return fmt.Errorf("unexpected yaml structure in %q", profilePath)
-	}
-	mappingRoot := root.Content[0]
-
-	bookNode := FindMappingValue(mappingRoot, "book")
-	if bookNode == nil {
-		keyNode := &yaml.Node{Kind: yaml.ScalarNode, Value: "book"}
-		bookNode = &yaml.Node{Kind: yaml.MappingNode}
-		mappingRoot.Content = append(mappingRoot.Content, keyNode, bookNode)
-	}
-
-	chaptersSeq := &yaml.Node{Kind: yaml.SequenceNode}
-	for _, ch := range chapters {
-		chaptersSeq.Content = append(chaptersSeq.Content, &yaml.Node{
-			Kind:  yaml.ScalarNode,
-			Value: ch,
-		})
-	}
-
-	if !ReplaceMappingValue(bookNode, "chapters", chaptersSeq) {
-		keyNode := &yaml.Node{Kind: yaml.ScalarNode, Value: "chapters"}
-		bookNode.Content = append(bookNode.Content, keyNode, chaptersSeq)
-	}
-
-	out, err := yaml.Marshal(&root)
-	if err != nil {
-		return fmt.Errorf("cannot marshal yaml: %w", err)
-	}
-
-	return os.WriteFile(profilePath, out, 0644)
-}
+// Nothing writes `book: chapters:` any more: the list is a fixed one-element
+// list in _quarto.yml, and the book's real structure comes from flattening
+// the topic folder at render time. A generator for it would now be actively
+// harmful, because Quarto concatenates array keys across configurations
+// instead of replacing them.
 
 // FindMappingValue returns the value node for the given key in a YAML
 // mapping node, or nil if not found.

@@ -1,7 +1,7 @@
-// Package lint implements the `qm lint <profile>` subcommand.
+// Package lint implements the `qm lint [<topic>]` subcommand.
 //
 // It runs lint checks over the .qmd source files that belong to the
-// given profile. The first check verifies that every opening Quarto div
+// given topic. The first check verifies that every opening Quarto div
 // fence (three-or-more colons followed by a block descriptor) has a
 // matching closing fence (three-or-more colons on an otherwise empty
 // line).
@@ -15,25 +15,33 @@ import (
 	"regexp"
 	"sort"
 
+	"github.com/cboct/qm/internal/cli"
 	"github.com/cboct/qm/internal/qmcore"
 	"github.com/christophberger/start"
+	flag "github.com/spf13/pflag"
 )
 
-var projectPath *string
+var (
+	projectPath  *string
+	audienceFlag *string
+)
 
 // Register wires the top-level `lint` command into start. Per the spec's
 // SUBCOMMANDS.3 constraint, start has no notion of an <object>; because
 // `lint` carries no sub-commands, we model it directly as a leaf command.
 func Register(projectFlag *string) {
 	projectPath = projectFlag
+	audienceFlag = flag.String("lint-audience", "",
+		"Only lint the files of this audience's _POL/_FW variants")
 
 	start.Add(&start.Command{
 		Name:  "lint",
-		Short: "Run lint checks on the files of a profile",
+		Short: "Run lint checks on the files of a topic",
 		Long: "Run lint checks against every .qmd file that belongs to " +
-			"the given profile. Usage: qm lint <profile>.",
-		Flags: []string{"project"},
-		Cmd:   cmd,
+			"the given topic, or against the whole project when no topic is " +
+			"named. Usage: qm lint [<topic>].",
+		Flags: []string{"project", "lint-audience"},
+		Cmd:   cli.Guard(cmd),
 	})
 }
 
@@ -45,27 +53,31 @@ func cmd(c *start.Command) error {
 	if err != nil {
 		return fmt.Errorf("cannot resolve project path: %w", err)
 	}
-	profile := ""
+	topic := ""
 	if len(c.Args) >= 1 {
-		profile = c.Args[0]
+		topic = c.Args[0]
 	}
-	return Run(docPath, profile)
+	audience := ""
+	if audienceFlag != nil {
+		audience = *audienceFlag
+	}
+	return Run(docPath, topic, audience)
 }
 
-// Run performs all lint checks on the files belonging to profileArg,
-// resolved against docPath. When profileArg is empty, every .qmd file
+// Run performs all lint checks on the files belonging to topicArg,
+// resolved against docPath. When topicArg is empty, every .qmd file
 // under docPath is linted (except those matching the default exclude
 // pattern). It prints one line per finding to stderr and returns a
 // non-nil error when at least one finding was reported.
-func Run(docPath, profileArg string) error {
+func Run(docPath, topicArg, audience string) error {
 	var (
 		files []string
 		err   error
 	)
-	if profileArg == "" {
+	if topicArg == "" {
 		files, err = allDocFiles(docPath)
 	} else {
-		files, err = profileFiles(docPath, profileArg)
+		files, err = topicFiles(docPath, topicArg, audience)
 	}
 	if err != nil {
 		return err
@@ -93,24 +105,39 @@ func Run(docPath, profileArg string) error {
 	return nil
 }
 
-// profileFiles returns the sorted list of doc-root-relative file paths
-// that belong to the given profile.
-func profileFiles(docPath, profileArg string) ([]string, error) {
-	profileArg = qmcore.NormalizeProfileArg(profileArg)
-	profilePath := qmcore.ResolveProfilePath(docPath, profileArg)
-	profileName := qmcore.StripYamlExt(filepath.Base(profilePath))
-	baseFolder, variant := qmcore.ParseProfileName(profileName)
+// topicFiles returns the sorted list of doc-root-relative file paths that
+// belong to the given topic.
+//
+// The argument is a topic — `calltaker` or `topic-calltaker` — not a whole
+// profile selection: linting looks at the source files, and those are the
+// same for every format and audience. The audience only decides which of a
+// folder's `_POL`/`_FW` variant files are in play, so it is an optional
+// narrowing, not part of the address.
+func topicFiles(docPath, topicArg, audience string) ([]string, error) {
+	topic := topicArg
+	if a, value, ok := qmcore.SplitProfileName(topicArg); ok {
+		if a != qmcore.AxisTopic {
+			return nil, fmt.Errorf("%q is a %s profile; qm lint takes a topic", topicArg, a)
+		}
+		topic = value
+	}
+	folder := topic
+	if p, err := qmcore.LoadProfile(docPath, qmcore.AxisTopic.ProfileName(topic)); err == nil {
+		if p.QM.Folder != "" {
+			folder = p.QM.Folder
+		}
+	}
 
-	baseFolderPath := filepath.Join(docPath, baseFolder)
+	baseFolderPath := filepath.Join(docPath, folder)
 	if _, err := os.Stat(baseFolderPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("base folder %q not found in document tree %q", baseFolder, docPath)
+		return nil, fmt.Errorf("content folder %q not found in document tree %q", folder, docPath)
 	}
 
 	excludePattern, err := regexp.Compile(qmcore.DefaultExcludePattern)
 	if err != nil {
 		return nil, err
 	}
-	entries, err := qmcore.ScanFiles(docPath, baseFolderPath, variant, excludePattern)
+	entries, err := qmcore.ScanFiles(docPath, baseFolderPath, audience, excludePattern)
 	if err != nil {
 		return nil, fmt.Errorf("scanning files: %w", err)
 	}

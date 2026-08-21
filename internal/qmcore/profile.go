@@ -14,22 +14,9 @@ func StripYamlExt(name string) string {
 	return strings.TrimSuffix(name, ".yml")
 }
 
-// ParseProfileName derives the base folder and optional variant ("fw", "pol",
-// or "") from a profile name like "_quarto-calltaker-fw".
-func ParseProfileName(name string) (baseFolder, variant string) {
-	const prefix = "_quarto-"
-	if !strings.HasPrefix(name, prefix) {
-		return name, ""
-	}
-	name = strings.TrimPrefix(name, prefix)
-	if strings.HasSuffix(name, "-fw") {
-		return strings.TrimSuffix(name, "-fw"), "fw"
-	}
-	if strings.HasSuffix(name, "-pol") {
-		return strings.TrimSuffix(name, "-pol"), "pol"
-	}
-	return name, ""
-}
+// Profile names no longer encode the topic and the audience in one string
+// (the old "_quarto-calltaker-fw"). The two are separate profiles now; see
+// selection.go for how a name is taken apart.
 
 // ResolveProfilePath finds the profile yaml in docRoot. It accepts either a
 // bare name ("foo" or "_quarto-foo"), or a full file name with extension.

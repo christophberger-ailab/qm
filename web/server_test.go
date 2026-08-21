@@ -27,15 +27,19 @@ func fixture(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 	files := map[string]string{
-		"index.qmd":            "---\ntitle: Home\norder: 1\n---\n# Home\n",
-		"chapter2/index.qmd":   "---\ntitle: Chapter 2\norder: 2\n---\n# Two\n",
-		"chapter2/second.qmd":  "---\ntitle: Second\norder: 1\n---\n# Second\n",
-		"chapter2/third.qmd":   "---\ntitle: Third\norder: 2\n---\n# Third\n",
-		"chapter2/loose.qmd":   "---\ntitle: Loose\n---\n# Loose\n",
-		"chapter2/broken.qmd":  "---\ntitle: Broken\norder: 3\n---\n::: {.callout-note}\nunclosed\n",
-		"_quarto.yml":          "project:\n  type: book\nbook:\n  chapters:\n    - index.qmd\n",
-		"_quarto-chapter2.yml": "book:\n  chapters:\n    - index.qmd\n",
-		"_quarto-web.yml":      "format:\n  html: default\n",
+		"index.qmd":           "---\ntitle: Home\norder: 1\n---\n# Home\n",
+		"chapter2/index.qmd":  "---\ntitle: Chapter 2\norder: 2\n---\n# Two\n",
+		"chapter2/second.qmd": "---\ntitle: Second\norder: 1\n---\n# Second\n",
+		"chapter2/third.qmd":  "---\ntitle: Third\norder: 2\n---\n# Third\n",
+		"chapter2/loose.qmd":  "---\ntitle: Loose\n---\n# Loose\n",
+		"chapter2/broken.qmd": "---\ntitle: Broken\norder: 3\n---\n::: {.callout-note}\nunclosed\n",
+		"_quarto.yml":         "project:\n  type: book\nbook:\n  chapters:\n    - index.qmd\n",
+
+		"_quarto-topic-chapter2.yml":  "book:\n  title: Two\n_quarto-vars:\n  topic: chapter2\n",
+		"_quarto-format-pdf.yml":      "project:\n  type: book\n  output-dir: _output/pdf\n",
+		"_quarto-format-docx.yml":     "project:\n  type: book\n  output-dir: _output/docx\n",
+		"_quarto-audience-std.yml":    "_quarto-vars:\n  audience: \"\"\n",
+		"_quarto-not-an-axis-web.yml": "format:\n  html: default\n",
 	}
 	for name, content := range files {
 		p := filepath.Join(root, name)

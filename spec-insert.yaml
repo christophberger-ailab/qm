@@ -24,4 +24,4 @@ constraints:
     1: Read the existing order list from the given folder. Remember that a chapter may either be a .qmd file in this folder or a subfolder with an index.qmd file inside. E.g., `parsing.qmd` or `parsing/index.qmd`.
     2: Renumber the orders of all files with an order number greater or equal to the order number of the new chapter.
     3: Rename the frontmatter entry `insert-at` to `order`.
-    4: Invoke the chapters-update subcommand to keep the chapters list in sync.
+    4: Nothing else. There is no book chapter list to keep in sync: a book is the folder flattened at render time (see spec.yaml, BOOKS).

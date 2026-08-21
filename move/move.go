@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/cboct/qm/internal/cli"
 	"github.com/cboct/qm/internal/qmcore"
-	"github.com/cboct/qm/update"
 	"github.com/christophberger/start"
 	"gopkg.in/yaml.v3"
 )
@@ -29,7 +29,7 @@ func Register(parent string, projectFlag *string) {
 			"number within the same folder. Other chapters are renumbered to " +
 			"close any gap and to make room at the new position.",
 		Flags: []string{"project"},
-		Cmd:   cmd,
+		Cmd:   cli.Guard(cmd),
 	})
 }
 
@@ -124,16 +124,7 @@ func Run(docPath, folderPath string, oldOrder, newOrder int) error {
 
 	fmt.Printf("Moved %s from order %d to %d\n", moved.RelPath, oldOrder, newOrder)
 
-	folderName, err := update.FolderName(docPath, folderPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: cannot determine top-level folder for %s: %v\n", folderPath, err)
-		return nil
-	}
-	pattern, err := update.CompileExclude()
-	if err != nil {
-		return err
-	}
-	return update.UpdateFolderProfiles(docPath, folderName, pattern)
+	return nil
 }
 
 func applyOrderUpdates(docPath string, updates map[string]int) error {

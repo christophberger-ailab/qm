@@ -1,0 +1,38 @@
+feature:
+  name: finalize
+  description: The project's Quarto post-render hook
+
+components:
+  COMMAND:
+    description: qm finalize [--profile <t>,<f>,<a>] [--output-dir <d>] [--output-files <list>]
+    requirements:
+      1: Object name is "finalize"
+      2: No subcommand
+      3: Flag --project sets the path to the document tree. Defaults to the current directory
+      4: Flag --profile takes the comma-separated profile selection. Defaults to $QUARTO_PROFILE
+      5: Flag --output-dir defaults to $QUARTO_PROJECT_OUTPUT_DIR
+      6: Flag --output-files defaults to $QUARTO_PROJECT_OUTPUT_FILES, one project-relative path per line
+      7: 'Wired into the project as `project: post-render: qm finalize`'
+
+constraints:
+  STANDARD: See the constraints in spec.yaml.
+
+  PROCESS:
+    description: >
+      Quarto resolves `{{< var >}}` in exactly two keys, `book: output-file`
+      and `book: title`. That is enough for a book — its file name is
+      composed from the topic's and the audience's variables and Quarto
+      writes it where it belongs — and not enough for the other two cases,
+      which is what this hook is for.
+    requirements:
+      1: 'A format profile may declare `qm: output-file:`, a file name stem that may contain `{{< var >}}`'
+      1-1: Every file Quarto reported is moved to `<output-dir>/<stem><ext>`, keeping its extension
+      1-2: 'The move is to the top of the output directory on purpose: a `type: default` project mirrors the source layout, so a deck built from `_build/slides.qmd` arrives at `<output-dir>/_build/slides.pptx`'
+      1-3: Source directories that end up empty are removed
+      1-4: 'This exists because a slide deck is not a book: book projects reject pptx, so the slides format is a `type: default` project, and a non-book project has no interpolating key to name its output with'
+      2: 'A format profile may declare `qm: output-dir-suffix:`, appended to the output directory after the render'
+      2-1: An empty result leaves the directory alone
+      2-2: An existing directory of the target name is replaced, not merged into
+      2-3: 'This exists because `project: output-dir` does not interpolate — it would create a directory literally named `{{< var audience >}}` — while the website''s output directory depends on the audience'
+      3: A format that declares neither does nothing, which is the normal case for a book
+      4: The same validation as `qm prepare` applies to the selection

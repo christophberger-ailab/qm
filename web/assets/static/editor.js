@@ -61,6 +61,92 @@ function initEditor() {
   });
 
   applyVim();
+  // A page opened while a search is running arrives with its hits already
+  // marked, and scrolled to the first of them.
+  applySearchHighlight();
+  scrollToFirstHit();
+}
+
+// Search highlighting
+//
+// The project search highlights the pages that matched in the tree; the
+// page open in the editor gets the same treatment inside its text. An
+// overlay is CodeMirror's own way to paint on top of the syntax
+// highlighting without touching the document, and "searching" is the token
+// style its stylesheet already dresses as a hit.
+//
+// app.js owns the query; the editor is only told which words it matched.
+
+var searchTerms = [];
+var searchOverlay = null;
+
+// setSearchTerms paints the given words, replacing whatever was painted
+// before. An empty list clears the highlighting.
+function setSearchTerms(terms) {
+  searchTerms = terms;
+  applySearchHighlight();
+}
+
+// searchPattern matches the words starting with any of the terms -- the
+// rule the index matches by, so the editor marks what the tree counted.
+function searchPattern() {
+  if (!searchTerms.length) {
+    return null;
+  }
+  var alternatives = searchTerms.map(function (term) {
+    return term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  });
+  return new RegExp(
+    '(?<![\\p{L}\\p{N}])(?:' + alternatives.join('|') + ')[\\p{L}\\p{N}]*',
+    'giu'
+  );
+}
+
+function applySearchHighlight() {
+  if (!cm) {
+    return;
+  }
+  if (searchOverlay) {
+    cm.removeOverlay(searchOverlay);
+    searchOverlay = null;
+  }
+  var pattern = searchPattern();
+  if (!pattern) {
+    return;
+  }
+  // The token function is called with the stream parked at some position in
+  // a line and must leave it further along. Searching from lastIndex rather
+  // than from a slice of the line is what lets the pattern look at the
+  // character before a hit, which is how it tells a word start apart from
+  // the middle of a longer word.
+  searchOverlay = {
+    token: function (stream) {
+      pattern.lastIndex = stream.pos;
+      var match = pattern.exec(stream.string);
+      if (match && match.index === stream.pos) {
+        stream.pos += match[0].length;
+        return 'searching';
+      }
+      stream.pos = match ? match.index : stream.string.length;
+      return null;
+    }
+  };
+  cm.addOverlay(searchOverlay);
+}
+
+// scrollToFirstHit brings the first hit into view when a page is opened
+// from the tree, so a page found by the search does not open above it. It
+// scrolls only: moving the cursor would take the editor away from the
+// place the user is actually working in.
+function scrollToFirstHit() {
+  var pattern = searchPattern();
+  if (!cm || !pattern) {
+    return;
+  }
+  var cursor = cm.getSearchCursor(pattern, { line: 0, ch: 0 }, { multiline: false });
+  if (cursor.findNext()) {
+    cm.scrollIntoView({ from: cursor.from(), to: cursor.to() }, 80);
+  }
 }
 
 // refreshEditor makes CodeMirror remeasure, which it needs whenever the

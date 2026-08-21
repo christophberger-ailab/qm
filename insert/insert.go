@@ -7,7 +7,8 @@
 //  1. Reads the existing order list of the target folder.
 //  2. Renumbers all existing chapters with order >= <n> by +1.
 //  3. Renames `insert-at` to `order` in the new chapter's frontmatter.
-//  4. Invokes the update subcommand to keep the chapter list in sync.
+//  4. Leaves the book chapter list alone: the book is assembled by
+//     flattening the folder at render time, so there is none to update.
 package insert
 
 import (
@@ -16,8 +17,8 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/cboct/qm/internal/cli"
 	"github.com/cboct/qm/internal/qmcore"
-	"github.com/cboct/qm/update"
 	"github.com/christophberger/start"
 	"gopkg.in/yaml.v3"
 )
@@ -35,7 +36,7 @@ func Register(parent string, projectFlag *string) {
 			"a file (or subfolder/index.qmd) in the folder, with an `insert-at: <n>` " +
 			"frontmatter entry. Existing chapters at order >= n are renumbered.",
 		Flags: []string{"project"},
-		Cmd:   cmd,
+		Cmd:   cli.Guard(cmd),
 	})
 }
 
@@ -86,16 +87,7 @@ func Run(docPath, folderPath string) error {
 
 	fmt.Printf("Inserted %s at order %d\n", newItem.RelPath, insertAt)
 
-	folderName, err := update.FolderName(docPath, folderPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: cannot determine top-level folder for %s: %v\n", folderPath, err)
-		return nil
-	}
-	pattern, err := update.CompileExclude()
-	if err != nil {
-		return err
-	}
-	return update.UpdateFolderProfiles(docPath, folderName, pattern)
+	return nil
 }
 
 // findInsertCandidate returns the chapter item that has insert-at:<n> set

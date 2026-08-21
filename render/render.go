@@ -2,70 +2,69 @@
 //
 // Spec: spec-render.yaml.
 //
-//	qm render                     -> render every book folder of the project
-//	qm render a b                 -> render the book folders a and b
-//	qm render --profile x,y a     -> render book a with the profiles x and y
-//	qm render --to pdf a          -> render book a to PDF only
-//	qm render --slides a          -> also render the deck of a's slide blocks
+//	qm render                          -> every combination the project declares
+//	qm render calltaker dispatcher     -> those two topics, all their formats
+//	qm render --format handout         -> handouts only
+//	qm render --audience pol --clean   -> the Polizei variants, from scratch
 //
-// The work itself is the render flow merged in from quarto-sorter (see
-// internal/bookrender): each book folder is flattened into a single .qmd
-// document at the project root, which the project's top-level index.qmd
-// includes, and the project is handed to `quarto render`. The `qm web` UI
-// drives the same flow, so both produce identical output; this command
-// streams the progress to stdout instead of a browser panel.
+// One `quarto render --profile topic-<t>,format-<f>,audience-<a>` runs per
+// combination. That command is the whole interface: it works from the CLI,
+// from VS Code, and from CI without qm, and it produces correctly named
+// output on its own, because the project's pre- and post-render hooks
+// (`qm prepare`, `qm finalize`) do the parts Quarto's configuration cannot
+// express. `qm render` only walks the matrix.
 package render
 
 import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/cboct/qm/internal/bookrender"
-	"github.com/cboct/qm/internal/project"
+	"github.com/cboct/qm/internal/cli"
+	"github.com/cboct/qm/internal/qmcore"
 	"github.com/christophberger/start"
 	flag "github.com/spf13/pflag"
 )
 
 var (
-	projectPath *string
-	profileFlag *string
-	formatFlag  *string
-	slidesFlag  *bool
+	projectPath  *string
+	topicFlag    *string
+	formatFlag   *string
+	audienceFlag *string
+	cleanFlag    *bool
+	dryRunFlag   *bool
 )
 
 // Register wires the `render` command into start. `render` has no
 // sub-commands, so — as with `lint` — it is registered as a leaf.
 func Register(projectFlag *string) {
 	projectPath = projectFlag
-	profileFlag = flag.String("profile", "",
-		"Comma-separated Quarto profiles to render each book with "+
-			"(default: the profiles named after the book)")
-	formatFlag = flag.String("to", strings.Join(DefaultFormats, ","),
-		"Comma-separated Quarto output formats for the book")
-	slidesFlag = flag.Bool("slides", false,
-		"Also render the deck built from the pages' ::: slide blocks")
+	topicFlag = flag.String("topic", "",
+		"Comma-separated topics to render (default: all)")
+	formatFlag = flag.String("format", "",
+		"Comma-separated output formats to render (default: all)")
+	audienceFlag = flag.String("audience", "",
+		"Comma-separated audiences to render (default: all)")
+	cleanFlag = flag.Bool("clean", false,
+		"Empty the output directories of the selected formats first")
+	dryRunFlag = flag.Bool("dry-run", false,
+		"Print the quarto invocations without running them")
 
 	start.Add(&start.Command{
 		Name:  "render",
-		Short: "Render the book folders of the project",
-		Long: "Flatten each book folder into a single document and render it " +
-			"with Quarto. Usage: qm render [<book>...]. Without a book name, " +
-			"every book folder of the project is rendered. The profiles given " +
-			"to --profile are passed to Quarto together, as one composed " +
-			"configuration; without --profile, the profiles named after the " +
-			"book (`<book>` and `<book>-*`) are used, and the book is rendered " +
-			"once per profile because those are variants of it.",
-		Flags: []string{"project", "profile", "to", "slides"},
-		Cmd:   cmd,
+		Short: "Render the project's topic/format/audience matrix",
+		Long: "Render every topic × format × audience combination the project " +
+			"declares, or the subset selected by the flags. Usage: " +
+			"qm render [<topic>...]. Each combination is one " +
+			"`quarto render --profile topic-<t>,format-<f>,audience-<a>`. " +
+			"Which formats and audiences a topic takes part in is declared in " +
+			"its own profile, under `qm: formats:` and `qm: audiences:`.",
+		Flags: []string{"project", "topic", "format", "audience", "clean", "dry-run"},
+		Cmd:   cli.Guard(cmd),
 	})
 }
-
-// DefaultFormats are the book output formats used when --to is not given.
-// They match the formats the `qm web` render panel offers.
-var DefaultFormats = []string{"pdf", "docx"}
 
 func cmd(c *start.Command) error {
 	if projectPath == nil {
@@ -75,30 +74,27 @@ func cmd(c *start.Command) error {
 	if err != nil {
 		return fmt.Errorf("cannot resolve project path: %w", err)
 	}
-	formats := DefaultFormats
-	if formatFlag != nil {
-		formats = splitList(*formatFlag)
+	// Positional arguments name topics, the axis one usually varies.
+	topics := append(splitList(deref(topicFlag)), c.Args...)
+	req := qmcore.Matrix{
+		Topics:    topics,
+		Formats:   splitList(deref(formatFlag)),
+		Audiences: splitList(deref(audienceFlag)),
 	}
-	var profiles []string
-	if profileFlag != nil {
-		profiles = splitList(*profileFlag)
-	}
-	slides := slidesFlag != nil && *slidesFlag
-	return Run(docPath, c.Args, profiles, formats, slides)
+	return Run(docPath, req, derefBool(cleanFlag), derefBool(dryRunFlag))
 }
 
-// Run renders the named book folders of the project at docPath. With no
-// book named, every book folder is rendered. profiles selects the Quarto
-// profiles every book is rendered with; when empty, each book falls back to
-// the profiles named after it. Progress is written to stdout.
-func Run(docPath string, books, profiles, formats []string, slides bool) error {
-	opts, err := BuildOptions(docPath, books, profiles, formats, slides)
+// Run renders the requested part of the project's matrix. Progress is
+// written to stdout.
+func Run(docPath string, req qmcore.Matrix, clean, dryRun bool) error {
+	opts, err := BuildOptions(docPath, req, clean, dryRun)
 	if err != nil {
 		return err
 	}
 	log := func(format string, args ...any) {
 		fmt.Fprintf(os.Stdout, format+"\n", args...)
 	}
+	log("%d render(s) selected", len(opts.Selections))
 	if err := bookrender.Run(opts, log); err != nil {
 		return fmt.Errorf("render: %w", err)
 	}
@@ -107,60 +103,21 @@ func Run(docPath string, books, profiles, formats []string, slides bool) error {
 
 // BuildOptions turns the command line into a render request. Exposed for
 // tests. docPath must be absolute.
-func BuildOptions(docPath string, books, profiles, formats []string, slides bool) (bookrender.Options, error) {
-	available := bookrender.Books(docPath)
-	if len(available) == 0 {
-		return bookrender.Options{}, fmt.Errorf(
-			"render: %s holds no book folders", docPath)
-	}
-	if len(books) == 0 {
-		books = available
-	}
-	for _, b := range books {
-		if !slices.Contains(available, b) {
-			return bookrender.Options{}, fmt.Errorf(
-				"render: %q is not a book folder of %s (have: %s)",
-				b, docPath, strings.Join(available, ", "))
-		}
-	}
-	if len(formats) == 0 && !slides {
-		return bookrender.Options{}, fmt.Errorf(
-			"render: no output format left; pass --to or --slides")
-	}
-
-	opts := bookrender.Options{
-		Root:     docPath,
-		Books:    books,
-		Profiles: map[string][]string{},
-		Formats:  formats,
-		Slides:   slides,
-	}
-	// Profiles named on the command line apply to every book, and all of
-	// them go into one render run: a list such as `handout,calltaker-fw`
-	// composes one configuration out of several profiles, so every one of
-	// them has to reach Quarto. Otherwise each book gets the profiles named
-	// after it — `<book>` and `<book>-*`, which is what the web UI offers as
-	// its default selection too. Those are alternative variants of the same
-	// book, so they are rendered one after another instead.
-	if len(profiles) > 0 {
-		for _, b := range books {
-			opts.Profiles[b] = profiles
-		}
-		opts.CombineProfiles = true
-		return opts, nil
-	}
-	declared, err := project.Profiles(docPath)
+func BuildOptions(docPath string, req qmcore.Matrix, clean, dryRun bool) (bookrender.Options, error) {
+	sels, err := qmcore.BuildMatrix(docPath, req)
 	if err != nil {
-		return bookrender.Options{}, fmt.Errorf("render: cannot list profiles: %w", err)
+		return bookrender.Options{}, fmt.Errorf("render: %w", err)
 	}
-	for _, b := range books {
-		opts.Profiles[b] = bookrender.DefaultProfiles(b, declared)
-	}
-	return opts, nil
+	return bookrender.Options{
+		Root:       docPath,
+		Selections: sels,
+		Clean:      clean,
+		DryRun:     dryRun,
+	}, nil
 }
 
 // splitList parses a comma-separated flag value, discarding empty entries so
-// that `--to ""` or a trailing comma does not produce phantom items.
+// that `--format ""` or a trailing comma does not produce phantom items.
 func splitList(arg string) []string {
 	var out []string
 	for _, p := range strings.Split(arg, ",") {
@@ -170,3 +127,12 @@ func splitList(arg string) []string {
 	}
 	return out
 }
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+func derefBool(b *bool) bool { return b != nil && *b }

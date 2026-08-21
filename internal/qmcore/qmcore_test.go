@@ -3,7 +3,6 @@ package qmcore
 import (
 	"os"
 	"path/filepath"
-	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -90,30 +89,6 @@ func TestStripYamlExt(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := StripYamlExt(tt.name); got != tt.want {
 				t.Errorf("StripYamlExt(%q) = %q, want %q", tt.name, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestParseProfileName(t *testing.T) {
-	tests := []struct {
-		name        string
-		wantFolder  string
-		wantVariant string
-	}{
-		{"_quarto-calltaker", "calltaker", ""},
-		{"_quarto-calltaker-fw", "calltaker", "fw"},
-		{"_quarto-calltaker-pol", "calltaker", "pol"},
-		{"_quarto-a-b-fw", "a-b", "fw"},
-		{"_quarto-a-b-pol", "a-b", "pol"},
-		{"_quarto-a-b", "a-b", ""},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			folder, variant := ParseProfileName(tt.name)
-			if folder != tt.wantFolder || variant != tt.wantVariant {
-				t.Errorf("ParseProfileName(%q) = (%q, %q), want (%q, %q)",
-					tt.name, folder, variant, tt.wantFolder, tt.wantVariant)
 			}
 		})
 	}
@@ -375,147 +350,6 @@ func TestApplyVariantFilter_NoProfileVariantConflictDrops(t *testing.T) {
 	sort.Strings(keys)
 	if len(got) != 0 {
 		t.Errorf("expected 0 entries for empty variant with conflicting pair, got %v", keys)
-	}
-}
-
-func TestBuildFolderChapters_SimpleOrder(t *testing.T) {
-	docRoot := t.TempDir()
-	writeTempFile(t, docRoot, "a/index.qmd", "---\norder: 0\n---\n")
-	writeTempFile(t, docRoot, "a/foo.qmd", "---\norder: 1\n---\n")
-	writeTempFile(t, docRoot, "a/bar.qmd", "---\norder: 2\n---\n")
-
-	entries := map[string]*FileEntry{
-		"a/index.qmd": {RelPath: "a/index.qmd", Order: intPtr(0)},
-		"a/foo.qmd":   {RelPath: "a/foo.qmd", Order: intPtr(1)},
-		"a/bar.qmd":   {RelPath: "a/bar.qmd", Order: intPtr(2)},
-	}
-
-	got := BuildFolderChapters(docRoot, filepath.Join(docRoot, "a"), "a", entries)
-	want := []string{"a/index.qmd", "a/foo.qmd", "a/bar.qmd"}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got %v, want %v", got, want)
-	}
-}
-
-func TestBuildFolderChapters_NestedFolders(t *testing.T) {
-	docRoot := t.TempDir()
-	writeTempFile(t, docRoot, "a/index.qmd", "---\norder: 0\n---\n")
-	writeTempFile(t, docRoot, "a/foo.qmd", "---\norder: 2\n---\n")
-	writeTempFile(t, docRoot, "a/b/index.qmd", "---\norder: 1\n---\n")
-	writeTempFile(t, docRoot, "a/b/baz.qmd", "---\norder: 1\n---\n")
-
-	entries := map[string]*FileEntry{
-		"a/index.qmd":   {RelPath: "a/index.qmd", Order: intPtr(0)},
-		"a/foo.qmd":     {RelPath: "a/foo.qmd", Order: intPtr(2)},
-		"a/b/index.qmd": {RelPath: "a/b/index.qmd", Order: intPtr(1)},
-		"a/b/baz.qmd":   {RelPath: "a/b/baz.qmd", Order: intPtr(1)},
-	}
-
-	got := BuildFolderChapters(docRoot, filepath.Join(docRoot, "a"), "a", entries)
-	want := []string{
-		"a/index.qmd",
-		"a/b/index.qmd",
-		"a/b/baz.qmd",
-		"a/foo.qmd",
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got %v, want %v", got, want)
-	}
-}
-
-func TestBuildFolderChapters_UnorderedAppendedLast(t *testing.T) {
-	docRoot := t.TempDir()
-	writeTempFile(t, docRoot, "a/index.qmd", "---\norder: 0\n---\n")
-	writeTempFile(t, docRoot, "a/ordered.qmd", "---\norder: 1\n---\n")
-	writeTempFile(t, docRoot, "a/noorder.qmd", "---\ntitle: x\n---\n")
-
-	entries := map[string]*FileEntry{
-		"a/index.qmd":   {RelPath: "a/index.qmd", Order: intPtr(0)},
-		"a/ordered.qmd": {RelPath: "a/ordered.qmd", Order: intPtr(1)},
-		"a/noorder.qmd": {RelPath: "a/noorder.qmd", Order: nil},
-	}
-
-	got := BuildFolderChapters(docRoot, filepath.Join(docRoot, "a"), "a", entries)
-	if len(got) != 3 {
-		t.Fatalf("expected 3 chapters, got %d: %v", len(got), got)
-	}
-	if got[2] != "a/noorder.qmd" {
-		t.Errorf("expected a/noorder.qmd last, got %s", got[2])
-	}
-}
-
-func TestUpdateProfileYaml_CreatesNewFile(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "_quarto-foo.yaml")
-
-	chapters := []string{"index.qmd", "a/foo.qmd", "a/bar.qmd"}
-	if err := UpdateProfileYaml(path, chapters); err != nil {
-		t.Fatalf("UpdateProfileYaml: %v", err)
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	content := string(data)
-	if !strings.Contains(content, "book:") {
-		t.Errorf("expected book: in output, got:\n%s", content)
-	}
-	if !strings.Contains(content, "chapters:") {
-		t.Errorf("expected chapters: in output, got:\n%s", content)
-	}
-	for _, ch := range chapters {
-		if !strings.Contains(content, ch) {
-			t.Errorf("expected chapter %s in output, got:\n%s", ch, content)
-		}
-	}
-}
-
-func TestUpdateProfileYaml_ReplacesExistingChapters(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "_quarto-foo.yaml")
-
-	original := `project:
-  type: book
-book:
-  title: Test Book
-  chapters:
-    - old1.qmd
-    - old2.qmd
-`
-	if err := os.WriteFile(path, []byte(original), 0644); err != nil {
-		t.Fatalf("write initial: %v", err)
-	}
-
-	chapters := []string{"index.qmd", "new1.qmd"}
-	if err := UpdateProfileYaml(path, chapters); err != nil {
-		t.Fatalf("UpdateProfileYaml: %v", err)
-	}
-
-	data, _ := os.ReadFile(path)
-	var parsed map[string]any
-	if err := yaml.Unmarshal(data, &parsed); err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-
-	book, ok := parsed["book"].(map[string]any)
-	if !ok {
-		t.Fatalf("book is not a mapping: %T", parsed["book"])
-	}
-	if book["title"] != "Test Book" {
-		t.Errorf("expected title preserved, got %v", book["title"])
-	}
-	chaptersList, ok := book["chapters"].([]any)
-	if !ok {
-		t.Fatalf("chapters is not a list: %T", book["chapters"])
-	}
-	if len(chaptersList) != 2 {
-		t.Errorf("expected 2 chapters, got %d", len(chaptersList))
-	}
-
-	content := string(data)
-	if strings.Contains(content, "old1.qmd") || strings.Contains(content, "old2.qmd") {
-		t.Errorf("old chapters still present:\n%s", content)
 	}
 }
 

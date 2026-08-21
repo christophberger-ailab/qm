@@ -7,104 +7,11 @@ import (
 	"strings"
 )
 
-// BuildFolderChapters recursively produces the flat ordered chapter list
-// for a folder.
-//
-// Ordering rules (ORDERS):
-//   - index.qmd is always listed first within its folder.
-//   - Other files and subfolders are interleaved by their order value.
-//   - A subfolder's position is determined by its index.qmd's order value.
-//   - Files/folders without an order value are appended at the end.
-func BuildFolderChapters(docRoot, folderPath, relFolder string, entries map[string]*FileEntry) []string {
-	var result []string
-
-	// index file is always first.
-	indexRelPath := relFolder + "/index.qmd"
-	if e, ok := entries[indexRelPath]; ok {
-		result = append(result, e.RelPath)
-	} else {
-		indexMdRelPath := relFolder + "/index.md"
-		if e, ok := entries[indexMdRelPath]; ok {
-			result = append(result, e.RelPath)
-		}
-	}
-
-	type item struct {
-		order   int
-		ordered bool
-		isDir   bool
-		relPath string
-	}
-
-	dirEntries, err := os.ReadDir(folderPath)
-	if err != nil {
-		return result
-	}
-
-	var items []item
-	for _, de := range dirEntries {
-		name := de.Name()
-
-		if de.IsDir() {
-			subRelFolder := relFolder + "/" + name
-			subIndexRelPath := subRelFolder + "/index.qmd"
-			e, ok := entries[subIndexRelPath]
-			if !ok {
-				e, ok = entries[subRelFolder+"/index.md"]
-			}
-			if !ok {
-				continue
-			}
-			it := item{isDir: true, relPath: subRelFolder}
-			if e.Order != nil {
-				it.order = *e.Order
-				it.ordered = true
-			}
-			items = append(items, it)
-		} else {
-			nameNoExt := strings.TrimSuffix(name, filepath.Ext(name))
-			if nameNoExt == "index" {
-				continue
-			}
-			ext := strings.ToLower(filepath.Ext(name))
-			if ext != ".qmd" && ext != ".md" {
-				continue
-			}
-			relPath := relFolder + "/" + name
-			e, ok := entries[relPath]
-			if !ok {
-				continue
-			}
-			it := item{isDir: false, relPath: relPath}
-			if e.Order != nil {
-				it.order = *e.Order
-				it.ordered = true
-			}
-			items = append(items, it)
-		}
-	}
-
-	sort.SliceStable(items, func(i, j int) bool {
-		if items[i].ordered && items[j].ordered {
-			return items[i].order < items[j].order
-		}
-		if items[i].ordered {
-			return true
-		}
-		return false
-	})
-
-	for _, it := range items {
-		if it.isDir {
-			subFolderPath := filepath.Join(docRoot, filepath.FromSlash(it.relPath))
-			result = append(result, BuildFolderChapters(docRoot, subFolderPath, it.relPath, entries)...)
-		} else {
-			result = append(result, it.relPath)
-		}
-	}
-
-	return result
-}
+// The flat `book: chapters:` generator that used to live here is gone: the
+// chapter list is a fixed one-element list in _quarto.yml now, and a book's
+// real structure comes from flattening its content folder at render time
+// (see internal/bookmaker). What remains is the single-folder scan the
+// insert/move/remove subcommands reason about.
 
 // ScanFolderChapters lists the direct chapter items in a single folder
 // (non-recursive). Used by the insert/move/remove subcommands which need to

@@ -85,6 +85,26 @@ body {
   align-items: center;
 }
 
+/* Search */
+
+.search-form {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.search-form input {
+  width: 11rem;
+}
+
+/* The hits themselves are shown in the tree; this is the count, for when
+   the tree is scrolled away from all of them. */
+.search-summary {
+  font-size: 0.8rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 /* Render panel */
 
 .render > summary {
@@ -185,6 +205,7 @@ body {
 /* Forms / inputs */
 
 input[type="text"],
+input[type="search"],
 input:not([type]),
 .open-form input,
 .new-file-form input {
@@ -529,6 +550,38 @@ li.selected > .row {
   background: var(--accent-bg);
 }
 
+/* Search hits. The title of a page the current query matched is set in
+   bold, and the number of hits sits at the end of its row -- after the
+   title, which takes the remaining width. The selection background is
+   untouched, so a page can show as found and as open at once. */
+li.page.hit > .row > .title {
+  font-weight: 600;
+}
+
+li.page.hit > .row::after {
+  content: attr(data-hits);
+  padding: 0 0.35rem;
+  border-radius: 8px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+
+/* A collapsed branch with hits inside is shown open for as long as they are
+   there. The branch stays collapsed as far as the tree is concerned -- the
+   user's own collapsing is not overwritten by a search -- so the triangle
+   is pointed down here to describe what is actually on screen, in the
+   accent colour that says the search did it. */
+li.page.hit-branch.collapsed > ul.children {
+  display: block;
+}
+
+li.page.has-children.collapsed.hit-branch > .row > .toggle::before {
+  content: "\25BE";
+  color: var(--accent);
+}
+
 .drag-ghost {
   opacity: 0.4;
 }
@@ -703,6 +756,13 @@ div.CodeMirror-selected {
 .CodeMirror-line > span::selection,
 .CodeMirror-line > span > span::selection {
   background: var(--accent-bg);
+}
+
+/* The hits of the project search, painted over the editor by the overlay
+   in editor.js. CodeMirror's own pale yellow disappears in dark mode. */
+.cm-searching {
+  background-color: rgb(250 204 21 / 45%);
+  border-radius: 2px;
 }
 
 .cm-s-default .cm-header,

@@ -47,13 +47,13 @@ constraints:
       3-7-2: A remembered page that is no longer there is forgotten, and the editor starts empty
       3-7-3: The remembered page is stored with the render selection in `<user config dir>/qm/render.json`
       4: The tree is polled for outside changes and refreshed when the project changed on disk
-      5: The render panel selects book folders, their matching profiles, the output formats, and whether slides are rendered
+      5: The render panel selects a point in the project's three-axis matrix: topics, the audiences of each topic, and the output formats
       5-1: The selection is remembered per project in `<user config dir>/qm/render.json`
-      5-2: For each book folder, only profiles named `<folder>` or `<folder>-<suffix>` are offered or submitted for that folder
-      5-3: A book the user never configured defaults to the profiles named after it
-      5-4: A book with two or more matching profiles shows them in a nested checkbox submenu, and each checked profile is one render run
-      5-5: A book with exactly one matching profile has no submenu, but the form submits that profile through a hidden input
-      5-6: A book with no matching profile has no profile inputs and renders with the project's default configuration
+      5-2: The topics are the values of the project's `topic-*` profiles, the formats those of its `format-*` profiles
+      5-3: For each topic, only the audiences the topic declares under `qm: audiences:` are offered or submitted for it; a topic that declares none offers every audience the project has
+      5-4: A topic the user never configured defaults to every audience it takes part in
+      5-5: A topic with two or more audiences shows them in a nested checkbox submenu; every checked audience is one render run per checked format
+      5-6: A topic with exactly one audience has no submenu, but the form submits that audience through a hidden input
       6: A render runs in the background; the panel polls its log while it runs
       6-1: Only one render runs at a time
       7: The top bar shows a Config button at the far right
@@ -65,3 +65,12 @@ constraints:
       7-5: The app links the active custom preview stylesheet document-wide after `/static/app.css`, the route serves only the requested stored stylesheet as `text/css`, and an empty or absent stylesheet has no effect
       7-6: The editor tells the user to scope rules with `.markdown-preview` when they should affect only the preview
       7-7: When more than one custom CSS file exists, a dropdown above the Markdown preview lets the user switch which one is active; the choice is remembered across restarts and the preview reloads to apply the newly selected stylesheet
+      8: A search field in the top bar searches the text of all pages of the open project
+      8-1: The search is answered from a word index that is rebuilt in the background whenever the project changed on disk, so typing never waits for a scan of the project
+      8-2: While the index is being built the field says so, and the query repeats itself until the index is ready
+      8-3: A query term matches the words that start with it; a page matches when it matches every term of the query, case-insensitively; terms of one character are ignored
+      8-4: The index covers the same files as the page tree, so pages the tree does not show are not found either
+      8-5: Pages with hits are highlighted in the page tree, each with its number of hits
+      8-6: A collapsed branch that contains hits is shown open while the search is active, without changing the branch's remembered collapsed state
+      8-7: The highlighting survives tree refreshes, page switches, and edits, and the query is remembered across sessions, so the results stay until the query changes
+      8-8: The hits of the current query are highlighted in the editor as well, and opening a page scrolls its editor to the first hit

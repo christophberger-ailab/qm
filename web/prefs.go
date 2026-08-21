@@ -9,45 +9,39 @@ import (
 	"slices"
 	"sort"
 	"strings"
-
-	"github.com/cboct/qm/internal/bookrender"
 )
 
 // projectPrefs is what the UI remembers about a project: the render
 // selection and the page last opened in the editor.
+//
+// The render selection is a point in the project's three-axis matrix (see
+// internal/qmcore): topics, formats, and — per topic, because not every
+// topic has the same ones — audiences.
 type projectPrefs struct {
-	// Books are the selected book folder names.
-	Books []string `json:"books"`
-	// Profiles maps a book folder name to its selected Quarto profiles.
-	Profiles map[string][]string `json:"profiles,omitempty"`
-	// Formats are the selected output formats (pdf, docx).
+	// Topics are the selected topic names.
+	Topics []string `json:"topics"`
+	// Audiences maps a topic to the audiences selected for it.
+	Audiences map[string][]string `json:"audiences,omitempty"`
+	// Formats are the selected format names (handout, handbook, ...).
 	Formats []string `json:"formats"`
-	// Slides selects the deck built from the pages' ::: slide blocks.
-	Slides bool `json:"slides"`
 	// Page is the project-relative path of the page last opened in the
 	// editor.
 	Page string `json:"page,omitempty"`
 }
 
-// renderFormats are the book output formats the UI offers.
-var renderFormats = []string{"pdf", "docx"}
+// defaultPrefs is what a project gets before the user picks anything:
+// nothing selected, so the Render button never kicks off a long run by
+// accident.
+func defaultPrefs() projectPrefs { return projectPrefs{} }
 
-// defaultPrefs is what a project gets before the user picks anything: no
-// book selected, so the Render button never kicks off a long run by
-// accident, but the usual pair of formats ready to go.
-func defaultPrefs() projectPrefs {
-	return projectPrefs{Formats: slices.Clone(renderFormats)}
-}
-
-// profilesFor returns the profiles selected for a book, defaulting — for a
-// book the user never configured — to the profiles named after it:
-// `dispatcher` and `dispatcher-fw` both belong to the `dispatcher` folder.
-func (p projectPrefs) profilesFor(book string, available []string) []string {
-	matching := bookrender.DefaultProfiles(book, available)
-	if sel, ok := p.Profiles[book]; ok {
-		return intersect(sel, matching)
+// audiencesFor returns the audiences selected for a topic, defaulting — for
+// a topic the user never configured — to every audience the topic takes
+// part in.
+func (p projectPrefs) audiencesFor(topic string, available []string) []string {
+	if sel, ok := p.Audiences[topic]; ok {
+		return intersect(sel, available)
 	}
-	return matching
+	return available
 }
 
 // intersect keeps the entries of sel that still exist in available, so a
