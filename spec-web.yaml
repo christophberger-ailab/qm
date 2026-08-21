@@ -53,6 +53,7 @@ constraints:
       5-3: For each topic, only the audiences the topic declares under `qm: audiences:` are offered or submitted for it; a topic that declares none offers every audience the project has
       5-4: A topic the user never configured defaults to every audience it takes part in
       5-5: A topic with two or more audiences shows them as checkboxes in the open, directly below the topic's own checkbox; every checked audience is one render run per checked format
+      5-5-1: While the topic's own checkbox is unchecked its audience checkboxes are shown dimmed, since nothing is rendered for them; they stay usable, so the audiences can be chosen before the topic is checked
       5-6: A topic with exactly one audience shows no checkbox, but the form submits that audience through a hidden input
       6: A render runs in the background; the panel polls its log while it runs
       6-1: Only one render runs at a time

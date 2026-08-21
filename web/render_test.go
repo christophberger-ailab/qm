@@ -320,6 +320,35 @@ func TestRenderPanelShowsTheTopicsOwnAudiences(t *testing.T) {
 	}
 }
 
+// An unchecked topic renders nothing, so its audiences are shown dimmed.
+// The dimming is the stylesheet's, read off the topic's own checkbox, so it
+// follows every click of it without a round trip; the test pins the rule and
+// the markup the rule reads.
+func TestRenderPanelDimsTheAudiencesOfAnUncheckedTopic(t *testing.T) {
+	srv, root := testServer(t)
+	writeProfile(t, root, "audience-pol", "_quarto-vars:\n  audience: \"-pol\"\n")
+	writeProfile(t, root, "audience-fw", "_quarto-vars:\n  audience: \"-fw\"\n")
+	writeProfile(t, root, "topic-agency",
+		"book:\n  title: Agency\nqm:\n  audiences: [pol, fw]\n")
+
+	// The selector reaches from the topic's checkbox to its audiences, so
+	// both have to sit in the fieldset the way it expects them to.
+	section := bookFieldset(t, get(t, srv, "/").Body.String(), "agency")
+	want := `<legend><label><input type="checkbox" name="book"`
+	if !strings.Contains(section, want) {
+		t.Errorf("topic checkbox is not %s...:\n%s", want, section)
+	}
+	if !strings.Contains(section, `<div class="variants">`) {
+		t.Errorf("audiences are not in a .variants div:\n%s", section)
+	}
+
+	css := get(t, srv, "/static/app.css").Body.String()
+	rule := `.render-body .book:not(:has(> legend input[name="book"]:checked)) .variants`
+	if !strings.Contains(css, rule) {
+		t.Errorf("the stylesheet does not dim the audiences of an unchecked topic: %s", rule)
+	}
+}
+
 func TestRenderSelectionPersistsPerProject(t *testing.T) {
 	root := fixture(t)
 	writeProfile(t, root, "audience-pol", "_quarto-vars:\n  audience: \"-pol\"\n")

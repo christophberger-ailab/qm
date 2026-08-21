@@ -169,6 +169,14 @@ body {
   border-top: 1px solid var(--border);
 }
 
+/* An unchecked topic renders nothing, so its audiences say so by being
+   dimmed. They stay clickable: the user may pick a topic's audiences
+   before checking the topic itself. The state is read off the checkbox
+   itself, so it follows every click without a re-render. */
+.render-body .book:not(:has(> legend input[name="book"]:checked)) .variants {
+  opacity: 0.45;
+}
+
 .render-output {
   max-height: 20rem;
   overflow: auto;
