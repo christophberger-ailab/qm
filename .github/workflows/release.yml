@@ -1,0 +1,148 @@
+name: Release
+
+# Fires when a pull request is closed against main; the `merged` guard on each
+# job drops the "closed without merging" case. workflow_dispatch is kept for
+# manual re-runs.
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Monotonic, derived from the workflow run counter. Also stamped into the
+  # binary via -X main.version (see main.go: `var version = "dev"`).
+  VERSION: v0.0.${{ github.run_number }}
+  # On a `pull_request` event github.sha points at the ephemeral refs/pull/N/merge
+  # commit, not at the commit that landed on main. merge_commit_sha is the real
+  # one (and is also set correctly for squash and rebase merges).
+  BUILD_SHA: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+
+jobs:
+  test:
+    name: Test
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BUILD_SHA }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: windows
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BUILD_SHA }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # qm is pure Go (the only embedded data comes from //go:embed in
+      # web/server.go), so CGO_ENABLED=0 gives a static binary and lets all
+      # four targets cross-compile from the same ubuntu runner.
+      - name: Build
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          BIN=qm
+          if [ "$GOOS" = "windows" ]; then BIN=qm.exe; fi
+          mkdir -p dist
+          go build \
+            -trimpath \
+            -ldflags "-s -w -X main.version=${VERSION}" \
+            -o "dist/${BIN}" \
+            .
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          NAME="qm_${VERSION}_${{ matrix.goos }}_${{ matrix.goarch }}"
+          mkdir -p out
+          cd dist
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            zip -q "../out/${NAME}.zip" qm.exe
+          else
+            tar -czf "../out/${NAME}.tar.gz" qm
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qm_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: out/*
+          retention-days: 7
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BUILD_SHA }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          pattern: qm_*
+          merge-multiple: true
+
+      - name: Checksums
+        run: |
+          set -euo pipefail
+          cd out
+          # Match the archives explicitly rather than ./* so the redirect
+          # target can never end up hashing itself.
+          sha256sum qm_* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      # gh is preinstalled on GitHub-hosted runners, so this needs no
+      # third-party action. --target pins the tag to the merged commit.
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "${VERSION}" \
+            --target "${BUILD_SHA}" \
+            --title "${VERSION}" \
+            --generate-notes \
+            out/*
