@@ -1,6 +1,6 @@
 module github.com/cboct/qm
 
-go 1.26.6
+go 1.27
 
 require (
 	github.com/christophberger/start v0.6.0
