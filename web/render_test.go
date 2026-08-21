@@ -2,6 +2,7 @@ package web
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -204,6 +205,32 @@ func TestRenderReportsFailure(t *testing.T) {
 	}
 }
 
+// The log panel is replaced by every poll of /render/status, so the fresh
+// <pre> would start at the top and the client pins it to the newest line
+// instead. That hook reaches for the log through `#render-log
+// .render-output`; the markup has to keep offering it.
+func TestRenderLogSwapsItselfInPlace(t *testing.T) {
+	srv, _ := testServer(t)
+
+	if body := get(t, srv, "/").Body.String(); !strings.Contains(body, `<div id="render-log">`) {
+		t.Errorf("the panel has no log container:\n%s", body)
+	}
+
+	rec := httptest.NewRecorder()
+	srv.renderLog(rec, jobState{Lines: []string{"first", "last"}, Running: true})
+	log := rec.Body.String()
+	for _, want := range []string{
+		`hx-get="/render/status"`,
+		`hx-target="#render-log"`,
+		`hx-swap="innerHTML"`,
+		`class="render-output"`,
+	} {
+		if !strings.Contains(log, want) {
+			t.Errorf("running log missing %q:\n%s", want, log)
+		}
+	}
+}
+
 // Rendering nothing is a mistake worth naming rather than a no-op.
 func TestRenderNeedsTopicAndFormat(t *testing.T) {
 	fakeQuarto(t)
@@ -261,8 +288,15 @@ func TestRenderPanelShowsTheTopicsOwnAudiences(t *testing.T) {
 
 	body := get(t, srv, "/").Body.String()
 	section := bookFieldset(t, body, "agency")
-	if !strings.Contains(section, `<summary>audiences (2)</summary>`) {
-		t.Errorf("audience submenu missing:\n%s", section)
+	// The audiences sit in the open, right under their topic: no switch to
+	// flip before the user can see or change what a topic renders for.
+	if !strings.Contains(section, `class="variants"`) {
+		t.Errorf("audience group missing:\n%s", section)
+	}
+	for _, unwanted := range []string{`<details`, `<summary`} {
+		if strings.Contains(section, unwanted) {
+			t.Errorf("audiences are still behind %q:\n%s", unwanted, section)
+		}
 	}
 	for _, want := range []string{
 		`name="profile.agency" value="fw" checked`,
@@ -276,10 +310,10 @@ func TestRenderPanelShowsTheTopicsOwnAudiences(t *testing.T) {
 		t.Errorf("an undeclared audience was offered:\n%s", section)
 	}
 
-	// One audience needs no submenu; it is submitted as a hidden field.
+	// One audience is no choice; it is submitted as a hidden field.
 	common := bookFieldset(t, body, "common")
 	if strings.Contains(common, `class="variants"`) {
-		t.Errorf("single-audience topic has a submenu:\n%s", common)
+		t.Errorf("single-audience topic offers a choice:\n%s", common)
 	}
 	if !strings.Contains(common, `<input type="hidden" name="profile.common" value="std">`) {
 		t.Errorf("single-audience topic does not submit its audience:\n%s", common)

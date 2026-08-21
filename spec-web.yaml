@@ -52,10 +52,11 @@ constraints:
       5-2: The topics are the values of the project's `topic-*` profiles, the formats those of its `format-*` profiles
       5-3: For each topic, only the audiences the topic declares under `qm: audiences:` are offered or submitted for it; a topic that declares none offers every audience the project has
       5-4: A topic the user never configured defaults to every audience it takes part in
-      5-5: A topic with two or more audiences shows them in a nested checkbox submenu; every checked audience is one render run per checked format
-      5-6: A topic with exactly one audience has no submenu, but the form submits that audience through a hidden input
+      5-5: A topic with two or more audiences shows them as checkboxes in the open, directly below the topic's own checkbox; every checked audience is one render run per checked format
+      5-6: A topic with exactly one audience shows no checkbox, but the form submits that audience through a hidden input
       6: A render runs in the background; the panel polls its log while it runs
       6-1: Only one render runs at a time
+      6-2: The log follows its newest line as it grows; scrolling up stops it following and holds the position across the polls, until the user scrolls back to the bottom or starts another render
       7: The top bar shows a Config button at the far right
       7-1: The Config button opens a full config page whose entries are presented as a list that can grow
       7-2: 'The config list contains an entry named "Preview: Custom CSS" that opens the custom preview stylesheet editor'

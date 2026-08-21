@@ -66,11 +66,10 @@
       <fieldset class="book">
         <legend><label><input type="checkbox" name="book" value="{{$book.Name}}"{{if $book.Selected}} checked{{end}}> {{$book.Name}}</label></legend>
         {{if gt (len $book.Profiles) 1}}
-        <details class="variants">
-          <summary>audiences ({{len $book.Profiles}})</summary>
+        <div class="variants">
           {{range $book.Profiles}}<label class="profile" title="One quarto render run per checked audience"><input type="checkbox" name="profile.{{$book.Name}}" value="{{.Name}}"{{if .Selected}} checked{{end}}> {{.Name}}</label>
           {{end}}
-        </details>
+        </div>
         {{else if eq (len $book.Profiles) 1}}
         {{range $book.Profiles}}<input type="hidden" name="profile.{{$book.Name}}" value="{{.Name}}">{{end}}
         {{else}}<span class="empty">no audiences</span>{{end}}

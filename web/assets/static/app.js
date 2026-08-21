@@ -385,6 +385,49 @@ function initSearch() {
   }
 }
 
+// Render log
+//
+// The log panel polls /render/status every second and htmx replaces the
+// whole <pre> with the log as it now stands, so the element the user was
+// looking at is gone after every poll and the fresh one starts scrolled to
+// the top. The panel therefore follows its newest line by itself. It stops
+// following as soon as the user scrolls up -- reading the middle of a long
+// log is why anyone scrolls up -- and follows again once they scroll back
+// to the bottom, or start another render.
+
+var renderLogFollow = true;
+
+// renderLogTop is where the log stood just before the last swap, so a
+// panel the user scrolled up in can be put back where they left it.
+var renderLogTop = 0;
+
+function renderLogOutput() {
+  return document.querySelector('#render-log .render-output');
+}
+
+// atBottom allows a pixel of slack: fractional line heights keep scrollTop
+// from ever reaching scrollHeight - clientHeight exactly.
+function atBottom(el) {
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= 2;
+}
+
+// Scroll events do not bubble, and the element they come from is replaced
+// every second, so the log is listened to on the way down instead.
+document.addEventListener('scroll', function (evt) {
+  var el = evt.target;
+  if (el && el.classList && el.classList.contains('render-output')) {
+    renderLogFollow = atBottom(el);
+  }
+}, true);
+
+document.body.addEventListener('htmx:beforeSwap', function (evt) {
+  var id = evt.detail && evt.detail.target && evt.detail.target.id;
+  if (id === 'render-log') {
+    var out = renderLogOutput();
+    renderLogTop = out ? out.scrollTop : 0;
+  }
+});
+
 document.addEventListener('DOMContentLoaded', function () {
   loadCollapsed();
   initTree();
@@ -427,6 +470,12 @@ document.body.addEventListener('htmx:afterSwap', function (evt) {
     initEditor(); // mount before the preview reads the editor's text
     applyPreview();
   }
+  if (id === 'render-log') {
+    var out = renderLogOutput();
+    if (out) {
+      out.scrollTop = renderLogFollow ? out.scrollHeight : renderLogTop;
+    }
+  }
 });
 
 // The top-bar "＋ Page" form inserts the new page after the one selected in
@@ -465,6 +514,12 @@ document.body.addEventListener('htmx:oobAfterSwap', function (evt) {
 });
 
 document.body.addEventListener('click', function (evt) {
+  // A new render starts a new log; follow it, whatever the last one was
+  // left scrolled to. htmx posts the button itself, so this only marks it.
+  if (evt.target.closest('#render-run')) {
+    renderLogFollow = true;
+  }
+
   // Preview toggle: open or close the preview beside the editor.
   if (evt.target.closest('#preview-toggle')) {
     previewOpen = !previewOpen;
