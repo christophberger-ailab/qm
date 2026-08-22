@@ -1,4 +1,4 @@
-module github.com/cboct/qm
+module github.com/christophberger-ailab/qm
 
 go 1.27
 

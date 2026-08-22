@@ -29,13 +29,14 @@ each [release](../../releases). Download, unpack, put `qm` on your `PATH`.
 To build from source, with Go 1.27 or newer:
 
 ```sh
-git clone https://github.com/christophberger-ailab/qm
-cd qm
-go build -o qm .
+go install github.com/christophberger-ailab/qm@latest
 ```
 
-(The module is named `github.com/cboct/qm`, which is not where the repository
-lives, so `go install <module>@latest` does not resolve — build from a clone.)
+or, from a clone:
+
+```sh
+go build -o qm .
+```
 
 The binary is self-contained: the web UI's templates and assets are embedded.
 The only external tool it needs is `quarto` itself, on `PATH`, and — optionally

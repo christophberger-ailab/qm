@@ -20,7 +20,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/cboct/qm/internal/cli"
+	"github.com/christophberger-ailab/qm/internal/cli"
 	"github.com/christophberger/start"
 	flag "github.com/spf13/pflag"
 )

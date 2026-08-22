@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cboct/qm/internal/qmcore"
+	"github.com/christophberger-ailab/qm/internal/qmcore"
 )
 
 // project builds a minimal Quarto project with one content folder whose

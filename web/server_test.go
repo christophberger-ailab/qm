@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cboct/qm/internal/project"
+	"github.com/christophberger-ailab/qm/internal/project"
 )
 
 // Keep test files out of the real system trash.

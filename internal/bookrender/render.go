@@ -30,8 +30,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cboct/qm/internal/bookmaker"
-	"github.com/cboct/qm/internal/qmcore"
+	"github.com/christophberger-ailab/qm/internal/bookmaker"
+	"github.com/christophberger-ailab/qm/internal/qmcore"
 )
 
 // BuildDir holds the generated documents, relative to the project root.

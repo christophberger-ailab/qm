@@ -15,8 +15,8 @@ import (
 	"regexp"
 	"sort"
 
-	"github.com/cboct/qm/internal/cli"
-	"github.com/cboct/qm/internal/qmcore"
+	"github.com/christophberger-ailab/qm/internal/cli"
+	"github.com/christophberger-ailab/qm/internal/qmcore"
 	"github.com/christophberger/start"
 	flag "github.com/spf13/pflag"
 )

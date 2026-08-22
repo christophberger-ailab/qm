@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cboct/qm/internal/qmcore"
+	"github.com/christophberger-ailab/qm/internal/qmcore"
 )
 
 func writeQmd(t *testing.T, dir, name string, order int) {
