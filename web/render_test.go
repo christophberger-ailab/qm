@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cboct/qm/internal/bookrender"
+	"github.com/christophberger-ailab/qm/internal/bookrender"
 )
 
 // fakeQuarto installs a stub `quarto` that appends its arguments to a log

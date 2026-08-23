@@ -15,9 +15,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/cboct/qm/internal/bookrender"
-	"github.com/cboct/qm/internal/project"
-	"github.com/cboct/qm/internal/qmcore"
+	"github.com/christophberger-ailab/qm/internal/bookrender"
+	"github.com/christophberger-ailab/qm/internal/project"
+	"github.com/christophberger-ailab/qm/internal/qmcore"
 )
 
 //go:embed assets
