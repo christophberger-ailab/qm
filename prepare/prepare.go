@@ -180,7 +180,8 @@ func interpolated(ps *qmcore.Profiles) []template {
 
 // checkFolder makes sure the topic's content folder is really there. The
 // name comes from the profile (`qm: folder:`, defaulting to the topic name)
-// and a typo would otherwise produce an empty book.
+// and a typo would otherwise produce an empty book. It is not called for a
+// whole-project topic (`all`, `none`), which has no folder by definition.
 func checkFolder(root string, ps *qmcore.Profiles, folder string) error {
 	abs, err := qmcore.ProjectPath(root, folder)
 	if err != nil {
@@ -190,8 +191,10 @@ func checkFolder(root string, ps *qmcore.Profiles, folder string) error {
 		have := bookrender.ContentFolders(root)
 		sort.Strings(have)
 		return fmt.Errorf(
-			"%s: content folder %q does not exist; the project has: %s",
-			ps.Topic.Path, folder, strings.Join(have, ", "))
+			"%s: content folder %q does not exist; the project has: %s "+
+				"(the topics %s render the whole project and need no folder)",
+			ps.Topic.Path, folder, strings.Join(have, ", "),
+			strings.Join(qmcore.WholeProjectTopics(), " and "))
 	}
 	return nil
 }

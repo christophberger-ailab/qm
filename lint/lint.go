@@ -39,7 +39,7 @@ func Register(projectFlag *string) {
 		Short: "Run lint checks on the files of a topic",
 		Long: "Run lint checks against every .qmd file that belongs to " +
 			"the given topic, or against the whole project when no topic is " +
-			"named. Usage: qm lint [<topic>].",
+			"named or the topic is `all` or `none`. Usage: qm lint [<topic>].",
 		Flags: []string{"project", "lint-audience"},
 		Cmd:   cli.Guard(cmd),
 	})
@@ -65,10 +65,11 @@ func cmd(c *start.Command) error {
 }
 
 // Run performs all lint checks on the files belonging to topicArg,
-// resolved against docPath. When topicArg is empty, every .qmd file
-// under docPath is linted (except those matching the default exclude
-// pattern). It prints one line per finding to stderr and returns a
-// non-nil error when at least one finding was reported.
+// resolved against docPath. When topicArg is empty or names a whole-project
+// topic (`all`, `none`), every .qmd file under docPath is linted (except
+// those matching the default exclude pattern). It prints one line per
+// finding to stderr and returns a non-nil error when at least one finding
+// was reported.
 func Run(docPath, topicArg, audience string) error {
 	var (
 		files []string
@@ -120,6 +121,11 @@ func topicFiles(docPath, topicArg, audience string) ([]string, error) {
 			return nil, fmt.Errorf("%q is a %s profile; qm lint takes a topic", topicArg, a)
 		}
 		topic = value
+	}
+	// `all` and `none` name no folder: they are the whole project, which is
+	// what linting without a topic already covers.
+	if qmcore.IsWholeProject(topic) {
+		return allDocFiles(docPath)
 	}
 	folder := topic
 	if p, err := qmcore.LoadProfile(docPath, qmcore.AxisTopic.ProfileName(topic)); err == nil {

@@ -30,7 +30,9 @@ func Register(projectFlag *string) {
 		Long: "Flatten a topic's content folder into _build/book.qmd and " +
 			"_build/slides.qmd, then exit. Usage: qm flatten <topic>. The " +
 			"topic is the value of a `topic-<name>` profile; its content " +
-			"folder is the profile's `qm: folder:`, or the topic name.",
+			"folder is the profile's `qm: folder:`, or the topic name. The " +
+			"topics `all` and `none` address the whole project and write " +
+			"the empty build documents.",
 		Flags: []string{"project"},
 		Cmd:   cli.Guard(cmd),
 	})
@@ -67,7 +69,7 @@ func Run(root, topic string) error {
 	if folder == "" {
 		folder = topic
 	}
-	if topic == qmcore.NoTopic {
+	if qmcore.IsWholeProject(topic) {
 		folder = ""
 	}
 	log := func(format string, args ...any) {

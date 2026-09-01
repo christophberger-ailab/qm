@@ -23,6 +23,7 @@ func fixture(t *testing.T) string {
 		"assets/tpl_POL.pptx":    "POL TEMPLATE",
 		"assets/tpl_FW.pptx":     "FW TEMPLATE",
 		"_quarto-topic-none.yml": "_quarto-vars:\n  topic: \"\"\n",
+		"_quarto-topic-all.yml":  "_quarto-vars:\n  topic: \"\"\n",
 		"_quarto-topic-calltaker.yml": "book:\n  title: \"Calltaker{{< var audience-title >}}\"\n" +
 			"_quarto-vars:\n  topic: calltaker\n",
 		"_quarto-topic-broken.yml": "book:\n  title: Broken\n" +
@@ -76,18 +77,24 @@ func TestRunBuildsTheSelectedTopic(t *testing.T) {
 	}
 }
 
-// A website render selects no topic, and the build documents must then
-// contribute nothing to index.qmd.
+// A website render addresses the whole project rather than one topic, and
+// the build documents must then contribute nothing to index.qmd. Both
+// spellings of that topic mean the same thing, and neither names a folder —
+// looking for an `all/` directory is what used to break `quarto preview`.
 func TestRunWithoutTopicEmptiesTheBuild(t *testing.T) {
-	root := fixture(t)
-	if err := Run(root, []string{"topic-calltaker", "format-handout", "audience-pol"}, nil); err != nil {
-		t.Fatal(err)
-	}
-	if err := Run(root, []string{"topic-none", "format-website", "audience-pol"}, nil); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if strings.Contains(read(t, bookrender.BookFile(root)), "Calltaker") {
-		t.Error("the previous topic is still in the book document")
+	for _, topic := range []string{"topic-all", "topic-none"} {
+		t.Run(topic, func(t *testing.T) {
+			root := fixture(t)
+			if err := Run(root, []string{"topic-calltaker", "format-handout", "audience-pol"}, nil); err != nil {
+				t.Fatal(err)
+			}
+			if err := Run(root, []string{topic, "format-website", "audience-pol"}, nil); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			if strings.Contains(read(t, bookrender.BookFile(root)), "Calltaker") {
+				t.Error("the previous topic is still in the book document")
+			}
+		})
 	}
 }
 

@@ -21,6 +21,7 @@ func fixture(t *testing.T) string {
 		"_quarto-topic-book.yml":  "book:\n  title: Book\n",
 		"_quarto-topic-other.yml": "book:\n  title: Other\nqm:\n  folder: anderes\n",
 		"_quarto-topic-none.yml":  "{}\n",
+		"_quarto-topic-all.yml":   "{}\n",
 	}
 	for name, content := range files {
 		path := filepath.Join(root, name)
@@ -66,18 +67,23 @@ func TestRunFollowsTheProfilesFolder(t *testing.T) {
 	}
 }
 
-// topic-none is the website's topic: it selects no folder, and the build
-// documents have to end up contributing nothing.
+// topic-all and topic-none are the website's topic: they select no folder,
+// and the build documents have to end up contributing nothing. Neither is
+// looked up as a content folder — there is no `all/` directory.
 func TestRunWithoutTopicEmptiesTheDocuments(t *testing.T) {
-	root := fixture(t)
-	if err := Run(root, "book"); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if err := Run(root, "none"); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if strings.Contains(read(t, bookrender.BookFile(root)), "Book") {
-		t.Error("the previous topic is still in the book document")
+	for _, topic := range []string{"all", "none"} {
+		t.Run(topic, func(t *testing.T) {
+			root := fixture(t)
+			if err := Run(root, "book"); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			if err := Run(root, topic); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			if strings.Contains(read(t, bookrender.BookFile(root)), "Book") {
+				t.Error("the previous topic is still in the book document")
+			}
+		})
 	}
 }
 

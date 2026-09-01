@@ -11,7 +11,7 @@ import (
 //
 // A render is addressed by three orthogonal axes, each a profile of its own:
 //
-//	topic-<t>     what is rendered   (which content folder)
+//	topic-<t>     what is rendered   (which content folder, or all of them)
 //	format-<f>    how it is rendered (book/website/slides, output-dir)
 //	audience-<a>  who it is for      (which ::: pol / ::: fw content)
 //
@@ -45,9 +45,30 @@ func (a Axis) Prefix() string { return string(a) + "-" }
 // e.g. AxisTopic.ProfileName("calltaker") == "topic-calltaker".
 func (a Axis) ProfileName(value string) string { return a.Prefix() + value }
 
-// NoTopic is the topic value that selects no content folder at all. It is
-// what a website render uses: the website is the whole tree, not one book.
-const NoTopic = "none"
+// AllTopics and NoTopic are the two spellings of the topic that selects no
+// single content folder. They mean the same thing seen from two sides: the
+// render covers the project as a whole rather than one topic's folder.
+//
+// It is what a website render uses — the site is the whole tree, so every
+// topic is in it (`all`) and none of them is *the* one (`none`). Neither
+// value names a folder, and looking for an `all/` or `none/` directory is
+// the bug this constant exists to prevent.
+const (
+	AllTopics = "all"
+	NoTopic   = "none"
+)
+
+// IsWholeProject reports whether the topic value addresses the project as a
+// whole instead of one content folder. Such a topic has no folder to
+// flatten: the build documents are emptied and Quarto's own `project:
+// render:` list decides what is rendered.
+func IsWholeProject(topic string) bool {
+	return topic == AllTopics || topic == NoTopic
+}
+
+// WholeProjectTopics lists the whole-project topic values, for error
+// messages that have to name them.
+func WholeProjectTopics() []string { return []string{AllTopics, NoTopic} }
 
 // Selection is one topic × format × audience combination — exactly one
 // value per axis, which is what a single `quarto render` produces.

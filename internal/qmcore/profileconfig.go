@@ -39,7 +39,8 @@ import (
 type QM struct {
 	// Folder is the content folder a topic profile renders (topic axis).
 	// Empty means "same name as the topic", e.g. topic-calltaker →
-	// calltaker/. The topic `none` renders no folder at all.
+	// calltaker/. The topics `all` and `none` render no folder at all: they
+	// address the whole project (a website render).
 	Folder string `yaml:"folder"`
 
 	// Formats, Audiences, and Topics restrict the matrix `qm render`
@@ -207,9 +208,11 @@ func (p *Profiles) Vars() map[string]string {
 }
 
 // Folder is the content folder the selected topic renders, or "" when the
-// topic selects no folder (topic-none, i.e. a website render).
+// topic addresses the project as a whole (topic-all / topic-none, i.e. a
+// website render). A whole-project topic names no folder even if the
+// profile declares a `qm: folder:`; there is no single folder to render.
 func (p *Profiles) Folder() string {
-	if p.Selection.Topic == NoTopic {
+	if IsWholeProject(p.Selection.Topic) {
 		return ""
 	}
 	if p.Topic != nil && p.Topic.QM.Folder != "" {

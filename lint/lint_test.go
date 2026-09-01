@@ -13,6 +13,27 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
+// A whole-project topic (`all`, `none`) names no content folder, so linting
+// it means linting every file — the same as passing no topic at all.
+func TestRunWithWholeProjectTopicLintsEverything(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "_quarto-topic-all.yml"), "{}\n")
+	if err := os.MkdirAll(filepath.Join(root, "calltaker"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(root, "calltaker", "index.qmd"), "::: a\nx\n:::\n")
+	writeFile(t, filepath.Join(root, "index.qmd"), "::: b\ny\n:::\n")
+
+	for _, topic := range []string{"", "all", "none", "topic-all"} {
+		if err := Run(root, topic, ""); err != nil {
+			t.Errorf("Run(%q) = %v, want no findings", topic, err)
+		}
+	}
+	if err := Run(root, "calltakr", ""); err == nil {
+		t.Error("an unknown topic should still be reported as a missing folder")
+	}
+}
+
 func TestCheckFences(t *testing.T) {
 	cases := []struct {
 		name     string

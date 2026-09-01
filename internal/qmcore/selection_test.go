@@ -15,6 +15,8 @@ func selectionProject(t *testing.T) string {
 	files := map[string]string{
 		"_quarto-topic-none.yml": "" +
 			"qm:\n  formats: [website]\n_quarto-vars:\n  topic: \"\"\n",
+		"_quarto-topic-all.yml": "" +
+			"qm:\n  formats: [website]\n_quarto-vars:\n  topic: \"\"\n",
 		"_quarto-topic-calltaker.yml": "" +
 			"book:\n  title: \"Calltaker{{< var audience-title >}}\"\n" +
 			"_quarto-vars:\n  topic: calltaker\n" +
@@ -184,6 +186,7 @@ func TestFolderFollowsTheProfile(t *testing.T) {
 		{"calltaker", "calltaker"},
 		{"sysadmin", "sysadmin"},
 		{NoTopic, ""},
+		{AllTopics, ""},
 	} {
 		ps, err := LoadSelection(root, Selection{Topic: tc.topic, Format: "handout", Audience: "std"})
 		if err != nil {
@@ -239,6 +242,8 @@ func TestBuildMatrixExpandsWhatEachTopicDeclares(t *testing.T) {
 	}
 	slices.Sort(got)
 	want := []string{
+		"topic-all,format-website,audience-fw",
+		"topic-all,format-website,audience-pol",
 		"topic-calltaker,format-handout,audience-fw",
 		"topic-calltaker,format-handout,audience-pol",
 		"topic-calltaker,format-slides,audience-fw",
