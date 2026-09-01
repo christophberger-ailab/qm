@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cboct/qm/internal/bookrender"
-	"github.com/cboct/qm/internal/qmcore"
+	"github.com/christophberger-ailab/qm/internal/bookrender"
+	"github.com/christophberger-ailab/qm/internal/qmcore"
 )
 
 // fixture builds a small project with two topics. `chapter2` takes part in

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cboct/qm/internal/bookrender"
+	"github.com/christophberger-ailab/qm/internal/bookrender"
 )
 
 // fixture builds a project with one topic, three formats, and two

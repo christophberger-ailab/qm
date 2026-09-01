@@ -17,8 +17,8 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/cboct/qm/internal/cli"
-	"github.com/cboct/qm/internal/qmcore"
+	"github.com/christophberger-ailab/qm/internal/cli"
+	"github.com/christophberger-ailab/qm/internal/qmcore"
 	"github.com/christophberger/start"
 	"gopkg.in/yaml.v3"
 )

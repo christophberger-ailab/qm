@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/cboct/qm/internal/bookrender"
+	"github.com/christophberger-ailab/qm/internal/bookrender"
 )
 
 // job is the single background render the server runs at a time. The tree

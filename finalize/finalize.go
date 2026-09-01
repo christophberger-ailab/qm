@@ -38,10 +38,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cboct/qm/internal/bookrender"
-	"github.com/cboct/qm/internal/cli"
-	"github.com/cboct/qm/internal/qmcore"
-	"github.com/cboct/qm/prepare"
+	"github.com/christophberger-ailab/qm/internal/bookrender"
+	"github.com/christophberger-ailab/qm/internal/cli"
+	"github.com/christophberger-ailab/qm/internal/qmcore"
+	"github.com/christophberger-ailab/qm/prepare"
 	"github.com/christophberger/start"
 	flag "github.com/spf13/pflag"
 )
