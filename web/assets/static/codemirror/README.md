@@ -24,14 +24,17 @@ require a bundler, and with it a Node build step in a Go repository.
 | `dialog.js`, `dialog.css` | `addon/dialog/` |
 | `searchcursor.js` | `addon/search/searchcursor.js` |
 | `matchbrackets.js`, `continuelist.js` | `addon/edit/` |
+| `show-hint.js`, `show-hint.css` | `addon/hint/` |
 | `LICENSE` | `LICENSE` |
 
 The set is what the editors need and no more. `yaml-frontmatter` over `gfm`
 is the mode a `.qmd` page is read with; `css` is used by the custom preview
 stylesheet editor; `overlay` is what `gfm` composes with; `dialog`,
-`searchcursor`, and `matchbrackets` are what the vim keymap builds on.
-Per-language modes for fenced code blocks are deliberately left out -- that
-set has no end -- so a fenced block is highlighted as plain text.
+`searchcursor`, and `matchbrackets` are what the vim keymap builds on;
+`show-hint` is what editor.js drives for the path completion popup inside a
+Markdown link. Per-language modes for fenced code blocks are deliberately
+left out -- that set has no end -- so a fenced block is highlighted as
+plain text.
 
 `TestEditorAssetsHaveTheirDependencies` in `web/server_test.go` reads the
 `require(...)` calls out of these files and fails if one of them names a

@@ -96,6 +96,7 @@ func newServer(prefsFile string) (*server, error) {
 	s.mux.HandleFunc("POST /delete", s.delete)
 	s.mux.HandleFunc("GET /content", s.content)
 	s.mux.HandleFunc("GET /search", s.search)
+	s.mux.HandleFunc("GET /complete", s.complete)
 	s.mux.HandleFunc("GET /media/{path...}", s.media)
 	s.mux.HandleFunc("POST /save", s.save)
 	s.mux.HandleFunc("POST /render", s.startRender)

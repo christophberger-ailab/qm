@@ -42,6 +42,10 @@ constraints:
       3-6-2: Vim mode is off unless the user turns it on
       3-6-3: "`:w` saves the page immediately instead of waiting for the autosave delay"
       3-6-4: The textarea remains the field the edit form posts, so autosave and the preview are unaffected by the editor
+      3-6-5: Typing a Markdown link's destination -- `[text](` or `![alt](`, whichever bracket opened it -- offers the entries of the directory named so far in a popup below the cursor; Up and Down move the selection, Tab or Enter inserts it, Esc closes the popup
+      3-6-5-1: A destination starting with "/" completes against the project root; any other completes against the folder of the edited page, the same rule the preview's images resolve by
+      3-6-5-2: "`![alt](` offers image files, `[text](` offers `.qmd` pages; a directory is offered either way, so the user can descend into it a level at a time"
+      3-6-5-3: A completed destination containing a character that would otherwise end it -- a space above all -- is wrapped in Markdown's own `<...>` form; a destination that no longer needs the wrapping loses it again
       3-7: The page open in the editor is remembered per project and reopened when the app page loads, so a restart, or a visit to the config pages and back, returns to the page the user was working on
       3-7-1: The reopened page is selected in the page tree, and collapsed branches above it are expanded
       3-7-2: A remembered page that is no longer there is forgotten, and the editor starts empty

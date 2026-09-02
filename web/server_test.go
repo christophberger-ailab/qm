@@ -406,7 +406,7 @@ func TestEditorAssetOrder(t *testing.T) {
 	for _, dep := range []string{
 		"overlay.js", "xml.js", "meta.js", "yaml.js", "markdown.js", "gfm.js",
 		"yaml-frontmatter.js", "dialog.js", "searchcursor.js",
-		"matchbrackets.js", "continuelist.js", "vim.js",
+		"matchbrackets.js", "continuelist.js", "vim.js", "show-hint.js",
 	} {
 		before(cm+"codemirror.js", cm+dep)
 		before(cm+dep, "/static/editor.js")

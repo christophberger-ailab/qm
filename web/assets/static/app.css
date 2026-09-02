@@ -812,6 +812,28 @@ div.CodeMirror-selected {
   color: var(--fg);
 }
 
+/* The path completion popup a Markdown link's destination opens. Like
+ * the dialog above, show-hint.css is light-only and is overridden here to
+ * follow the system theme. */
+.CodeMirror-hints {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.CodeMirror-hint {
+  color: var(--fg);
+}
+
+.cm-path-hint-dir {
+  color: var(--code-atom);
+}
+
+li.CodeMirror-hint-active {
+  background: var(--accent-bg);
+  color: var(--fg);
+}
+
 /* Markdown preview */
 
 /* The editor and the preview share the content pane, split by their own

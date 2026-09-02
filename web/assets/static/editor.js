@@ -48,8 +48,11 @@ function initEditor() {
     mode: editorMode,
     lineWrapping: true,
     keyMap: vimOn ? 'vim' : 'default',
-    extraKeys: { Enter: 'newlineAndIndentContinueMarkdownList' }
+    extraKeys: { Enter: 'newlineAndIndentContinueMarkdownList', 'Ctrl-Space': 'autocomplete' },
+    hintOptions: pathHintOptions
   });
+  clearCompletionCache();
+  cm.on('inputRead', maybeOpenPathCompletion);
 
   // The textarea is what /save posts and what the preview reads, so it has
   // to follow the editor. Re-emitting the input event is what keeps both
@@ -155,6 +158,290 @@ function refreshEditor() {
   if (cm) {
     cm.refresh();
   }
+}
+
+// Path completion
+//
+// Typing inside a Markdown link's destination -- `[text](here` or
+// `![alt](here`, whichever kind of bracket opened it -- offers the
+// entries of the directory named so far, images for the first kind and
+// `.qmd` pages for the second; a directory is offered either way, so the
+// user can descend into it. Up and Down move the selection, Tab or Enter
+// inserts it, Esc closes the popup: CodeMirror's own show-hint addon
+// supplies all four out of the box.
+//
+// A destination containing a character Markdown would otherwise read as
+// ending it -- a space above all, but also the brackets and parentheses
+// themselves -- is written the way CommonMark reads such a destination
+// literally: wrapped in `<...>`. Picking a plain name keeps or restores
+// the bare form; picking one with a space in it switches to the wrapped
+// form, on the way in either direction, so the user never has to type the
+// angle brackets by hand.
+
+// completionCache holds the directory listings already fetched, so typing
+// further characters of the same segment does not ask the server again.
+// It is keyed by "kind|dir" and cleared whenever the project on disk may
+// have changed under it.
+var completionCache = {};
+
+function clearCompletionCache() {
+  completionCache = {};
+}
+
+// Any request that is not a plain autosave may have created, removed, or
+// renamed a file -- /create, /delete, and /move all do -- so the safe rule
+// is to drop the cache on every request rather than name each one.
+document.body.addEventListener('htmx:afterRequest', clearCompletionCache);
+
+// pathHintOptions is installed as the editor's `hintOptions`, which is
+// what both the automatic popup and the manual Ctrl-Space command (CM's
+// own "autocomplete" built-in) read.
+var pathHintOptions = {
+  hint: pathHint,
+  // A single match is common while a name is still being typed -- most
+  // directories have more than one entry starting the same way -- and
+  // inserting it before the user chose to would take typing back out of
+  // their hands.
+  completeSingle: false,
+  // The default also treats "(" and "<" as closing characters, which
+  // would dismiss the popup on the very brackets a link destination
+  // starts with. ")" is enough: it is what a finished destination, bare
+  // or wrapped, always ends on.
+  closeCharacters: /[)]/
+};
+
+// maybeOpenPathCompletion opens the popup on the next keystroke inside a
+// link destination, unless one is already open -- show-hint keeps an open
+// popup current on its own, through the hint function below being asked
+// again on every cursor move.
+function maybeOpenPathCompletion(instance) {
+  if (instance.state.completionActive || !linkDestAt(instance)) {
+    return;
+  }
+  instance.showHint();
+}
+
+// linkDestAt reports the link destination the cursor sits in, or null when
+// it does not. Only the current line is considered: a link destination
+// cannot contain a newline.
+//
+// `open` is the index of the destination's own "(", `angle` whether it
+// opened with "(<", and `typed` the destination text between there and
+// the cursor. `isImage` is read off the "!" before the link's own "[",
+// found by walking backward with a bracket-depth counter so that an image
+// nested inside a link's text -- `[![alt](img.png)](page/)` -- resolves
+// against its own brackets rather than the enclosing ones.
+function linkDestAt(cm) {
+  var cur = cm.getCursor();
+  var line = cm.getLine(cur.line);
+  var ch = cur.ch;
+
+  var open = -1;
+  for (var i = Math.min(ch, line.length) - 1; i >= 1; i--) {
+    if (line.charAt(i) === '(' && line.charAt(i - 1) === ']') {
+      open = i;
+      break;
+    }
+  }
+  if (open < 0) {
+    return null;
+  }
+
+  var angle = line.charAt(open + 1) === '<';
+  var start = angle ? open + 2 : open + 1;
+  if (start > ch) {
+    return null;
+  }
+  // A destination already closed before the cursor -- by its own ">", or
+  // by the whitespace or ")" that ends a bare one -- means the cursor has
+  // moved on to the title or past the link entirely.
+  for (var j = start; j < ch; j++) {
+    var c = line.charAt(j);
+    if (c === '\\') {
+      j++;
+      continue;
+    }
+    if (angle ? c === '>' : (c === ')' || c === ' ' || c === '\t')) {
+      return null;
+    }
+  }
+
+  return {
+    open: open,
+    angle: angle,
+    typed: line.slice(start, ch),
+    isImage: isImageBefore(line, open - 1)
+  };
+}
+
+// isImageBefore reports whether the "]" at index p closes an image
+// reference rather than a link, by walking back to its matching "[" and
+// checking for a preceding "!".
+function isImageBefore(line, p) {
+  var depth = 0;
+  for (var j = p - 1; j >= 0; j--) {
+    var c = line.charAt(j);
+    if (c === ']') {
+      depth++;
+    } else if (c === '[') {
+      if (depth === 0) {
+        return j > 0 && line.charAt(j - 1) === '!';
+      }
+      depth--;
+    }
+  }
+  return false;
+}
+
+// splitTyped separates a destination typed so far into the directory
+// named and the segment being completed -- the part after its last "/",
+// or all of it when it names none.
+function splitTyped(typed) {
+  var i = typed.lastIndexOf('/');
+  if (i < 0) {
+    return { dir: '', segment: typed };
+  }
+  return { dir: typed.slice(0, i), segment: typed.slice(i + 1) };
+}
+
+// currentPageDir is the folder of the page open in the editor, which a
+// relative destination resolves against -- the same rule preview.js
+// resolves an image source by.
+function currentPageDir() {
+  var input = document.querySelector('#content input[name="path"]');
+  var path = (input && input.value) || '';
+  var cut = path.lastIndexOf('/');
+  return cut < 0 ? '' : path.slice(0, cut);
+}
+
+// pathHint is the hint function CodeMirror calls, and keeps calling as
+// the user keeps typing: it is asked again on every cursor move while the
+// popup is open, which is what lets the same popup answer for a
+// destination that grows, shrinks, or is completed a directory at a time.
+function pathHint(cm, callback) {
+  var cur = cm.getCursor();
+  var dest = linkDestAt(cm);
+  if (!dest) {
+    callback(null);
+    return;
+  }
+
+  var absolute = dest.typed.charAt(0) === '/';
+  var rest = absolute ? dest.typed.slice(1) : dest.typed;
+  var split = splitTyped(rest);
+  var segStart = cur.ch - split.segment.length;
+  var from = CodeMirror.Pos(cur.line, segStart);
+
+  var pageDir = absolute ? '' : currentPageDir();
+  var queryDir = normalizePath(pageDir ? (split.dir ? pageDir + '/' + split.dir : pageDir) : split.dir);
+  var kind = dest.isImage ? 'image' : 'page';
+
+  fetchCompletions(queryDir, kind).then(function (entries) {
+    var needle = split.segment.toLowerCase();
+    var matches = entries.filter(function (e) {
+      return e.name.toLowerCase().indexOf(needle) === 0;
+    });
+    if (!matches.length) {
+      callback(null);
+      return;
+    }
+    callback({
+      list: matches.map(function (e) {
+        return pathHintItem(e, dest, absolute, split.dir);
+      }),
+      from: from,
+      to: CodeMirror.Pos(cur.line, cur.ch)
+    });
+  });
+}
+
+// The hint function fetches over the network, so show-hint must wait for
+// the callback rather than use its return value.
+pathHint.async = true;
+
+// pathHintItem builds one entry of the popup. Picking it inserts the
+// destination typed so far with its last segment completed -- absolute or
+// relative, matching however the user started -- wrapped in "<...>" when
+// what that spells needs it and left bare otherwise. Picking a directory
+// reopens the popup on its contents, so the next segment completes the
+// same way.
+function pathHintItem(entry, dest, absolute, dirSoFar) {
+  var name = entry.name + (entry.dir ? '/' : '');
+  var full = (absolute ? '/' : '') + (dirSoFar ? dirSoFar + '/' : '') + name;
+  return {
+    displayText: name,
+    className: entry.dir ? 'cm-path-hint-dir' : null,
+    hint: function (cm) {
+      insertLinkDest(cm, dest, full);
+      if (entry.dir) {
+        // Reopening runs after show-hint's own close(), which follows
+        // this callback synchronously; a fresh tick is what lets the new
+        // popup list the directory just inserted rather than closing
+        // right behind it.
+        setTimeout(function () {
+          cm.showHint();
+        }, 0);
+      }
+    }
+  };
+}
+
+// insertLinkDest replaces a link destination with the given text, wrapping
+// it in CommonMark's "<...>" form when it contains a character that would
+// otherwise end it early -- whitespace, or one of the brackets a bare
+// destination cannot balance -- and leaving it bare otherwise. Either way
+// the whole destination is replaced, so a bare destination can pick up the
+// wrapping it needs, and a wrapped one can lose it again, as the pick
+// warrants.
+function insertLinkDest(cm, dest, text) {
+  var cur = cm.getCursor();
+  var line = cm.getLine(cur.line);
+  var start = dest.angle ? dest.open + 2 : dest.open + 1;
+
+  var end = start;
+  for (; end < line.length; end++) {
+    var c = line.charAt(end);
+    if (c === '\\') {
+      end++;
+      continue;
+    }
+    if (dest.angle ? c === '>' : (c === ')' || c === ' ' || c === '\t')) {
+      break;
+    }
+  }
+  var consumesCloser = dest.angle && end < line.length && line.charAt(end) === '>';
+
+  var needsAngle = /[\s<>()]/.test(text);
+  var replacement = needsAngle ? '<' + text + '>' : text;
+
+  cm.replaceRange(
+    replacement,
+    CodeMirror.Pos(cur.line, dest.open + 1),
+    CodeMirror.Pos(cur.line, consumesCloser ? end + 1 : end)
+  );
+}
+
+// fetchCompletions asks /complete for one directory's entries, caching the
+// answer under its kind and path.
+function fetchCompletions(dir, kind) {
+  var key = kind + '|' + dir;
+  var cached = completionCache[key];
+  if (cached) {
+    return cached;
+  }
+  var url = '/complete?dir=' + encodeURIComponent(dir || '.') + '&kind=' + kind;
+  var promise = fetch(url)
+    .then(function (resp) {
+      return resp.ok ? resp.json() : { entries: [] };
+    })
+    .then(function (data) {
+      return (data && data.entries) || [];
+    })
+    .catch(function () {
+      return [];
+    });
+  completionCache[key] = promise;
+  return promise;
 }
 
 // applyVim brings the editor and the toggle button in line with vimOn. Like
