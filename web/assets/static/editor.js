@@ -166,9 +166,12 @@ function refreshEditor() {
 // `![alt](here`, whichever kind of bracket opened it -- offers the
 // entries of the directory named so far, images for the first kind and
 // `.qmd` pages for the second; a directory is offered either way, so the
-// user can descend into it. Up and Down move the selection, Tab or Enter
-// inserts it, Esc closes the popup: CodeMirror's own show-hint addon
-// supplies all four out of the box.
+// user can descend into it. The segment being typed matches anywhere in a
+// name, not only at its start -- typing "alarmplan" finds
+// "dispatcher_alarmplan.qmd" -- with a match at the start listed first.
+// Up and Down move the selection, Tab or Enter inserts it, Esc closes the
+// popup: CodeMirror's own show-hint addon supplies all four out of the
+// box.
 //
 // A destination containing a character Markdown would otherwise read as
 // ending it -- a space above all, but also the brackets and parentheses
@@ -339,12 +342,21 @@ function pathHint(cm, callback) {
   fetchCompletions(queryDir, kind).then(function (entries) {
     var needle = split.segment.toLowerCase();
     var matches = entries.filter(function (e) {
-      return e.name.toLowerCase().indexOf(needle) === 0;
+      return e.name.toLowerCase().indexOf(needle) >= 0;
     });
     if (!matches.length) {
       callback(null);
       return;
     }
+    // A name starting with the segment is what the user most likely
+    // means -- "images" typing "im" -- and sorts first; a name that only
+    // contains it somewhere past its start -- "dispatcher_alarmplan"
+    // typing "alarmplan" -- still matches, just after. Array.prototype.sort
+    // is stable, so entries tied on that keep the order /complete answered
+    // in: directories before files, then alphabetically.
+    matches.sort(function (a, b) {
+      return startsWithScore(a, needle) - startsWithScore(b, needle);
+    });
     callback({
       list: matches.map(function (e) {
         return pathHintItem(e, dest, absolute, split.dir);
@@ -353,6 +365,12 @@ function pathHint(cm, callback) {
       to: CodeMirror.Pos(cur.line, cur.ch)
     });
   });
+}
+
+// startsWithScore ranks a prefix match before one that only matches
+// further into the name.
+function startsWithScore(entry, needle) {
+  return entry.name.toLowerCase().indexOf(needle) === 0 ? 0 : 1;
 }
 
 // The hint function fetches over the network, so show-hint must wait for
