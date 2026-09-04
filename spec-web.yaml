@@ -51,6 +51,8 @@ constraints:
       3-7-1: The reopened page is selected in the page tree, and collapsed branches above it are expanded
       3-7-2: A remembered page that is no longer there is forgotten, and the editor starts empty
       3-7-3: The remembered page is stored with the render selection in `<user config dir>/qm/render.json`
+      3-7-4: The reopened page always shows that page's text on disk; the browser's own restore of form state across a reload -- which is where a restart ends -- never puts another page's text into the editor
+      3-7-5: The editor opens with the page's text unchanged, a leading newline included, so an autosave writes back what was read
       4: The tree is polled for outside changes and refreshed when the project changed on disk
       5: The render panel selects a point in the project's three-axis matrix: topics, the audiences of each topic, and the output formats
       5-1: The selection is remembered per project in `<user config dir>/qm/render.json`

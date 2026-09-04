@@ -160,9 +160,13 @@
       </select>
     </form>
     {{end}}
-    <form class="config-editor" method="post" action="/config/preview-css">
+    <form class="config-editor" method="post" action="/config/preview-css" autocomplete="off">
       <input type="hidden" name="file" value="{{.File}}">
-      <textarea name="css" class="preview-css-content" spellcheck="false">{{.CSS}}</textarea>
+      {{/* Same two rules as the page editor: no browser restore over the
+           stylesheet the server just sent, and a leading newline in the
+           file survives the round trip. */ -}}
+      <textarea name="css" class="preview-css-content" spellcheck="false" autocomplete="off">
+{{.CSS}}</textarea>
       <div class="config-actions">
         <button type="submit">Save</button>
         <a class="button" href="/config">Back to Config</a>
@@ -241,12 +245,23 @@
   {{/* The vim toggle sits in the editor's own column so that it stands
        above what it acts on; the content header spans both columns and put
        it above the preview. */ -}}
-  <form class="edit-form" hx-post="/save" hx-trigger="input delay:1s from:find textarea" hx-swap="none">
+  {{/* autocomplete="off" keeps the browser from putting the text a
+       previous page left in this textarea back into it on a reload. The
+       hidden path is not restored -- browsers skip hidden inputs -- so a
+       restore would leave the editor showing one page's text under
+       another page's name, and the first keystroke would autosave it
+       over that other page. editor.js guards the same thing again for
+       the browsers that restore anyway. */ -}}
+  <form class="edit-form" autocomplete="off" hx-post="/save" hx-trigger="input delay:1s from:find textarea" hx-swap="none">
     <input type="hidden" name="path" value="{{.Path}}">
     <div class="editor-toolbar">
       <button type="button" class="vim-toggle" id="vim-toggle" aria-pressed="false" title="Vim keybindings in the editor">⌨ Vim Mode</button>
     </div>
-    <textarea name="body" class="file-content">{{.Body}}</textarea>
+    {{/* The newline right after the tag is dropped by the HTML parser, so
+         a page whose text starts with one keeps it instead of losing it on
+         the next save. */ -}}
+    <textarea name="body" class="file-content" autocomplete="off">
+{{.Body}}</textarea>
   </form>
   <div id="preview-divider" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
   <div class="preview-column" id="preview-column">

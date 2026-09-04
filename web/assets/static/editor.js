@@ -44,6 +44,21 @@ function initEditor() {
     return; // no page open, or the asset is missing: the textarea does
   }
 
+  // The server just sent this page's text, and that text is the one the
+  // editor must open with. A browser restoring form state across a reload
+  // -- which is what a `qm web` restart ends in -- overwrites the
+  // textarea's value with whatever the last page left in it, while the
+  // hidden path beside it keeps the page the server chose, because
+  // browsers do not restore hidden inputs. Mounting on that value would
+  // show one page under another page's name and autosave it over that
+  // page on the first keystroke. defaultValue is the text the markup
+  // carries, which a restore does not touch, so it is what the editor
+  // starts from. The form's autocomplete="off" asks for the same thing up
+  // front; this is what makes it hold where the attribute is ignored.
+  if (area.value !== area.defaultValue) {
+    area.value = area.defaultValue;
+  }
+
   cm = CodeMirror.fromTextArea(area, {
     mode: editorMode,
     lineWrapping: true,

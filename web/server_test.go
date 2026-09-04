@@ -275,7 +275,53 @@ func TestRenderSelectionKeepsOpenPage(t *testing.T) {
 	assertServesPage(t, get(t, srv, "/").Body.String(), "chapter2/second.qmd", "# Second")
 }
 
-// The editor is served with the preview pane and its toggle beside it; the
+// A `qm web` restart ends in a browser reload, and a reload is where a
+// browser puts the form state of the previous session back. The editor
+// pane is the one place that must not happen: the hidden path is not
+// restored -- browsers skip hidden inputs -- so a restored textarea shows
+// the text of the page the user was last editing under the name of the
+// page the server reopened, and the first keystroke autosaves it over
+// that page. The markup therefore opts the form and the textarea out of
+// the restore; editor.js resets the textarea to its markup text as well,
+// for the browsers that restore regardless.
+func TestEditorOptsOutOfBrowserFormRestore(t *testing.T) {
+	srv, _ := testServer(t)
+	body := get(t, srv, "/content?path=chapter2/second.qmd").Body.String()
+	for _, want := range []string{
+		`<form class="edit-form" autocomplete="off"`,
+		`<textarea name="body" class="file-content" autocomplete="off">`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("editor does not opt out of form restore, missing %q:\n%s", want, body)
+		}
+	}
+
+	editor, err := assets.ReadFile("assets/static/editor.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(editor), "area.value = area.defaultValue") {
+		t.Error("editor.js does not reset the textarea to the text the server sent")
+	}
+}
+
+// The HTML parser drops a newline directly after <textarea>, so the markup
+// has to spend one: without it a page whose text starts with a blank line
+// opens without it and the next autosave writes the shortened text back.
+func TestEditorPreservesLeadingNewline(t *testing.T) {
+	srv, root := testServer(t)
+	rel := "chapter2/second.qmd"
+	text := "\n---\ntitle: Second\norder: 1\n---\n# Second\n"
+	if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(rel)), []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	body := get(t, srv, "/content?path="+rel).Body.String()
+	want := "class=\"file-content\" autocomplete=\"off\">\n" + text
+	if !strings.Contains(body, want) {
+		t.Errorf("textarea does not carry the page's leading newline:\n%s", body)
+	}
+}
+
 // preview itself is filled in the browser from the textarea (preview.js).
 func TestContentServesPreviewPane(t *testing.T) {
 	srv, _ := testServer(t)
