@@ -1,5 +1,7 @@
 # qm — a companion CLI for Quarto documentation trees
 
+![`qm web`](./docs/images/qm_web.png)
+
 `qm` manages a [Quarto](https://quarto.org) documentation tree and adds the
 things the `quarto` command itself does not do:
 
