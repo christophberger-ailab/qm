@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"unicode"
+	"unicode/utf8"
 )
 
 // searchIndex is the word index the search field is answered from. Reading
@@ -31,9 +32,17 @@ type searchIndex struct {
 	ready    bool
 	building bool
 
-	// terms maps each word to the pages it appears on and how often.
-	terms map[string]map[string]int
+	// terms maps each word to the pages it appears on and, on every page,
+	// to the positions it stands at -- the word's ordinal in the page,
+	// counted from the start of the file. Counting the occurrences alone
+	// would answer a query of loose words, but not a quoted phrase:
+	// "logging in" asks for two words standing next to each other, and only
+	// their positions can tell whether they do.
+	terms wordIndex
 }
+
+// wordIndex is what a built index holds: word -> page -> positions.
+type wordIndex map[string]map[string][]int
 
 // indexState identifies what an index describes: a project, in the shape it
 // had at a given fingerprint.
@@ -122,8 +131,8 @@ func (x *searchIndex) search(root, q string) ([]searchHit, bool) {
 // and not themselves prefixed with "_" -- so that every hit names a page
 // the user can open from the tree. Unreadable files drop out of the index
 // the way they drop out of the fingerprint.
-func indexPages(root string) map[string]map[string]int {
-	terms := map[string]map[string]int{}
+func indexPages(root string) wordIndex {
+	terms := wordIndex{}
 	if root == "" {
 		return terms
 	}
@@ -150,61 +159,171 @@ func indexPages(root string) map[string]map[string]int {
 			return nil
 		}
 		page := filepath.ToSlash(rel)
-		for _, term := range indexWords(string(src)) {
+		for at, term := range indexWords(string(src)) {
 			pages := terms[term]
 			if pages == nil {
-				pages = map[string]int{}
+				pages = map[string][]int{}
 				terms[term] = pages
 			}
-			pages[page]++
+			pages[page] = append(pages[page], at)
 		}
 		return nil
 	})
 	return terms
 }
 
-// indexWords splits text into the lowercased words the index is keyed by:
-// runs of letters and digits, everything else a separator. Markdown and
-// YAML punctuation therefore never becomes part of a word, and a page is
-// searched as the text it reads as.
+// isWordRune reports whether r is part of a word. A word is what is left of
+// a page when its syntax is taken away, and the syntax of Markdown and YAML
+// is written entirely in ASCII: hashes, stars, backticks, brackets, colons,
+// dashes. So every ASCII character that is not a letter or a digit
+// separates words, and so does whitespace and the punctuation of every
+// other script -- quotation marks, the em dash, the Japanese full stop.
+//
+// Everything else is part of a word. That is the wide half of the rule and
+// the point of it: letters and digits of every script, the marks written on
+// top of them, the joiners that hold an emoji sequence together, and the
+// symbols themselves. A page that says 🚒 can be searched for 🚒.
+func isWordRune(r rune) bool {
+	if r < utf8.RuneSelf {
+		return 'a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' || '0' <= r && r <= '9'
+	}
+	return !unicode.IsSpace(r) && !unicode.IsPunct(r)
+}
+
+// isJoiner reports whether r can hold a compound word together. A single
+// hyphen between two word characters belongs to the word -- "semi-wide" is
+// one word, and searching for "wide" is not searching for it -- while the
+// same character anywhere else is Markdown: a bullet, a thematic break, the
+// fence of a YAML header, or the em dash that two of them stand for.
+func isJoiner(r rune) bool {
+	return r == '-' || r == '\u2010' || r == '\u2011'
+}
+
+// indexWords splits text into the lowercased words the index is keyed by,
+// in the order they are read. Their order is their position: the index
+// keeps it so that a phrase can be told apart from the same words scattered
+// over a page.
 func indexWords(text string) []string {
-	return strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-	})
+	var words []string
+	var word []rune
+	joiner, joiners := rune(0), 0
+	flush := func() {
+		if len(word) > 0 {
+			words = append(words, string(word))
+			word = word[:0]
+		}
+	}
+	for _, r := range text {
+		switch {
+		case isWordRune(r):
+			if joiners == 1 && len(word) > 0 {
+				word = append(word, joiner) // between two word characters
+			} else if joiners > 0 {
+				flush() // a run of dashes, or one that starts a word
+			}
+			word, joiners = append(word, unicode.ToLower(r)), 0
+		case isJoiner(r):
+			joiner, joiners = r, joiners+1
+		default:
+			flush()
+			joiners = 0
+		}
+	}
+	flush()
+	return words
 }
 
-// minTerm is the shortest query term that is searched for. A single letter
-// starts almost every page and would highlight the whole tree after the
-// first keystroke.
-const minTerm = 2
-
-// queryWords are the terms of a query worth searching for.
-func queryWords(q string) []string {
-	words := indexWords(q)
-	return slices.DeleteFunc(words, func(w string) bool {
-		return len([]rune(w)) < minTerm
-	})
+// queryTerm is one thing a query asks for: a word, or a phrase of words
+// that have to stand next to each other in that order. Quotes make a
+// phrase, and a closing quote also makes it exact -- see parseQuery.
+type queryTerm struct {
+	words []string
+	exact bool
 }
 
-// matchPages finds the pages matching every term of q. A term matches the
-// words that start with it, so a query narrows down while it is typed
-// rather than finding nothing until its last letter.
-func matchPages(terms map[string]map[string]int, q string) []searchHit {
-	words := queryWords(q)
-	if len(words) == 0 {
+// quoteEnds pairs every quotation mark that can open a phrase with the one
+// that closes it: the two that are typed, and the two that a text editor or
+// a phone turns them into. The typographic closers are deliberately not
+// openers, so that the apostrophe of "don’t" cannot start a phrase.
+var quoteEnds = map[rune]rune{'"': '"', '\'': '\'', '“': '”', '‘': '’'}
+
+// parseQuery reads a query into the terms it asks for. Words between a pair
+// of quotes are one term that matches only where they stand together;
+// everything outside is one term per word, as before.
+//
+// A quote only counts as one where a phrase can begin or end -- with a
+// separator, or the edge of the query, on its outer side. That is what
+// keeps the apostrophe in "don't stop" from opening a phrase that swallows
+// the rest of the line.
+//
+// The closing quote does one more thing: it says the phrase is finished. An
+// unfinished phrase still matches its last word by prefix, so that a
+// quoted query narrows down while it is typed like any other; the closing
+// quote turns that last word exact, which is the only way to ask this
+// search for a whole word.
+func parseQuery(q string) []queryTerm {
+	var terms []queryTerm
+	rs := []rune(q)
+	loose := 0 // start of the unquoted run passed over so far
+	for i := 0; i < len(rs); i++ {
+		closer, ok := quoteEnds[rs[i]]
+		if !ok || (i > 0 && isWordRune(rs[i-1])) {
+			continue
+		}
+		end := len(rs) // an unclosed quote quotes the rest of the query
+		closed := false
+		for j := i + 1; j < len(rs); j++ {
+			if rs[j] == closer && (j+1 == len(rs) || !isWordRune(rs[j+1])) {
+				end, closed = j, true
+				break
+			}
+		}
+		terms = append(terms, looseTerms(string(rs[loose:i]))...)
+		terms = append(terms, queryTerm{indexWords(string(rs[i+1 : end])), closed})
+		i, loose = end, min(end+1, len(rs))
+	}
+	terms = append(terms, looseTerms(string(rs[loose:]))...)
+	return slices.DeleteFunc(terms, queryTerm.skip)
+}
+
+// looseTerms are the unquoted words of a query: one term each, every one of
+// them matching by prefix.
+func looseTerms(text string) []queryTerm {
+	var terms []queryTerm
+	for _, w := range indexWords(text) {
+		terms = append(terms, queryTerm{[]string{w}, false})
+	}
+	return terms
+}
+
+// skip reports whether a term is not worth searching for. A single letter
+// or digit starts almost every page and would highlight the whole tree
+// after the first keystroke. Any other single character -- an emoji, a
+// symbol, a currency sign -- is rare enough to be exactly what the user
+// means, and a phrase is specific enough whatever its words are.
+func (t queryTerm) skip() bool {
+	if len(t.words) == 0 {
+		return true // empty quotes
+	}
+	if len(t.words) > 1 {
+		return false
+	}
+	rs := []rune(t.words[0])
+	return len(rs) == 1 && (unicode.IsLetter(rs[0]) || unicode.IsDigit(rs[0]))
+}
+
+// matchPages finds the pages matching every term of q, and counts the
+// matches. A page matches a term where the term's words are, so a loose
+// query counts its words and a phrase counts the places the whole phrase
+// stands.
+func matchPages(terms wordIndex, q string) []searchHit {
+	query := parseQuery(q)
+	if len(query) == 0 {
 		return nil
 	}
 	var found map[string]int
-	for _, w := range words {
-		pages := map[string]int{}
-		for term, counts := range terms {
-			if !strings.HasPrefix(term, w) {
-				continue
-			}
-			for page, n := range counts {
-				pages[page] += n
-			}
-		}
+	for _, t := range query {
+		pages := t.match(terms)
 		if found == nil {
 			found = pages
 			continue
@@ -225,6 +344,75 @@ func matchPages(terms map[string]map[string]int, q string) []searchHit {
 	}
 	slices.SortFunc(hits, func(a, b searchHit) int { return strings.Compare(a.Path, b.Path) })
 	return hits
+}
+
+// match counts the term on every page that has it.
+func (t queryTerm) match(terms wordIndex) map[string]int {
+	hits := map[string]int{}
+	if len(t.words) == 1 {
+		for page, at := range wordPages(terms, t.words[0], t.exact) {
+			hits[page] = len(at)
+		}
+		return hits
+	}
+	// A phrase stands where its first word is followed by all the others.
+	// Start from every place the first word appears and drop the places the
+	// next word does not carry on from; what survives the last word are the
+	// places the whole phrase stands at.
+	starts := map[string][]int{}
+	for page, at := range wordPages(terms, t.words[0], true) {
+		starts[page] = slices.Clone(at)
+	}
+	for i := 1; i < len(t.words); i++ {
+		// Only the last word of a phrase may still be being typed.
+		next := wordPages(terms, t.words[i], t.exact || i < len(t.words)-1)
+		for page, from := range starts {
+			kept := from[:0]
+			for _, p := range from {
+				if _, ok := slices.BinarySearch(next[page], p+i); ok {
+					kept = append(kept, p)
+				}
+			}
+			if len(kept) == 0 {
+				delete(starts, page)
+				continue
+			}
+			starts[page] = kept
+		}
+	}
+	for page, at := range starts {
+		hits[page] = len(at)
+	}
+	return hits
+}
+
+// wordPages are the pages a single word of a query is on, with the sorted
+// positions it is at. A word matches by prefix while it is being typed --
+// a query that only matched whole words would find nothing until its last
+// letter -- and whole once a closing quote says it is finished.
+//
+// The result of an exact lookup is the index's own map and must be read
+// only; the prefix lookup builds its own.
+func wordPages(terms wordIndex, w string, exact bool) map[string][]int {
+	if exact {
+		return terms[w]
+	}
+	pages := map[string][]int{}
+	for term, at := range terms {
+		if !strings.HasPrefix(term, w) {
+			continue
+		}
+		for page, positions := range at {
+			pages[page] = append(pages[page], positions...)
+		}
+	}
+	// The positions of one word come out of the index in order, but those
+	// of several words merged into one prefix do not, and the phrase walk
+	// searches them.
+	for _, positions := range pages {
+		slices.Sort(positions)
+	}
+	return pages
 }
 
 // searchView is what the search field shows: the summary next to it, and
@@ -248,7 +436,7 @@ func (s *server) search(w http.ResponseWriter, r *http.Request) {
 		hits, current := s.index.search(s.root, q)
 		// An empty query needs no index: reporting it as still indexing
 		// would put the client into a poll that nothing ends.
-		view.Hits, view.Indexing = hits, !current && len(queryWords(q)) > 0
+		view.Hits, view.Indexing = hits, !current && len(parseQuery(q)) > 0
 		if !current {
 			// The project may have been opened without a page ever being
 			// served -- `qm web <path>` does that -- so no build has been
@@ -269,7 +457,7 @@ func searchSummary(v searchView) string {
 	switch {
 	case v.Indexing && len(v.Hits) == 0:
 		return "Indexing…"
-	case len(queryWords(v.Query)) == 0:
+	case len(parseQuery(v.Query)) == 0:
 		return ""
 	case len(v.Hits) == 0:
 		return "no hits"

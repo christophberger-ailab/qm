@@ -287,13 +287,95 @@ function searchQuery() {
   return input ? input.value : '';
 }
 
-// searchWords splits a query into terms the way the index splits page text,
-// dropping the single letters the server drops, so the editor highlights
-// exactly what the tree counted.
-function searchWords(q) {
-  return q.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(function (word) {
-    return word.length > 1;
+// searchQuery is the query as the user wrote it; parseQuery below is what
+// it means. The server reads it again for itself -- it has to, the index is
+// there -- and the two readings have to agree, or the editor would paint
+// something else than the tree counted. search.go holds the same rules in
+// the same order, and its tests are the ones that pin them down.
+
+// SEPARATORS is what stands between words: whitespace, punctuation of any
+// script, and every ASCII character that is not a letter or a digit --
+// Markdown and YAML are written entirely in those, so their syntax never
+// ends up inside a word. Everything else belongs to one, emoji included.
+var SEPARATORS = '\\s\\p{P}\\x00-\\x2F\\x3A-\\x40\\x5B-\\x60\\x7B-\\x7F';
+var WORD_CHAR = '[^' + SEPARATORS + ']';
+var NON_WORD_CHAR = '[' + SEPARATORS + ']';
+
+// JOINER is what holds a compound word together. A single one of these
+// between two word characters is part of the word -- "semi-wide" is one
+// word -- while a run of them is the Markdown that it looks like.
+var JOINER = '[-\\u2010\\u2011]';
+
+var wordChar = new RegExp('^' + WORD_CHAR + '$', 'u');
+var wordRun = new RegExp(WORD_CHAR + '+(?:' + JOINER + WORD_CHAR + '+)*', 'gu');
+
+// QUOTE_ENDS pairs every quotation mark that can open a phrase with the one
+// that closes it. The typographic closers are deliberately not openers, so
+// that the apostrophe of "don’t" cannot start a phrase.
+var QUOTE_ENDS = { '"': '"', "'": "'", '\u201C': '\u201D', '\u2018': '\u2019' };
+
+// searchWords splits text into words the way the index splits page text.
+function searchWords(text) {
+  return text.toLowerCase().match(wordRun) || [];
+}
+
+// parseQuery reads a query into the terms it asks for: {words, exact}.
+// Words between a pair of quotes are one term whose words have to stand
+// together, everything outside is one term per word, and a closing quote
+// also says the phrase is finished, which makes its last word exact.
+function parseQuery(q) {
+  var terms = [];
+  // By code point, so that an emoji is one character and not two.
+  var chars = Array.from(q);
+  var loose = 0;
+  for (var i = 0; i < chars.length; i++) {
+    var end = QUOTE_ENDS[chars[i]];
+    // A quote only quotes where a phrase can begin -- inside a word it is
+    // an apostrophe.
+    if (!end || (i > 0 && wordChar.test(chars[i - 1]))) {
+      continue;
+    }
+    var close = chars.length; // an unclosed quote quotes the rest
+    var closed = false;
+    for (var j = i + 1; j < chars.length; j++) {
+      if (chars[j] === end && (j + 1 === chars.length || !wordChar.test(chars[j + 1]))) {
+        close = j;
+        closed = true;
+        break;
+      }
+    }
+    terms = terms.concat(looseTerms(chars.slice(loose, i).join('')));
+    terms.push({ words: searchWords(chars.slice(i + 1, close).join('')), exact: closed });
+    i = close;
+    loose = Math.min(close + 1, chars.length);
+  }
+  terms = terms.concat(looseTerms(chars.slice(loose).join('')));
+  return terms.filter(function (term) {
+    return !skipTerm(term);
   });
+}
+
+// looseTerms are the unquoted words of a query: one term each, every one of
+// them matching by prefix.
+function looseTerms(text) {
+  return searchWords(text).map(function (word) {
+    return { words: [word], exact: false };
+  });
+}
+
+// skipTerm drops the terms the server drops: empty quotes, and the single
+// letter or digit that starts almost every page and would light the whole
+// tree up after the first keystroke. Any other single character -- an
+// emoji, a symbol -- is rare enough to be exactly what was meant.
+function skipTerm(term) {
+  if (!term.words.length) {
+    return true;
+  }
+  if (term.words.length > 1) {
+    return false;
+  }
+  var chars = Array.from(term.words[0]);
+  return chars.length === 1 && /[\p{L}\p{N}]/u.test(chars[0]);
 }
 
 // runSearch asks for the hits of whatever the field holds. The field posts
@@ -315,7 +397,7 @@ function readHits() {
     searchHits.set(li.dataset.path, Number(li.dataset.count));
   });
   applyHits();
-  setSearchTerms(searchWords(searchQuery()));
+  setSearchTerms(parseQuery(searchQuery()));
 
   // The index is rebuilt in the background whenever the project changed on
   // disk. Until the new one is in, the answer describes the project as it

@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -223,5 +224,207 @@ func TestSearchDoesNotReportIndexingWithoutAQuery(t *testing.T) {
 	srv, _ := testServer(t)
 	if body := get(t, srv, "/search?q=").Body.String(); strings.Contains(body, "data-indexing") {
 		t.Errorf("the empty query reports indexing:\n%s", body)
+	}
+}
+
+// addPages writes pages into an open project and lets the server see them,
+// the way the tree sees a page that was written from outside.
+func addPages(t *testing.T, srv *server, root string, files map[string]string) {
+	t.Helper()
+	for name, content := range files {
+		p := filepath.Join(root, name)
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		if err := os.WriteFile(p, []byte("---\ntitle: "+name+"\n---\n"+content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	get(t, srv, "/") // the index follows what the tree is rendered from
+}
+
+// The words of a page are the text it reads as: the syntax of Markdown and
+// YAML separates them, a hyphen inside a compound does not, and a symbol is
+// a word of its own rather than nothing at all.
+func TestIndexWordsReadsThePageAsText(t *testing.T) {
+	for _, c := range []struct {
+		text string
+		want []string
+	}{
+		{"# A heading\n", []string{"a", "heading"}},
+		{"---\ntitle: Home\n---\n", []string{"title", "home"}},
+		{"- one\n- two\n", []string{"one", "two"}},
+		// A compound is one word; the dashes around a word are not part of it.
+		{"semi-wide well-known-enough", []string{"semi-wide", "well-known-enough"}},
+		{"a -b- c", []string{"a", "b", "c"}},
+		// Two dashes are how an em dash is typed, so they separate.
+		{"this--that", []string{"this", "that"}},
+		{"*emphasis* and `code` and [link](url)", []string{"emphasis", "and", "code", "and", "link", "url"}},
+		// Any script, and anything that is not a letter at all.
+		{"Größe в Ελλάδα 🚒", []string{"größe", "в", "ελλάδα", "🚒"}},
+		{"a 🚒 b", []string{"a", "🚒", "b"}},
+		// A quotation mark is punctuation in every script.
+		{"say “hello” now", []string{"say", "hello", "now"}},
+	} {
+		if got := indexWords(c.text); !slices.Equal(got, c.want) {
+			t.Errorf("indexWords(%q) = %q, want %q", c.text, got, c.want)
+		}
+	}
+}
+
+// The server and app.js read a query twice, once each, and the editor only
+// highlights what the tree counted for as long as the two readings agree.
+// These are the cases the client is checked against as well.
+func TestParseQueryReadsQuotesAndWords(t *testing.T) {
+	term := func(exact bool, words ...string) queryTerm { return queryTerm{words, exact} }
+	for _, c := range []struct {
+		q    string
+		want []queryTerm
+	}{
+		{"second", []queryTerm{term(false, "second")}},
+		{"second title", []queryTerm{term(false, "second"), term(false, "title")}},
+		{"s", nil},
+		{"  ", nil},
+		{"🚒", []queryTerm{term(false, "🚒")}},
+		{"semi-wide", []queryTerm{term(false, "semi-wide")}},
+		// Every pair of quotes makes the same phrase.
+		{`"logging in"`, []queryTerm{term(true, "logging", "in")}},
+		{`'logging in'`, []queryTerm{term(true, "logging", "in")}},
+		{`“logging in”`, []queryTerm{term(true, "logging", "in")}},
+		// Still being typed: the last word is still a beginning.
+		{`"logging in`, []queryTerm{term(false, "logging", "in")}},
+		// An apostrophe is not a quote, and "t" is a keystroke.
+		{"don't kumquat", []queryTerm{term(false, "don"), term(false, "kumquat")}},
+		{`"a tale"`, []queryTerm{term(true, "a", "tale")}},
+		{`"a"`, nil},
+		{`""`, nil},
+		{`head "a phrase" tail`, []queryTerm{
+			term(false, "head"), term(true, "a", "phrase"), term(false, "tail"),
+		}},
+	} {
+		got := parseQuery(c.q)
+		if len(got) != len(c.want) {
+			t.Errorf("parseQuery(%q) = %v, want %v", c.q, got, c.want)
+			continue
+		}
+		for i := range got {
+			if !slices.Equal(got[i].words, c.want[i].words) || got[i].exact != c.want[i].exact {
+				t.Errorf("parseQuery(%q) = %v, want %v", c.q, got, c.want)
+				break
+			}
+		}
+	}
+}
+
+// A hyphenated compound is one word, so it is found as one and is not found
+// by its tail -- "wide" is no more inside "semi-wide" than "econd" is
+// inside "second".
+func TestSearchFindsHyphenatedWordsAsOne(t *testing.T) {
+	srv, root := testServer(t)
+	addPages(t, srv, root, map[string]string{
+		"compound.qmd": "A semi-wide margin.\n",
+		"plain.qmd":    "A wide margin.\n",
+	})
+	for q, want := range map[string]string{
+		"semi-wide": "compound.qmd",
+		"semi":      "compound.qmd", // still a prefix of the whole word
+		"wide":      "plain.qmd",
+	} {
+		found := hits(t, searchFor(t, srv, q))
+		if len(found) != 1 || found[want] == "" {
+			t.Errorf("search for %q found %v, want only %s", q, found, want)
+		}
+	}
+}
+
+// Search is not a Western-script feature: a page is found by whatever
+// characters it is written with, an emoji among them.
+func TestSearchFindsAnyUnicodeCharacter(t *testing.T) {
+	srv, root := testServer(t)
+	addPages(t, srv, root, map[string]string{
+		"engine.qmd": "The fire engine 🚒 arrives.\n",
+		"greek.qmd":  "Καλημέρα κόσμε\n",
+		"cyril.qmd":  "Привет мир\n",
+	})
+	for q, want := range map[string]string{
+		"🚒":      "engine.qmd",
+		"κόσμε":  "greek.qmd",
+		"привет": "cyril.qmd",
+		"ПРИВЕТ": "cyril.qmd", // case folds in every script
+	} {
+		found := hits(t, searchFor(t, srv, q))
+		if len(found) != 1 || found[want] == "" {
+			t.Errorf("search for %q found %v, want only %s", q, found, want)
+		}
+	}
+}
+
+// Quotes ask for words standing together, which is the whole point: the
+// same words scattered over a page are not the phrase.
+func TestSearchFindsQuotedPhrases(t *testing.T) {
+	srv, root := testServer(t)
+	addPages(t, srv, root, map[string]string{
+		"together.qmd": "Trouble logging in again.\n\nWhile logging in, wait.\n",
+		"apart.qmd":    "Trouble logging out, then dialling in again.\n",
+	})
+	// Unquoted, both words merely have to be on the page.
+	if found := hits(t, searchFor(t, srv, "logging in")); len(found) != 2 {
+		t.Errorf("search for logging in found %v, want both pages", found)
+	}
+	for _, q := range []string{`"logging in"`, `'logging in'`, `“logging in”`} {
+		found := hits(t, searchFor(t, srv, q))
+		if len(found) != 1 || found["together.qmd"] != "2" {
+			t.Errorf("search for %s found %v, want together.qmd twice", q, found)
+		}
+	}
+}
+
+// A phrase narrows down while it is typed like any other query, and its
+// closing quote is what says it is finished -- the only way to ask this
+// search for a whole word rather than for a beginning.
+func TestSearchPhrasePrefixUntilItIsClosed(t *testing.T) {
+	srv, root := testServer(t)
+	addPages(t, srv, root, map[string]string{
+		"short.qmd": "Trouble logging in again.\n",
+		"long.qmd":  "Trouble logging internals again.\n",
+	})
+	if found := hits(t, searchFor(t, srv, `"logging in`)); len(found) != 2 {
+		t.Errorf("the unclosed phrase found %v, want both pages", found)
+	}
+	found := hits(t, searchFor(t, srv, `"logging in"`))
+	if len(found) != 1 || found["short.qmd"] == "" {
+		t.Errorf("the closed phrase found %v, want only short.qmd", found)
+	}
+}
+
+// A quotation mark inside a word is an apostrophe, not the start of a
+// phrase that swallows the rest of the query.
+func TestSearchTreatsApostrophesAsText(t *testing.T) {
+	srv, root := testServer(t)
+	addPages(t, srv, root, map[string]string{
+		"apos.qmd":  "Don't stop kumquat.\n",
+		"other.qmd": "Kumquat alone.\n",
+	})
+	// "don" and "t" and "kumquat" -- three loose words, not a phrase
+	// beginning at the apostrophe.
+	found := hits(t, searchFor(t, srv, "don't kumquat"))
+	if len(found) != 1 || found["apos.qmd"] == "" {
+		t.Errorf("search for don't kumquat found %v, want only apos.qmd", found)
+	}
+}
+
+// Quoting is deliberate, so a phrase is searched for whatever its words
+// are; only a bare single letter is still dropped as a keystroke.
+func TestSearchQuotesShortWords(t *testing.T) {
+	srv, root := testServer(t)
+	addPages(t, srv, root, map[string]string{
+		"tale.qmd": "A tale of kumquats.\n",
+		"list.qmd": "A list of kumquats.\n",
+	})
+	found := hits(t, searchFor(t, srv, `"a tale"`))
+	if len(found) != 1 || found["tale.qmd"] == "" {
+		t.Errorf("search for \"a tale\" found %v, want only tale.qmd", found)
+	}
+	// A one-character phrase is a keystroke like a one-character word.
+	if found := hits(t, searchFor(t, srv, `"a"`)); len(found) != 0 {
+		t.Errorf("search for \"a\" found %v, want nothing", found)
 	}
 }

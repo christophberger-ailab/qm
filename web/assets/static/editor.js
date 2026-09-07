@@ -93,31 +93,47 @@ function initEditor() {
 // highlighting without touching the document, and "searching" is the token
 // style its stylesheet already dresses as a hit.
 //
-// app.js owns the query; the editor is only told which words it matched.
+// app.js owns the query; the editor is only told which terms it matched.
 
 var searchTerms = [];
 var searchOverlay = null;
 
-// setSearchTerms paints the given words, replacing whatever was painted
+// setSearchTerms paints the given terms, replacing whatever was painted
 // before. An empty list clears the highlighting.
 function setSearchTerms(terms) {
   searchTerms = terms;
   applySearchHighlight();
 }
 
-// searchPattern matches the words starting with any of the terms -- the
-// rule the index matches by, so the editor marks what the tree counted.
+// searchPattern spells the terms out as the text they match, so that the
+// editor marks what the tree counted: a loose word marks the whole word it
+// began, and a phrase marks all of its words at once, but only where they
+// really do stand next to each other. The character classes are the ones
+// app.js splits a query with -- the pieces below are the rules the index
+// matches by, written as a regular expression.
 function searchPattern() {
   if (!searchTerms.length) {
     return null;
   }
+  // A word begins where no word character precedes it, and where no hyphen
+  // joins it to one: the second half of "semi-wide" is not a word.
+  var begins = '(?<!' + WORD_CHAR + ')(?<!' + WORD_CHAR + JOINER + ')';
+  // ... and ends the same way, which is what makes a finished phrase exact.
+  var ends = '(?!' + WORD_CHAR + ')(?!' + JOINER + WORD_CHAR + ')';
+  // An unfinished word runs on into the rest of the word it began.
+  var restOfWord = WORD_CHAR + '*(?:' + JOINER + WORD_CHAR + '+)*';
+  // Between two words of a phrase stands anything that is not a word
+  // character -- as long as it is not the one hyphen that would have made
+  // the two of them a single word instead.
+  var gap = '(?!' + JOINER + WORD_CHAR + ')' + NON_WORD_CHAR + '+';
+
   var alternatives = searchTerms.map(function (term) {
-    return term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    var words = term.words.map(function (word) {
+      return word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    });
+    return begins + words.join(gap) + (term.exact ? ends : restOfWord);
   });
-  return new RegExp(
-    '(?<![\\p{L}\\p{N}])(?:' + alternatives.join('|') + ')[\\p{L}\\p{N}]*',
-    'giu'
-  );
+  return new RegExp('(?:' + alternatives.join('|') + ')', 'giu');
 }
 
 function applySearchHighlight() {

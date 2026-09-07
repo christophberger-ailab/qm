@@ -46,7 +46,7 @@
          and htmx sends the value of the element that asks. */}}
     <div class="search-form">
       <input type="search" name="q" id="search-input" placeholder="Search pages" autocomplete="off"
-             title="Highlight the pages containing every term"
+             title="Highlight the pages containing every term. Quotes make a phrase: &quot;logging in&quot;"
              hx-get="/search" hx-trigger="input changed delay:300ms, search"
              hx-target="#search-results" hx-swap="innerHTML">
       <span id="search-results" class="search-results"></span>

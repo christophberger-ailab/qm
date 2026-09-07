@@ -78,7 +78,13 @@ constraints:
       8: A search field in the top bar searches the text of all pages of the open project
       8-1: The search is answered from a word index that is rebuilt in the background whenever the project changed on disk, so typing never waits for a scan of the project
       8-2: While the index is being built the field says so, and the query repeats itself until the index is ready
-      8-3: A query term matches the words that start with it; a page matches when it matches every term of the query, case-insensitively; terms of one character are ignored
+      8-3: A query term matches the words that start with it; a page matches when it matches every term of the query, case-insensitively
+      8-3-1: Words are separated by whitespace, by punctuation of any script, and by every ASCII character that is not a letter or a digit, so that Markdown and YAML syntax never becomes part of a word; every other character belongs to a word, so a page is found by the characters it is written with in any script, symbols and emoji included
+      8-3-2: A single hyphen between two word characters belongs to the word, so `semi-wide` is one word, found by `semi-wide` or `semi` but not by `wide`; a run of hyphens separates words as any other Markdown does
+      8-3-3: A term of a single letter or digit is ignored, since it would match almost every page after the first keystroke; a single character that is neither is searched for
+      8-3-4: Words between a pair of quotes -- single or double, typed or typographic -- are one term that matches only where those words stand next to each other in that order, and are searched for whatever their length
+      8-3-5: A quotation mark that a word character precedes is an apostrophe, not the start of a phrase
+      8-3-6: The last word of a phrase matches the words that start with it until the closing quote is typed and matches whole afterwards, so that a quoted query narrows down while it is typed and a closed one is the way to ask for whole words
       8-4: The index covers the same files as the page tree, so pages the tree does not show are not found either
       8-5: Pages with hits are highlighted in the page tree, each with its number of hits
       8-6: A collapsed branch that contains hits is shown open while the search is active, without changing the branch's remembered collapsed state

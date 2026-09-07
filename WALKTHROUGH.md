@@ -632,12 +632,24 @@ the panel polls `state()` for a consistent snapshot. `bookrender.Run` receives
 `j.logf` as its `Logf` — the same callback interface the CLI fills with
 `fmt.Printf`.
 
-`searchIndex` (`search.go:23`) is the same pattern applied to the word index:
-`rebuild` (`search.go:55`) schedules a build and returns at once, a build
+`searchIndex` (`search.go:24`) is the same pattern applied to the word index:
+`rebuild` (`search.go:64`) schedules a build and returns at once, a build
 already running is not interrupted but picks up the newer state when it
 finishes (so a burst of saves costs one extra pass, not one per save), and
-`search` (`search.go:110`) answers from whatever the index currently holds,
+`search` (`search.go:119`) answers from whatever the index currently holds,
 telling the client to ask again while a build runs.
+
+What the index holds is `wordIndex` (`search.go:45`), word → page →
+positions. The positions are what make a quoted phrase answerable: a phrase
+is the places its first word appears, minus the ones its next word does not
+carry on from. `indexWords` (`search.go:206`) is the tokenizer both sides of
+the wire use — Markdown and YAML syntax separates words, a single hyphen
+inside one does not, and everything that is neither punctuation nor
+whitespace is a word character, emoji included. `parseQuery`
+(`search.go:264`) reads a query into loose words and quoted phrases;
+`app.js` reads it a second time for the editor's highlighting, and
+`TestParseQueryReadsQuotesAndWords` is where the two readings are kept
+honest.
 
 ### 9.5 Preferences — `web/prefs.go`
 
