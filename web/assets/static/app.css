@@ -956,6 +956,20 @@ li.CodeMirror-hint-active {
   height: auto;
 }
 
+/* An image alone in a paragraph is a figure carrying its alt text as the
+   caption below it (captionFigures in preview.js). The browser's own
+   figure margin is a wide indent, which would set such an image apart
+   from the images inside a paragraph; the caption alone marks it. */
+.markdown-preview figure {
+  margin: 0.8em 0;
+}
+
+.markdown-preview figcaption {
+  margin-top: 0.3em;
+  font-size: 0.85em;
+  color: var(--muted);
+}
+
 .markdown-preview hr {
   border: none;
   border-top: 1px solid var(--border);

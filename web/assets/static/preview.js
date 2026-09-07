@@ -11,6 +11,9 @@
 //     same way,
 //   - image sources are pointed at the server's /media route so that the
 //     page's images show up (see mediaURL),
+//   - an image standing alone in a paragraph becomes a figure with its alt
+//     text as the caption below it, the way Pandoc's implicit figures --
+//     which Quarto builds on -- come out (see captionFigures),
 //   - everything else is CommonMark/GFM as the embedded marked library reads
 //     it. Shortcodes, citations, and math stay as written.
 
@@ -209,6 +212,36 @@ function resolveMedia(root, pagePath) {
   var baseDir = cut < 0 ? '' : pagePath.slice(0, cut);
   root.querySelectorAll('img[src]').forEach(function (img) {
     img.setAttribute('src', mediaURL(img.getAttribute('src'), baseDir));
+  });
+}
+
+// captionFigures turns an image that stands alone in a paragraph -- a
+// blank line before and after it -- into a figure whose caption is the
+// image's alt text, shown below the image. This is Pandoc's implicit
+// figure, the form Quarto renders such an image in, so the preview shows
+// the caption the rendered page will carry.
+//
+// A paragraph holding anything besides the image is left alone: the image
+// is part of the running text there, and Pandoc gives it no caption
+// either. So is an image without alt text, which has no caption to show.
+function captionFigures(root) {
+  root.querySelectorAll('p > img:only-child').forEach(function (img) {
+    var para = img.parentNode;
+    if (para.textContent.trim() !== '') {
+      return; // text alongside the image: not a figure
+    }
+    var caption = (img.getAttribute('alt') || '').trim();
+    if (caption === '') {
+      return;
+    }
+    var figure = document.createElement('figure');
+    var legend = document.createElement('figcaption');
+    // textContent, not innerHTML: the alt text is the page's, and the
+    // preview displays it rather than letting it become markup.
+    legend.textContent = caption;
+    figure.appendChild(img);
+    figure.appendChild(legend);
+    para.parentNode.replaceChild(figure, para);
   });
 }
 
@@ -425,7 +458,8 @@ function renderPreview(el, text, pagePath) {
   html += marked.parse(convertDivs(page.body));
   el.innerHTML = html;
   // Order matters: sanitize drops the sources that must never be fetched,
-  // and only what survives is worth pointing at /media.
+  // and only what survives is worth pointing at /media or captioning.
   sanitize(el);
   resolveMedia(el, pagePath);
+  captionFigures(el);
 }

@@ -353,6 +353,30 @@ func TestPreviewAssetsAreServed(t *testing.T) {
 	}
 }
 
+// An image alone in a paragraph -- a blank line before and after it -- is
+// Quarto's implicit figure, so the preview shows the image's alt text as a
+// caption below it. The figure is built in the browser, out of a Go test's
+// reach; what can be checked here is that the script still turns such an
+// image into a captioned figure and that the stylesheet still has a rule
+// for the caption it makes.
+func TestPreviewCaptionsAStandaloneImage(t *testing.T) {
+	preview, err := assets.ReadFile("assets/static/preview.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`'p > img:only-child'`, `createElement('figcaption')`} {
+		if !strings.Contains(string(preview), want) {
+			t.Errorf("preview.js does not caption a standalone image, missing %q", want)
+		}
+	}
+
+	srv, _ := testServer(t)
+	css := get(t, srv, "/static/app.css").Body.String()
+	if !strings.Contains(css, ".markdown-preview figcaption") {
+		t.Error("the stylesheet does not style the preview's image captions")
+	}
+}
+
 // The editor is CodeMirror, whose library, modes, addons, and vim keymap
 // are embedded alongside the rest. A missing file leaves the page with a
 // bare textarea and no sign of why, so check every one of them.
