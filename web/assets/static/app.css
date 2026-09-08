@@ -37,7 +37,8 @@
   box-sizing: border-box;
 }
 
-html, body {
+html,
+body {
   height: 100%;
 }
 
@@ -107,7 +108,7 @@ body {
 
 /* Render panel */
 
-.render > summary {
+.render>summary {
   cursor: pointer;
   padding: 0.25rem 0.6rem;
   border: 1px solid var(--border);
@@ -117,7 +118,7 @@ body {
   user-select: none;
 }
 
-.render > summary:hover {
+.render>summary:hover {
   background: var(--hover);
 }
 
@@ -423,11 +424,11 @@ ul.children {
 }
 
 /* A collapsed branch hides its subtree. */
-li.page.collapsed > ul.children {
+li.page.collapsed>ul.children {
   display: none;
 }
 
-#tree > ul.children {
+#tree>ul.children {
   margin-left: 0;
   padding-left: 0;
   border-left: none;
@@ -462,16 +463,18 @@ li.page {
 
 /* Only nodes with children get an interactive triangle; leaf nodes keep an
    empty toggle as a spacer so their rows stay aligned. */
-li.page.has-children > .row > .toggle {
+li.page.has-children>.row>.toggle {
   cursor: pointer;
 }
 
-li.page.has-children > .row > .toggle::before {
-  content: "\25BE"; /* ▾ expanded */
+li.page.has-children>.row>.toggle::before {
+  content: "\25BE";
+  /* ▾ expanded */
 }
 
-li.page.has-children.collapsed > .row > .toggle::before {
-  content: "\25B8"; /* ▸ collapsed */
+li.page.has-children.collapsed>.row>.toggle::before {
+  content: "\25B8";
+  /* ▸ collapsed */
 }
 
 .marker {
@@ -491,7 +494,7 @@ li.page.has-children.collapsed > .row > .toggle::before {
   min-width: 1rem;
 }
 
-li.page.ordered > .row > .num::before {
+li.page.ordered>.row>.num::before {
   content: counters(chap, ".") ". ";
 }
 
@@ -499,18 +502,18 @@ li.page.ordered {
   counter-increment: chap;
 }
 
-li.page.unordered > .row > .num::before {
+li.page.unordered>.row>.num::before {
   content: "\26A0";
   color: var(--warn);
 }
 
-li.page.unordered > .row > .title {
+li.page.unordered>.row>.title {
   color: var(--muted);
 }
 
 /* Unmatched Quarto block fences: muted orange title. Placed after the
    unordered rule so it wins for pages that are both. */
-li.page.bad-fences > .row > .title {
+li.page.bad-fences>.row>.title {
   color: var(--fence-warn);
 }
 
@@ -545,7 +548,7 @@ li.page.bad-fences > .row > .title {
   background: transparent;
 }
 
-li.selected > .row {
+li.selected>.row {
   background: var(--accent-bg);
 }
 
@@ -553,11 +556,11 @@ li.selected > .row {
    bold, and the number of hits sits at the end of its row -- after the
    title, which takes the remaining width. The selection background is
    untouched, so a page can show as found and as open at once. */
-li.page.hit > .row > .title {
+li.page.hit>.row>.title {
   font-weight: 600;
 }
 
-li.page.hit > .row::after {
+li.page.hit>.row::after {
   content: attr(data-hits);
   padding: 0 0.35rem;
   border-radius: 8px;
@@ -572,11 +575,11 @@ li.page.hit > .row::after {
    user's own collapsing is not overwritten by a search -- so the triangle
    is pointed down here to describe what is actually on screen, in the
    accent colour that says the search did it. */
-li.page.hit-branch.collapsed > ul.children {
+li.page.hit-branch.collapsed>ul.children {
   display: block;
 }
 
-li.page.has-children.collapsed.hit-branch > .row > .toggle::before {
+li.page.has-children.collapsed.hit-branch>.row>.toggle::before {
   content: "\25BE";
   color: var(--accent);
 }
@@ -752,8 +755,8 @@ div.CodeMirror-selected {
 }
 
 .CodeMirror-line::selection,
-.CodeMirror-line > span::selection,
-.CodeMirror-line > span > span::selection {
+.CodeMirror-line>span::selection,
+.CodeMirror-line>span>span::selection {
   background: var(--accent-bg);
 }
 
@@ -886,7 +889,7 @@ li.CodeMirror-hint-active {
   color: var(--accent);
 }
 
-.markdown-preview > :first-child {
+.markdown-preview> :first-child {
   margin-top: 0;
 }
 
@@ -900,12 +903,23 @@ li.CodeMirror-hint-active {
   margin: 1.2em 0 0.5em;
 }
 
-.markdown-preview h1 { font-size: 1.5rem; }
-.markdown-preview h2 { font-size: 1.25rem; }
-.markdown-preview h3 { font-size: 1.1rem; }
+.markdown-preview h1 {
+  font-size: 1.5rem;
+}
+
+.markdown-preview h2 {
+  font-size: 1.25rem;
+}
+
+.markdown-preview h3 {
+  font-size: 1.1rem;
+}
+
 .markdown-preview h4,
 .markdown-preview h5,
-.markdown-preview h6 { font-size: 1rem; }
+.markdown-preview h6 {
+  font-size: 1rem;
+}
 
 .markdown-preview a {
   color: var(--accent);
@@ -992,19 +1006,27 @@ li.CodeMirror-hint-active {
 .markdown-preview .quarto {
   margin: 0.8em 0;
   padding: 0.1rem 0.7rem;
-  border-left: 3px solid var(--border);
 }
 
 .markdown-preview .callout-note,
 .markdown-preview .callout-tip {
+  border-left: 3px solid var(--border);
   border-left-color: var(--accent);
+  margin: 0.8em 0;
+  padding: 0.1rem 0.7rem;
 }
 
 .markdown-preview .callout-warning,
 .markdown-preview .callout-caution {
+  border-left: 3px solid var(--border);
   border-left-color: var(--warn);
+  margin: 0.8em 0;
+  padding: 0.1rem 0.7rem;
 }
 
 .markdown-preview .callout-important {
+  border-left: 3px solid var(--border);
   border-left-color: var(--danger);
+  margin: 0.8em 0;
+  padding: 0.1rem 0.7rem;
 }
