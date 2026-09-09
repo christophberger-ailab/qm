@@ -623,6 +623,10 @@ group. `CreatePage`, `CreatePageAfter`, `DeletePage` round out the editing API;
 `frontmatter.go`, `heading.go`, `fences.go` are the byte-level helpers:
 `SetOrder`, `ShiftHeadings`, `FirstHeading`, `BalancedFences` — the last one
 feeding the tree's `BadFences` flag, which is the same check `qm lint` runs.
+`FirstHeading` drops the heading's own Pandoc attribute block, so
+`# Schulungen {.unnumbered .unlisted}` titles a page "Schulungen"; a `{...}`
+right after a `]` is a bracketed span's and is left alone, the same rule
+`bookmaker`'s `heading.Text()` applies.
 
 ### 9.4 Background work — `web/job.go`, `web/search.go`
 
@@ -665,6 +669,20 @@ materialises the baked-in default once and never rewrites it,
 `sanitizeCSSName` (`prefs.go:211`) keeps user-supplied names to a safe shape,
 and `activeCSS`/`setActiveCSS` remember which stylesheet the live preview
 uses.
+
+### 9.5.1 Tree titles — `web/spans.go`
+
+The preview marks a Quarto span by its class, with the symbol the stylesheet
+puts in front of it (`.quarto.pol:before { content: "🚔" }`). The tree has no
+stylesheet to lean on — its titles are text — so `spanSymbols` reads those very
+rules out of the *active* stylesheet and `flattenSpans` rewrites
+`[Polizei-]{.pol}[Feuerwehr-]{.fw}Spickzettel` into
+`🚔Polizei-🚒Feuerwehr-Spickzettel`. Reading the CSS instead of keeping a table
+of classes is the point: a user who edits `custom.css` moves the tree with the
+preview, and there is nothing to keep in step by hand. A span whose classes no
+rule names is left as written, so nothing disappears unannounced. `load`
+(`server.go:231`) applies it to the freshly loaded tree it is about to render;
+the tree on disk never sees it.
 
 ### 9.6 The front end — `web/assets`
 

@@ -162,6 +162,11 @@ topic into `_build/book.qmd` and `_build/slides.qmd`, and copies the files a
 format's `qm: copy:` map asks for. `qm finalize` applies the format's
 `qm: output-file:` and `qm: output-dir-suffix:` to what Quarto produced.
 
+Under `quarto preview`, `qm finalize` does nothing. The preview server reads
+and stamps the files it just rendered under the path it reported, so moving
+them away would abort the preview; the final placement is left to the real
+render. Set `QM_FINALIZE_PREVIEW=1` (or `=0`) to override the detection.
+
 Because both are wired into the project, a plain
 `quarto render --profile topic-x,format-y,audience-z` — from a terminal, from
 VS Code, from CI — produces exactly the same artefact as `qm render`.

@@ -36,3 +36,7 @@ constraints:
       2-3: 'This exists because `project: output-dir` does not interpolate — it would create a directory literally named `{{< var audience >}}` — while the website''s output directory depends on the audience'
       3: A format that declares neither does nothing, which is the normal case for a book
       4: The same validation as `qm prepare` applies to the selection
+      5: Under `quarto preview` the hook does nothing and says so
+      5-1: 'This exists because the preview server reads and stamps every rendered file under the path it reported; moving them away aborts the preview with "cannot touch ...: No such file or directory" and a readfile error in ServeRenderManager.fileRenderHash'
+      5-2: 'Quarto marks a preview in no environment variable, so the process ancestry is searched for a `quarto preview` (or `quarto serve`) command line'
+      5-3: QM_FINALIZE_PREVIEW=1 or =0 overrides the detection
