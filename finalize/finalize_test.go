@@ -161,3 +161,52 @@ func TestSplitFiles(t *testing.T) {
 		t.Errorf("splitFiles = %v, want nil", got)
 	}
 }
+
+// A preview server keeps reading the files it just rendered, under the path
+// it reported, so finalize leaves everything where Quarto put it.
+func TestRunDoesNothingUnderPreview(t *testing.T) {
+	root := fixture(t)
+	write(t, root, "_output/site/index.html", "site")
+	underPreview = func() bool { return true }
+	t.Cleanup(func() { underPreview = previewing })
+
+	err := Run(root, []string{"topic-calltaker", "format-website", "audience-pol"},
+		filepath.Join(root, "_output/site"), []string{"_output/site/index.html"}, nil)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !exists(root, "_output/site/index.html") {
+		t.Error("the output directory was renamed during a preview")
+	}
+	if exists(root, "_output/site-pol") {
+		t.Error("the suffixed directory was created during a preview")
+	}
+}
+
+func TestIsQuartoPreview(t *testing.T) {
+	cases := map[string]bool{
+		"/opt/quarto/bin/tools/x86_64/deno run /opt/quarto/bin/quarto.js preview": true,
+		"quarto preview":                     true,
+		"/usr/local/bin/quarto serve _site":  true,
+		"quarto render --profile a,b":        false,
+		"bash -c 'cd doc && make'":           false,
+		"vim quarto-preview-notes.md":        false,
+		"/opt/quarto/bin/quarto.js render .": false,
+	}
+	for args, want := range cases {
+		if got := isQuartoPreview(args); got != want {
+			t.Errorf("isQuartoPreview(%q) = %v, want %v", args, got, want)
+		}
+	}
+}
+
+func TestPreviewingHonoursTheOverride(t *testing.T) {
+	t.Setenv("QM_FINALIZE_PREVIEW", "1")
+	if !previewing() {
+		t.Error("QM_FINALIZE_PREVIEW=1 was not honoured")
+	}
+	t.Setenv("QM_FINALIZE_PREVIEW", "0")
+	if previewing() {
+		t.Error("QM_FINALIZE_PREVIEW=0 was not honoured")
+	}
+}

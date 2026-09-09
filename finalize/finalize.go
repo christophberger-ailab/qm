@@ -30,6 +30,10 @@
 // Everything is driven by the environment Quarto sets for a post-render
 // hook: QUARTO_PROFILE, QUARTO_PROJECT_OUTPUT_DIR and
 // QUARTO_PROJECT_OUTPUT_FILES.
+//
+// Under `quarto preview` the hook does nothing: the preview server reads
+// and stamps the rendered files under the path it reported, so moving them
+// away fails the preview. See preview.go.
 package finalize
 
 import (
@@ -146,6 +150,13 @@ func Run(root string, profiles []string, outDir string, files []string, log book
 	}
 	if stem == "" && suffix == "" {
 		return nil // the format needs no fixing up; a book usually does not
+	}
+	// A preview server keeps reading the files it just rendered, under the
+	// path it reported. Moving them out from under it breaks the preview,
+	// so the final placement is left to the real render. See preview.go.
+	if underPreview() {
+		log("preview: leaving the output in place")
+		return nil
 	}
 
 	dir, err := resolveOutputDir(root, outDir, ps)
