@@ -247,6 +247,11 @@
 {{define "content"}}<div class="content-header">
   <h2 class="content-title" id="content-title">{{template "content-heading" .}}</h2>
   <span class="save-status" id="save-status"></span>
+  {{/* Shown only when a save was refused because the file changed on disk
+       underneath. Refusing is what keeps somebody else's work; this is what
+       keeps refusing from being a dead end. */ -}}
+  <button type="button" class="save-overwrite" id="save-overwrite" hidden
+          title="Write the editor's text over the file on disk, discarding the change made outside">Overwrite</button>
   <button type="button" class="preview-toggle" id="preview-toggle" aria-pressed="true" title="Show or hide the Markdown preview">👁 Preview</button>
   <button class="reload" id="content-reload" title="Reload from disk" hx-get="/content?path={{.Path}}&reload=1" hx-target="#content" hx-swap="innerHTML">↻ Reload</button>
 </div>

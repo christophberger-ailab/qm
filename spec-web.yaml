@@ -32,6 +32,10 @@ constraints:
       2-2: The re-pointing replaces the editor's path, heading, and reload button only, never its text, which may hold edits that are not on disk yet; an autosave that the rename had already broken is retried at the new path
       3: Pages can be created, deleted, and edited in place
       3-0: A failed save is shown as an error next to the heading, naming why it failed, and leaving the page -- opening another one, reloading, closing the tab -- asks for confirmation while an edit is unsaved
+      3-0-1: A save is replayed onto the writes the tree made to the same file since the editor opened it -- the `order:` a move or a create renumbered, and the heading levels a move to another depth shifted -- so an autosave after a move keeps both the user's text and the move
+      3-0-2: An `order:` the user typed into the frontmatter themselves is kept over the one the tree wrote; a hand-made edit is never silently dropped
+      3-0-3: A change to the file that the tree cannot account for -- an edit made outside the browser -- is answered as a conflict: the save is refused, the file is left as it is, and the user is offered the choice between reloading that version and overwriting it
+      3-0-4: A replay is reported to the user, because the editor still shows the text from before it and only a reload brings the pane in line
       3-1: A Markdown preview of the edited page sits to the right of the editor, separated by a draggable divider
       3-2: The preview follows the editor's content as the user types
       3-3: A toggle button in the content header opens and closes the preview; the choice is remembered across sessions

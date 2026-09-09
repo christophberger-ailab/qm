@@ -1,7 +1,9 @@
 package web
 
 import (
+	"bytes"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"html/template"
@@ -45,6 +47,11 @@ type server struct {
 	// prefs; empty disables persistence and serves the baked-in default
 	// from memory instead.
 	cssDir string
+
+	// base is the text the open editor started from. A save is replayed
+	// onto the tree's own writes against it (see project.Rebase); it is
+	// what makes an autosave posted after a move keep the move.
+	base editorBase
 
 	// job is the background render. It has its own lock: a render takes
 	// minutes and must not block the tree handlers.
@@ -134,6 +141,46 @@ type contentView struct {
 	Body      string
 	CSSFiles  []string
 	ActiveCSS string
+}
+
+// editorBase is the text the browser's editor is working from: the page it
+// holds, and the bytes it started with. "Started with" means the last text
+// that passed between the two — what the server served, or what the editor
+// last posted — because that is the text the user's next edit is built on,
+// and so the one a save has to be replayed against.
+//
+// The tool is single-user and local (one editor, one project at a time), so
+// one of these describes the whole client. An empty path means there is
+// nothing to replay against, and a save then writes straight through, the
+// way it always did.
+type editorBase struct {
+	path string
+	body []byte
+}
+
+// rebaseOn records the text the editor is now working from. The caller must
+// hold s.mu.
+func (s *server) rebaseOn(rel string, body []byte) {
+	s.base = editorBase{path: rel, body: bytes.Clone(body)}
+}
+
+// rebaseOnState records the editor pane a whole-page response carries, if
+// it carries one. Only the two handlers that send the pane to the browser
+// call this: load() runs on every tree re-render as well, and recording
+// there would replace the text the editor is really holding with whatever
+// the tree op just wrote — which is precisely the text a save has to be
+// replayed against. The caller must hold s.mu.
+func (s *server) rebaseOnState(st state) {
+	if st.Page != nil {
+		s.rebaseOn(st.Page.Path, []byte(st.Page.Body))
+	}
+}
+
+// forgetBase drops the recorded text, so the next save writes through
+// rather than replay against a page the editor no longer holds. The caller
+// must hold s.mu.
+func (s *server) forgetBase() {
+	s.base = editorBase{}
 }
 
 // configView is the list of configuration entries shown by /config.
@@ -316,6 +363,7 @@ func (s *server) page(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		st.Error = err.Error()
 	}
+	s.rebaseOnState(st)
 	s.render(w, "page", st)
 }
 
@@ -423,6 +471,7 @@ func (s *server) open(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	s.rebaseOnState(st)
 	s.render(w, "main", st)
 	// The panel lives in the header, which the #main swap does not reach.
 	fmt.Fprint(w, `<div hx-swap-oob="innerHTML:#render-panel">`)
@@ -445,6 +494,9 @@ func (s *server) setRoot(dir string) error {
 		return fmt.Errorf("%s is not a directory", root)
 	}
 	s.root = root
+	// The editor pane is replaced along with the project, so whatever text
+	// it held belongs to the project being left.
+	s.forgetBase()
 	return nil
 }
 
@@ -545,6 +597,11 @@ func (s *server) move(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.rememberPage(moved)
+	// The editor's text did not change with the rename, only where it
+	// belongs, so the text a save is replayed against follows the file.
+	if s.base.path == open {
+		s.base.path = moved
+	}
 	s.renderPathOOB(w, moved)
 }
 
@@ -598,6 +655,10 @@ func (s *server) delete(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		s.forgetPage(rel)
+		// A page in the trash is no longer the one the editor holds.
+		if s.base.path == rel {
+			s.forgetBase()
+		}
 		return nil
 	})
 }
@@ -658,8 +719,10 @@ func (s *server) content(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	title := project.ParseFrontmatter(body).Title
-	// Opening a page is what makes it the one to come back to.
+	// Opening a page is what makes it the one to come back to, and its
+	// text on disk is what the editor now works from.
 	s.rememberPage(rel)
+	s.rebaseOn(rel, body)
 	s.render(w, "content", contentView{
 		Title:     title,
 		Path:      rel,
@@ -677,6 +740,16 @@ func (s *server) content(w http.ResponseWriter, r *http.Request) {
 // save writes the edited body back to an existing page. The editor pane is
 // left untouched so autosave never steals the cursor; only the heading is
 // updated out of band, plus the tree if the title changed.
+//
+// The text arriving here was typed on top of the page as it stood when the
+// editor opened it, and the tree may have written to the same file since:
+// every move and create renumbers a sibling group's `order:`, and a move to
+// another depth shifts the page's headings. Writing the editor's text out
+// as it stands would undo that — drag a chapter into another book, type one
+// character, and the move is back where it started. So the edit is replayed
+// onto what the tree wrote rather than laid over it (see project.Rebase),
+// and a change to the file that the tree cannot account for is answered as
+// a conflict instead of being overwritten.
 func (s *server) save(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -691,11 +764,33 @@ func (s *server) save(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no such page", http.StatusBadRequest)
 		return
 	}
-	body := []byte(r.FormValue("body"))
+	posted := []byte(r.FormValue("body"))
+	body := posted
+	// force is the user answering a conflict with "mine wins". It is the
+	// only way past the check, and it has to be asked for.
+	if r.FormValue("force") == "" && s.base.path == rel && s.base.body != nil {
+		res, ok := project.Rebase(posted, s.base.body, old)
+		if !ok {
+			http.Error(w, "the file changed on disk since this page was opened", http.StatusConflict)
+			return
+		}
+		body = res.Body
+		// The editor still shows the text from before the replay. Telling
+		// it what was put back is what lets it say so, rather than leave
+		// the user looking at heading levels the file no longer has.
+		if res.HeadingDelta != 0 || res.OrderChanged {
+			w.Header().Set("HX-Trigger", rebaseEvent(res))
+		}
+	}
 	if err := os.WriteFile(abs, body, 0o644); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// The editor keeps the text it posted, not the text that was written,
+	// so that is what the next save is replayed against. A replay that had
+	// to put something back therefore does so again on every save, which
+	// costs nothing and keeps the file right until the pane is reloaded.
+	s.rebaseOn(rel, posted)
 	// The page just changed under the search index, which the fingerprint
 	// alone may not show: an edit that keeps the page's size within one
 	// mtime tick hashes to what it replaced.
@@ -709,6 +804,21 @@ func (s *server) save(w http.ResponseWriter, r *http.Request) {
 	}
 	// Our own write must not look like an outside change to /watch.
 	s.rememberFP()
+}
+
+// rebaseEvent spells a replay out as the htmx event the editor listens
+// for, so that the pane can report what the save had to put back.
+func rebaseEvent(res project.Rebased) string {
+	b, err := json.Marshal(map[string]any{
+		"qm:rebased": map[string]any{
+			"headings": res.HeadingDelta,
+			"order":    res.OrderChanged,
+		},
+	})
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 // formValues reads the render panel's form into the given preferences,

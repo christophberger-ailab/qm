@@ -826,3 +826,170 @@ func read(t *testing.T, root, rel string) string {
 	}
 	return string(b)
 }
+
+// The reported bug in full, end to end: open a page, drag it into another
+// book, type, and let autosave run. The edit has to land, and the move has
+// to survive it.
+func TestAutosaveAfterMoveKeepsBothTheEditAndTheMove(t *testing.T) {
+	srv, _ := testServer(t)
+	// The editor opens the page and holds its text from this moment on.
+	opened := get(t, srv, "/content?path=chapter2/third.qmd")
+	if opened.Code != http.StatusOK {
+		t.Fatalf("content: status %d", opened.Code)
+	}
+	before := read(t, srv.root, "chapter2/third.qmd")
+	// It is dragged one level deeper, which renames the file, renumbers
+	// it, and shifts its headings.
+	rec := post(t, srv, "/move", url.Values{
+		"src": {"chapter2/third.qmd"}, "parent": {"chapter2/second.qmd"}, "pos": {"0"},
+		"open": {"chapter2/third.qmd"},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("move: status %d: %s", rec.Code, rec.Body)
+	}
+	moved := read(t, srv.root, "chapter2/second/third.qmd")
+	if !strings.Contains(moved, "## Third") {
+		t.Fatalf("the move did not shift the heading, nothing to test:\n%s", moved)
+	}
+	// Now the user types, and the editor autosaves the text it opened
+	// with — order and heading levels from before the move included.
+	rec = post(t, srv, "/save", url.Values{
+		"path": {"chapter2/second/third.qmd"},
+		"body": {before + "\nthe user typed this\n"},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("save: status %d: %s", rec.Code, rec.Body)
+	}
+	got := read(t, srv.root, "chapter2/second/third.qmd")
+	if !strings.Contains(got, "the user typed this") {
+		t.Errorf("the edit was lost:\n%s", got)
+	}
+	if !strings.Contains(got, "## Third") {
+		t.Errorf("the move's heading shift was reverted:\n%s", got)
+	}
+	wantOrder := project.ParseFrontmatter([]byte(moved)).Order
+	if o := project.ParseFrontmatter([]byte(got)).Order; !sameOrderValue(o, wantOrder) {
+		t.Errorf("the move's order was reverted: got %v, want %v", o, wantOrder)
+	}
+}
+
+// Creating a page renumbers its siblings, which is the same hazard: an
+// open sibling's autosave must not put the old numbering back.
+func TestAutosaveAfterCreateKeepsTheRenumbering(t *testing.T) {
+	srv, _ := testServer(t)
+	get(t, srv, "/content?path=chapter2/third.qmd")
+	before := read(t, srv.root, "chapter2/third.qmd")
+	// The top-bar form inserts after the selected page, which renumbers
+	// the whole sibling group — third.qmd included.
+	if rec := post(t, srv, "/create", url.Values{
+		"after": {"chapter2/second.qmd"}, "name": {"extra"}, "title": {"Extra"},
+	}); rec.Code != http.StatusOK {
+		t.Fatalf("create: status %d: %s", rec.Code, rec.Body)
+	}
+	renumbered := project.ParseFrontmatter([]byte(read(t, srv.root, "chapter2/third.qmd"))).Order
+	if sameOrderValue(renumbered, project.ParseFrontmatter([]byte(before)).Order) {
+		t.Fatalf("the create did not renumber the page, nothing to test (order %v)", renumbered)
+	}
+	// The editor autosaves what it opened with.
+	if rec := post(t, srv, "/save", url.Values{
+		"path": {"chapter2/third.qmd"}, "body": {before + "\nedited\n"},
+	}); rec.Code != http.StatusOK {
+		t.Fatalf("save: status %d: %s", rec.Code, rec.Body)
+	}
+	got := read(t, srv.root, "chapter2/third.qmd")
+	if !strings.Contains(got, "edited") {
+		t.Errorf("the edit was lost:\n%s", got)
+	}
+	if o := project.ParseFrontmatter([]byte(got)).Order; !sameOrderValue(o, renumbered) {
+		t.Errorf("order = %v, want the renumbered %v", o, renumbered)
+	}
+}
+
+func sameOrderValue(a, b *int) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
+}
+
+// A change the tree cannot account for is somebody else's edit. Saving
+// over it silently is how that person's work disappears, so the save is
+// refused and the file left alone.
+func TestSaveRefusesToOverwriteAnOutsideEdit(t *testing.T) {
+	srv, _ := testServer(t)
+	get(t, srv, "/content?path=chapter2/second.qmd")
+	outside := "---\ntitle: Second\norder: 1\n---\n# Second\n\nwritten in another editor\n"
+	writeFile(t, srv.root, "chapter2/second.qmd", outside)
+
+	rec := post(t, srv, "/save", url.Values{
+		"path": {"chapter2/second.qmd"},
+		"body": {"---\ntitle: Second\norder: 1\n---\n# Second\n\ntyped in the browser\n"},
+	})
+	if rec.Code != http.StatusConflict {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusConflict)
+	}
+	if got := read(t, srv.root, "chapter2/second.qmd"); got != outside {
+		t.Errorf("the outside edit was overwritten:\n%s", got)
+	}
+}
+
+// ... and the user can still insist, which is what makes refusing safe.
+func TestSaveForcedOverwritesTheConflict(t *testing.T) {
+	srv, _ := testServer(t)
+	get(t, srv, "/content?path=chapter2/second.qmd")
+	writeFile(t, srv.root, "chapter2/second.qmd", "written in another editor\n")
+
+	mine := "---\ntitle: Second\norder: 1\n---\n# Second\n\ntyped in the browser\n"
+	rec := post(t, srv, "/save", url.Values{
+		"path": {"chapter2/second.qmd"}, "body": {mine}, "force": {"1"},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("forced save: status %d: %s", rec.Code, rec.Body)
+	}
+	if got := read(t, srv.root, "chapter2/second.qmd"); got != mine {
+		t.Errorf("forced save did not write:\n%s", got)
+	}
+}
+
+// A replay the user cannot see in their editor is announced, so the pane
+// can say the file has moved on and offer a reload.
+func TestSaveAnnouncesWhatItReplayed(t *testing.T) {
+	srv, _ := testServer(t)
+	get(t, srv, "/content?path=chapter2/third.qmd")
+	before := read(t, srv.root, "chapter2/third.qmd")
+	post(t, srv, "/move", url.Values{
+		"src": {"chapter2/third.qmd"}, "parent": {"chapter2/second.qmd"}, "pos": {"0"},
+		"open": {"chapter2/third.qmd"},
+	})
+	rec := post(t, srv, "/save", url.Values{
+		"path": {"chapter2/second/third.qmd"}, "body": {before + "\nedited\n"},
+	})
+	if got := rec.Header().Get("HX-Trigger"); !strings.Contains(got, "qm:rebased") {
+		t.Errorf("HX-Trigger = %q, want a qm:rebased event", got)
+	}
+}
+
+// A plain edit with nothing else going on stays plain: no event, no fuss.
+func TestSaveWithoutAReplayAnnouncesNothing(t *testing.T) {
+	srv, _ := testServer(t)
+	get(t, srv, "/content?path=chapter2/second.qmd")
+	rec := post(t, srv, "/save", url.Values{
+		"path": {"chapter2/second.qmd"},
+		"body": {"---\ntitle: Second\norder: 1\n---\n# Second\nedited\n"},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("save: status %d: %s", rec.Code, rec.Body)
+	}
+	if got := rec.Header().Get("HX-Trigger"); got != "" {
+		t.Errorf("HX-Trigger = %q, want none", got)
+	}
+}
+
+// writeFile puts content into a project file, standing in for an editor
+// other than the browser's.
+func writeFile(t *testing.T, root, rel, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(rel)), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}

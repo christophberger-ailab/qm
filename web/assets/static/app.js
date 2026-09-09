@@ -554,7 +554,9 @@ document.body.addEventListener('htmx:afterSwap', function (evt) {
     // A fresh pane holds the page as it is on disk, so whatever the last
     // one failed to save is no longer this editor's problem.
     saveFailed = false;
+    rebaseNotice = '';
     setSaveStatus('');
+    showOverwrite(false);
   }
   if (id === 'content' || id === 'main') {
     initEditor(); // mount before the preview reads the editor's text
@@ -622,6 +624,13 @@ document.body.addEventListener('click', function (evt) {
   // left scrolled to. htmx posts the button itself, so this only marks it.
   if (evt.target.closest('#render-run')) {
     renderLogFollow = true;
+  }
+
+  // Overwrite: the user answering a refused save with "mine wins".
+  if (evt.target.closest('#save-overwrite')) {
+    showOverwrite(false);
+    saveNow(true);
+    return;
   }
 
   // Preview toggle: open or close the preview beside the editor.
@@ -694,30 +703,58 @@ document.body.addEventListener('click', function (evt) {
 // which is what guards leaving the page below.
 var saveFailed = false;
 
-function setSaveStatus(text, failed) {
+// rebaseNotice is what the last save had to put back: the server sends it
+// as a qm:rebased event, which htmx fires before the request finishes, so
+// it is held here until there is a "Saved" to say it alongside.
+var rebaseNotice = '';
+
+function setSaveStatus(text, kind) {
   var el = document.getElementById('save-status');
   if (el) {
     el.textContent = text;
-    el.classList.toggle('failed', !!failed);
+    el.classList.toggle('failed', kind === 'failed');
+    el.classList.toggle('notice', kind === 'notice');
+  }
+}
+
+// showOverwrite offers, or withdraws, the way past a refused save.
+function showOverwrite(on) {
+  var button = document.getElementById('save-overwrite');
+  if (button) {
+    button.hidden = !on;
   }
 }
 
 // saveNow writes the editor's text without waiting out the edit form's
 // one-second autosave delay. It is sourced from the form so that it reports
-// through the same status as an ordinary autosave.
-function saveNow() {
+// through the same status as an ordinary autosave. force says the user
+// answered a conflict with "mine wins".
+function saveNow(force) {
   var form = document.querySelector('#content .edit-form');
   var path = document.getElementById('content-path');
   var area = document.querySelector('#content textarea.file-content');
   if (!form || !path || !area) {
     return;
   }
-  htmx.ajax('POST', '/save', {
-    source: form,
-    swap: 'none',
-    values: { path: path.value, body: area.value }
-  });
+  var values = { path: path.value, body: area.value };
+  if (force) {
+    values.force = '1';
+  }
+  htmx.ajax('POST', '/save', { source: form, swap: 'none', values: values });
 }
+
+// The page the editor holds was written on top of the page as it stood when
+// it opened, and the tree may have written to the same file since -- a move
+// or a create renumbers a sibling group, and a move to another depth shifts
+// the headings. The server replays the edit onto those rather than let it
+// undo them, and says so here: the editor still shows the text from before,
+// and only a reload brings it in line.
+document.body.addEventListener('qm:rebased', function (evt) {
+  var d = evt.detail || {};
+  rebaseNotice = d.headings
+    ? ' — the move\'s heading levels were kept; ↻ Reload to see them'
+    : ' — the move\'s numbering was kept; ↻ Reload to see it';
+});
 
 document.body.addEventListener('htmx:beforeRequest', function (evt) {
   var elt = evt.detail && evt.detail.elt;
@@ -731,18 +768,29 @@ document.body.addEventListener('htmx:afterRequest', function (evt) {
   if (!elt || !elt.classList || !elt.classList.contains('edit-form')) {
     return;
   }
+  var notice = rebaseNotice;
+  rebaseNotice = '';
   saveFailed = !evt.detail.successful;
   if (!saveFailed) {
-    setSaveStatus('Saved', false);
+    showOverwrite(false);
+    setSaveStatus('Saved' + notice, notice ? 'notice' : '');
     return;
   }
   var xhr = evt.detail.xhr;
+  // A conflict is not a broken save but a decision to make: somebody else
+  // wrote the file, and only the user can say whose version wins.
+  if (xhr && xhr.status === 409) {
+    showOverwrite(true);
+    setSaveStatus('NOT SAVED — the file changed on disk since this page was opened. Reload to take that version, or Overwrite to keep yours.', 'failed');
+    return;
+  }
   var why = (xhr && (xhr.responseText || xhr.statusText) || '').trim();
-  setSaveStatus('NOT SAVED' + (why ? ' — ' + why : '') + ' — your edits are only in this editor', true);
+  setSaveStatus('NOT SAVED' + (why ? ' — ' + why : '') + ' — your edits are only in this editor', 'failed');
 });
 
-// Opening another page replaces the editor, and with it the only copy of an
-// edit that could not be saved. Ask first rather than drop it silently.
+// Opening another page, or reloading this one from disk, replaces the
+// editor and with it the only copy of an edit that could not be saved. Ask
+// first rather than drop it silently.
 document.body.addEventListener('htmx:confirm', function (evt) {
   var elt = evt.detail && evt.detail.elt;
   var target = elt && elt.getAttribute && elt.getAttribute('hx-target');
@@ -750,7 +798,7 @@ document.body.addEventListener('htmx:confirm', function (evt) {
     return;
   }
   evt.preventDefault();
-  if (window.confirm('The current page has edits that could not be saved. Opening another page discards them. Continue?')) {
+  if (window.confirm('This page has edits that could not be saved. Replacing the editor discards them. Continue?')) {
     evt.detail.issueRequest(true);
   }
 });

@@ -619,6 +619,21 @@ li.page.has-children.collapsed.hit-branch>.row>.toggle::before {
   border-radius: 3px;
 }
 
+/* A replay is not a failure, but it is not nothing either: the file on disk
+   has moved on from what the editor shows, and a reload closes the gap. */
+.save-status.notice {
+  color: #7a4d00;
+  background: #ffeccc;
+  white-space: normal;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+}
+
+.save-overwrite {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
 .content-title {
   margin: 0 0 0.5rem 0;
   font-size: 1rem;
