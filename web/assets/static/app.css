@@ -608,6 +608,17 @@ li.page.has-children.collapsed.hit-branch>.row>.toggle::before {
   white-space: nowrap;
 }
 
+/* A failed save means the edit exists nowhere but in the editor, so it is
+   dressed as the error it is rather than as the quiet note "Saved" is. */
+.save-status.failed {
+  color: #fff;
+  background: #b00020;
+  font-weight: 700;
+  white-space: normal;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+}
+
 .content-title {
   margin: 0 0 0.5rem 0;
   font-size: 1rem;

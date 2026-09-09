@@ -203,7 +203,7 @@ func TestLastOpenedPageIsRestored(t *testing.T) {
 func assertServesPage(t *testing.T, body, rel, text string) {
 	t.Helper()
 	for _, want := range []string{
-		`<input type="hidden" name="path" value="` + rel + `">`,
+		`<input type="hidden" id="content-path" name="path" value="` + rel + `">`,
 		text,
 		`class="editor-split"`,
 	} {
@@ -734,4 +734,95 @@ func TestOpenBadPath(t *testing.T) {
 	if rec := post(t, srv, "/open", url.Values{"path": {"/no/such/dir"}}); rec.Code != http.StatusBadRequest {
 		t.Errorf("open bad path: status %d, want 400", rec.Code)
 	}
+}
+
+// A move that renames the open page's file has to hand the editor the new
+// path, or every autosave after it posts to a file that is no longer there
+// and the edits made after the move are lost with the pane.
+func TestMoveRepointsOpenEditor(t *testing.T) {
+	srv, _ := testServer(t)
+	if rec := get(t, srv, "/content?path=chapter2/second.qmd"); rec.Code != http.StatusOK {
+		t.Fatalf("content: status %d: %s", rec.Code, rec.Body)
+	}
+	rec := post(t, srv, "/move", url.Values{
+		"src": {"chapter2/second.qmd"}, "parent": {""}, "pos": {"0"},
+		"open": {"chapter2/second.qmd"},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("move: status %d: %s", rec.Code, rec.Body)
+	}
+	for _, want := range []string{
+		`<input type="hidden" id="content-path" name="path" value="second.qmd" hx-swap-oob="true">`,
+		`id="content-title" hx-swap-oob="true">Second`,
+		`hx-get="/content?path=second.qmd&reload=1"`,
+	} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("move response is missing %q:\n%s", want, rec.Body)
+		}
+	}
+	// The editor's text is not swapped: it holds the edits still to be saved.
+	if strings.Contains(rec.Body.String(), "file-content") {
+		t.Error("move response replaces the editor's textarea, discarding unsaved edits")
+	}
+	// The page the app comes back to moved along with the file.
+	if got := srv.prefsFor(srv.root).Page; got != "second.qmd" {
+		t.Errorf("remembered page = %q, want %q", got, "second.qmd")
+	}
+	// And the autosave the editor now makes lands on the moved file.
+	rec = post(t, srv, "/save", url.Values{
+		"path": {"second.qmd"}, "body": {"---\ntitle: Second\norder: 1\n---\nEDITED\n"},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("save after move: status %d: %s", rec.Code, rec.Body)
+	}
+	if body := read(t, srv.root, "second.qmd"); !strings.Contains(body, "EDITED") {
+		t.Errorf("edit not on disk: %q", body)
+	}
+}
+
+// Moving a whole section takes the pages inside it along, so an open page
+// that merely sits in the moved section has to be re-pointed too.
+func TestMoveSectionRepointsOpenChild(t *testing.T) {
+	srv, _ := testServer(t)
+	if rec := post(t, srv, "/create", url.Values{"name": {"dispatcher"}, "title": {"Dispatcher"}}); rec.Code != http.StatusOK {
+		t.Fatalf("create: status %d: %s", rec.Code, rec.Body)
+	}
+	get(t, srv, "/content?path=chapter2/second.qmd")
+	rec := post(t, srv, "/move", url.Values{
+		"src": {"chapter2/index.qmd"}, "parent": {"dispatcher/index.qmd"}, "pos": {"0"},
+		"open": {"chapter2/second.qmd"},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("move: status %d: %s", rec.Code, rec.Body)
+	}
+	want := `value="dispatcher/chapter2/second.qmd"`
+	if !strings.Contains(rec.Body.String(), want) {
+		t.Errorf("move response is missing %q:\n%s", want, rec.Body)
+	}
+	if got := srv.prefsFor(srv.root).Page; got != "dispatcher/chapter2/second.qmd" {
+		t.Errorf("remembered page = %q", got)
+	}
+}
+
+// A plain reorder renames nothing, so it must not disturb the editor.
+func TestMoveWithoutRenameLeavesEditorAlone(t *testing.T) {
+	srv, _ := testServer(t)
+	get(t, srv, "/content?path=chapter2/second.qmd")
+	rec := post(t, srv, "/move", url.Values{
+		"src": {"chapter2/third.qmd"}, "parent": {"chapter2/index.qmd"}, "pos": {"0"},
+		"open": {"chapter2/second.qmd"},
+	})
+	if strings.Contains(rec.Body.String(), "hx-swap-oob") {
+		t.Errorf("reorder re-pointed the editor:\n%s", rec.Body)
+	}
+}
+
+// read returns a project file's contents.
+func read(t *testing.T, root, rel string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }

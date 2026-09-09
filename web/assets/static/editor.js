@@ -517,19 +517,13 @@ function toggleVim() {
 }
 
 // `:w` writes now rather than waiting out the edit form's one-second
-// autosave delay -- not waiting is the whole point of typing it. The
-// request is sourced from the form so that it reports through the same
-// "Saving…"/"Saved" status as an ordinary autosave.
+// autosave delay -- not waiting is the whole point of typing it. app.js's
+// saveNow is what does it, so the request reports through the same
+// "Saving…"/"NOT SAVED" status as an ordinary autosave.
 if (typeof CodeMirror !== 'undefined' && CodeMirror.Vim) {
   CodeMirror.Vim.defineEx('write', 'w', function () {
-    var path = document.querySelector('#content input[name="path"]');
-    if (!cm || !path) {
-      return;
+    if (cm) {
+      saveNow();
     }
-    htmx.ajax('POST', '/save', {
-      source: '.edit-form',
-      swap: 'none',
-      values: { path: path.value, body: cm.getValue() }
-    });
   });
 }

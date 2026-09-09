@@ -19,7 +19,7 @@ func load(t *testing.T, root string) *Tree {
 
 func mustMove(t *testing.T, root, src, parent string, pos int) *Tree {
 	t.Helper()
-	if err := load(t, root).Move(src, parent, pos); err != nil {
+	if _, err := load(t, root).Move(src, parent, pos); err != nil {
 		t.Fatal(err)
 	}
 	return load(t, root)
@@ -147,14 +147,14 @@ func TestMoveSectionNameStyle(t *testing.T) {
 
 func TestMoveIntoOwnSubtree(t *testing.T) {
 	root := writeFixture(t)
-	if err := load(t, root).Move("chapter3.qmd", "chapter3/deep/index.qmd", 0); err == nil {
+	if _, err := load(t, root).Move("chapter3.qmd", "chapter3/deep/index.qmd", 0); err == nil {
 		t.Error("want error moving a section into its own subtree")
 	}
 }
 
 func TestMoveIntoRootIndex(t *testing.T) {
 	root := writeFixture(t)
-	if err := load(t, root).Move("chapter2/second.qmd", "index.qmd", 0); err == nil {
+	if _, err := load(t, root).Move("chapter2/second.qmd", "index.qmd", 0); err == nil {
 		t.Error("want error moving under the root index page")
 	}
 }
@@ -286,5 +286,46 @@ func TestDeleteSection(t *testing.T) {
 	}
 	if tree := load(t, root); tree.Find("chapter3/another.qmd") != nil {
 		t.Error("children still in tree")
+	}
+}
+
+// Move reports what it renamed, so a caller holding a page path from
+// before the move can follow it to the file's new place.
+func TestMoveReportsRenames(t *testing.T) {
+	root := writeFixture(t)
+	renames, err := load(t, root).Move("chapter2/second.qmd", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := Remap(renames, "chapter2/second.qmd"); got != "second.qmd" {
+		t.Errorf("Remap of the moved page = %q, want %q", got, "second.qmd")
+	}
+	if got := Remap(renames, "chapter2/third.qmd"); got != "chapter2/third.qmd" {
+		t.Errorf("Remap of an untouched page = %q, want it unchanged", got)
+	}
+}
+
+// A section takes its whole directory along, so every page below it moves
+// with it.
+func TestMoveSectionRemapsPagesBelow(t *testing.T) {
+	root := writeFixture(t)
+	renames, err := load(t, root).Move("chapter2/index.qmd", "chapter3.qmd", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := Remap(renames, "chapter2/second.qmd"); got != "chapter3/chapter2/second.qmd" {
+		t.Errorf("Remap of a page inside the section = %q", got)
+	}
+}
+
+// A reorder within one sibling group renames nothing.
+func TestMoveWithinGroupRenamesNothing(t *testing.T) {
+	root := writeFixture(t)
+	renames, err := load(t, root).Move("chapter2/third.qmd", "chapter2/index.qmd", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(renames) != 0 {
+		t.Errorf("renames = %v, want none", renames)
 	}
 }

@@ -235,11 +235,20 @@
 
 {{define "content-heading"}}{{.Title}} <span class="path">{{.Path}}</span>{{end}}
 
+{{/* content-path-oob re-points the open editor at a page whose file has
+     just been renamed under it — a move into another book does that. Only
+     the three places that name the path are swapped; the textarea is not
+     among them, because it holds edits that still have to be saved, and
+     the hidden field going first is what lets them be. */}}
+{{define "content-path-oob"}}<input type="hidden" id="content-path" name="path" value="{{.Path}}" hx-swap-oob="true">
+<h2 class="content-title" id="content-title" hx-swap-oob="true">{{template "content-heading" .}}</h2>
+<button class="reload" id="content-reload" title="Reload from disk" hx-get="/content?path={{.Path}}&reload=1" hx-target="#content" hx-swap="innerHTML" hx-swap-oob="true">↻ Reload</button>{{end}}
+
 {{define "content"}}<div class="content-header">
   <h2 class="content-title" id="content-title">{{template "content-heading" .}}</h2>
   <span class="save-status" id="save-status"></span>
   <button type="button" class="preview-toggle" id="preview-toggle" aria-pressed="true" title="Show or hide the Markdown preview">👁 Preview</button>
-  <button class="reload" title="Reload from disk" hx-get="/content?path={{.Path}}&reload=1" hx-target="#content" hx-swap="innerHTML">↻ Reload</button>
+  <button class="reload" id="content-reload" title="Reload from disk" hx-get="/content?path={{.Path}}&reload=1" hx-target="#content" hx-swap="innerHTML">↻ Reload</button>
 </div>
 <div class="editor-split">
   {{/* The vim toggle sits in the editor's own column so that it stands
@@ -253,7 +262,7 @@
        over that other page. editor.js guards the same thing again for
        the browsers that restore anyway. */ -}}
   <form class="edit-form" autocomplete="off" hx-post="/save" hx-trigger="input delay:1s from:find textarea" hx-swap="none">
-    <input type="hidden" name="path" value="{{.Path}}">
+    <input type="hidden" id="content-path" name="path" value="{{.Path}}">
     <div class="editor-toolbar">
       <button type="button" class="vim-toggle" id="vim-toggle" aria-pressed="false" title="Vim keybindings in the editor">⌨ Vim Mode</button>
     </div>

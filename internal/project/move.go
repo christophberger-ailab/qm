@@ -11,25 +11,52 @@ import (
 	"time"
 )
 
+// Rename records a path that a Move moved on disk. From and To are
+// project-relative and name either a page file or a directory; a directory
+// took everything below it along. Callers holding a page path from before
+// the move — the web UI holds the one open in its editor — follow it to
+// where it now lives with Remap.
+type Rename struct{ From, To string }
+
+// Remap follows the page path p through the renames a Move performed, and
+// returns where that page lives now. A path that did not move comes back
+// unchanged, which is also what an empty rename list gives.
+func Remap(renames []Rename, p string) string {
+	for _, r := range renames {
+		switch {
+		case p == r.From:
+			return r.To
+		case strings.HasPrefix(p, r.From+"/"):
+			return r.To + strings.TrimPrefix(p, r.From)
+		}
+	}
+	return p
+}
+
 // Move makes the page at src the child at position pos of the page at
 // parent ("" means the project root). It moves files when the parent
 // changes, shifts Markdown headings by the depth difference, renumbers the
 // destination siblings sequentially, and closes the order gap in the
 // source group. The receiver is stale afterwards; reload the tree.
-func (t *Tree) Move(src, parent string, pos int) error {
+//
+// It returns the renames it performed on disk, so that a caller can follow
+// a page path it was holding to the file's new place; a move within one
+// sibling group renames nothing and returns none.
+func (t *Tree) Move(src, parent string, pos int) ([]Rename, error) {
 	sp := t.Find(src)
 	if sp == nil {
-		return fmt.Errorf("page %s not found", src)
+		return nil, fmt.Errorf("page %s not found", src)
 	}
 	destDir, destSiblings, destDepth, err := t.resolveParent(parent)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	newPath := src
+	var renames []Rename
 	if srcDir := groupDir(src); destDir != srcDir {
-		if newPath, err = t.reparent(sp, destDir, destDepth); err != nil {
-			return err
+		if newPath, renames, err = t.reparent(sp, destDir, destDepth); err != nil {
+			return nil, err
 		}
 		// Close the order gap left in the source group.
 		n := 0
@@ -37,7 +64,7 @@ func (t *Tree) Move(src, parent string, pos int) error {
 			if p != sp && p.Order != nil {
 				n++
 				if err := t.setOrder(p.Path, n); err != nil {
-					return err
+					return renames, err
 				}
 			}
 		}
@@ -58,60 +85,62 @@ func (t *Tree) Move(src, parent string, pos int) error {
 			file = newPath
 		}
 		if err := t.setOrder(file, i+1); err != nil {
-			return err
+			return renames, err
 		}
 	}
-	return nil
+	return renames, nil
 }
 
 // reparent moves the page's files under destDir and shifts headings by the
-// depth difference. It returns the page's new path.
-func (t *Tree) reparent(sp *Page, destDir string, destDepth int) (string, error) {
+// depth difference. It returns the page's new path and the renames it made.
+func (t *Tree) reparent(sp *Page, destDir string, destDepth int) (string, []Rename, error) {
 	src := sp.Path
 	// The unit to move: an index.qmd section moves its directory; anything
 	// else moves the file, plus its resource/children directory if present.
-	var renames [][2]string // relative old, new
+	var renames []Rename
 	var newPath string
 	if base := path.Base(src); base == "index.qmd" {
 		dir := path.Dir(src)
 		newDir := join(destDir, path.Base(dir))
-		renames = append(renames, [2]string{dir, newDir})
+		renames = append(renames, Rename{dir, newDir})
 		newPath = newDir + "/index.qmd"
 	} else {
 		newPath = join(destDir, base)
-		renames = append(renames, [2]string{src, newPath})
+		renames = append(renames, Rename{src, newPath})
 		if fi, err := os.Stat(t.abs(sp.Dir)); err == nil && fi.IsDir() {
-			renames = append(renames, [2]string{sp.Dir, join(destDir, path.Base(sp.Dir))})
+			renames = append(renames, Rename{sp.Dir, join(destDir, path.Base(sp.Dir))})
 		}
 	}
 	for _, r := range renames {
-		if destDir == r[0] || strings.HasPrefix(destDir+"/", r[0]+"/") {
-			return "", fmt.Errorf("cannot move %s into its own subtree", src)
+		if destDir == r.From || strings.HasPrefix(destDir+"/", r.From+"/") {
+			return "", nil, fmt.Errorf("cannot move %s into its own subtree", src)
 		}
-		if _, err := os.Stat(t.abs(r[1])); err == nil {
-			return "", fmt.Errorf("%s already exists", r[1])
+		if _, err := os.Stat(t.abs(r.To)); err == nil {
+			return "", nil, fmt.Errorf("%s already exists", r.To)
 		}
 	}
 	if destDir != "." {
 		if err := os.MkdirAll(t.abs(destDir), 0o755); err != nil {
-			return "", err
+			return "", nil, err
 		}
 	}
-	for _, r := range renames {
-		if err := os.Rename(t.abs(r[0]), t.abs(r[1])); err != nil {
-			return "", err
+	for i, r := range renames {
+		if err := os.Rename(t.abs(r.From), t.abs(r.To)); err != nil {
+			// The renames already done still moved files; report them so
+			// the caller can follow a path it holds rather than lose it.
+			return "", renames[:i], err
 		}
-		os.Remove(t.abs(path.Dir(r[0]))) // drop the source dir if now empty
+		os.Remove(t.abs(path.Dir(r.From))) // drop the source dir if now empty
 	}
 
 	if delta := destDepth - t.depthOf(sp); delta != 0 {
 		for _, r := range renames {
-			if err := shiftHeadingsBelow(t.abs(r[1]), delta); err != nil {
-				return "", err
+			if err := shiftHeadingsBelow(t.abs(r.To), delta); err != nil {
+				return "", renames, err
 			}
 		}
 	}
-	return newPath, nil
+	return newPath, renames, nil
 }
 
 // shiftHeadingsBelow shifts headings in the .qmd file at abs, or in all

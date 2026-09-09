@@ -499,6 +499,18 @@ func (s *server) apply(w http.ResponseWriter, op func(*project.Tree) error) {
 	s.renderTree(w, "")
 }
 
+// move drags a page to another place in the tree — including into another
+// book, which renames its file on disk.
+//
+// The editor keeps the page it has open under the path the file had when
+// it was opened, and that path is what autosave posts to. A move that
+// renames the file out from under an open editor therefore has to tell the
+// editor where its page went; otherwise every autosave from then on lands
+// on a path that no longer exists, every edit made after the move is lost
+// with the pane, and the only sign of it is the small "Save failed" beside
+// the heading. The renames Move reports are what the new path is followed
+// through — the moved page itself, and any page below it when a whole
+// section moved.
 func (s *server) move(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -507,9 +519,48 @@ func (s *server) move(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad pos", http.StatusBadRequest)
 		return
 	}
+	// The page the editor has open, as it stands before the move. The
+	// browser sends it along; the page this project last opened is the
+	// fallback for a client that does not.
+	open := r.FormValue("open")
+	if open == "" {
+		open = s.prefsFor(s.root).Page
+	}
+
+	var renames []project.Rename
 	s.apply(w, func(t *project.Tree) error {
-		return t.Move(r.FormValue("src"), r.FormValue("parent"), pos)
+		var err error
+		renames, err = t.Move(r.FormValue("src"), r.FormValue("parent"), pos)
+		return err
 	})
+
+	// Renames may have happened even when Move then failed part-way, so
+	// the editor is re-pointed on what actually moved rather than on
+	// whether the whole move succeeded.
+	if open == "" || len(renames) == 0 {
+		return
+	}
+	moved := project.Remap(renames, open)
+	if moved == open {
+		return
+	}
+	s.rememberPage(moved)
+	s.renderPathOOB(w, moved)
+}
+
+// renderPathOOB re-points the open editor at rel: the hidden field
+// autosave posts, the heading above it, and the reload button that reads
+// the page from disk. The editor's text is deliberately left alone — it
+// holds edits that are not on disk yet, and this response exists to get
+// them saved, not to discard them. The caller must hold s.mu.
+func (s *server) renderPathOOB(w http.ResponseWriter, rel string) {
+	title := rel
+	if abs, err := s.resolvePath(rel); err == nil {
+		if body, err := os.ReadFile(abs); err == nil {
+			title = project.ParseFrontmatter(body).Title
+		}
+	}
+	s.render(w, "content-path-oob", struct{ Title, Path string }{title, rel})
 }
 
 func (s *server) create(w http.ResponseWriter, r *http.Request) {

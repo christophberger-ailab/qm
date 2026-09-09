@@ -28,7 +28,10 @@ constraints:
     requirements:
       1: The page tree shows the project's .qmd pages in website order, nested by folder
       2: Dragging a page updates the `order` frontmatter of the affected pages and the Markdown heading levels of the moved page
+      2-1: A drag that moves a page to another parent renames its file on disk; if the page open in the editor is the moved one, or sits inside a moved section, the editor is re-pointed at the new path, so autosave keeps writing to the file instead of to a path that no longer exists
+      2-2: The re-pointing replaces the editor's path, heading, and reload button only, never its text, which may hold edits that are not on disk yet; an autosave that the rename had already broken is retried at the new path
       3: Pages can be created, deleted, and edited in place
+      3-0: A failed save is shown as an error next to the heading, naming why it failed, and leaving the page -- opening another one, reloading, closing the tab -- asks for confirmation while an edit is unsaved
       3-1: A Markdown preview of the edited page sits to the right of the editor, separated by a draggable divider
       3-2: The preview follows the editor's content as the user types
       3-3: A toggle button in the content header opens and closes the preview; the choice is remembered across sessions

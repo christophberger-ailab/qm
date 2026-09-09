@@ -86,10 +86,14 @@ function initTree() {
         var parent = evt.to.dataset.parent;
         var pos = evt.newIndex;
 
+        // The page the editor has open travels with the move: moving into
+        // another book renames files, and if the moved page is the open one
+        // -- or sits inside a moved section -- the server answers with the
+        // path the editor has to autosave to from now on.
         htmx.ajax('POST', '/move', {
           target: '#tree',
           swap: 'innerHTML',
-          values: { src: src, parent: parent, pos: pos }
+          values: { src: src, parent: parent, pos: pos, open: currentPath || '' }
         });
       }
     });
@@ -547,6 +551,10 @@ document.body.addEventListener('htmx:afterSwap', function (evt) {
   if (id === 'content') { // track whatever the editor now shows
     syncCurrentPath();
     applySelection();
+    // A fresh pane holds the page as it is on disk, so whatever the last
+    // one failed to save is no longer this editor's problem.
+    saveFailed = false;
+    setSaveStatus('');
   }
   if (id === 'content' || id === 'main') {
     initEditor(); // mount before the preview reads the editor's text
@@ -592,6 +600,20 @@ document.body.addEventListener('htmx:oobAfterSwap', function (evt) {
     initTree();
     applySelection();
     refreshHits();
+  }
+  if (id === 'content-path') {
+    // A move renamed the open page's file; the editor now posts to the new
+    // path, so the tree entry to keep selected is the new one too.
+    syncCurrentPath();
+    applySelection();
+    // An autosave that the rename had already broken is retried at the new
+    // path right away -- its text exists nowhere else. A save that was
+    // fine is left alone: re-posting it would put the editor's text, which
+    // still carries the frontmatter from before the move, back over what
+    // the move just wrote.
+    if (saveFailed) {
+      saveNow();
+    }
   }
 });
 
@@ -664,11 +686,37 @@ document.body.addEventListener('click', function (evt) {
 
 // Autosave feedback: the edit form posts /save with hx-swap="none", so the
 // only visible trace is the status text next to the heading.
-function setSaveStatus(text) {
+//
+// A failed autosave is the one status that must not read as a detail: the
+// text in the editor is then the only copy of the edit, and it is thrown
+// away with the pane as soon as another page is opened. So a failure is
+// shown as an error rather than as a note, and is remembered in saveFailed,
+// which is what guards leaving the page below.
+var saveFailed = false;
+
+function setSaveStatus(text, failed) {
   var el = document.getElementById('save-status');
   if (el) {
     el.textContent = text;
+    el.classList.toggle('failed', !!failed);
   }
+}
+
+// saveNow writes the editor's text without waiting out the edit form's
+// one-second autosave delay. It is sourced from the form so that it reports
+// through the same status as an ordinary autosave.
+function saveNow() {
+  var form = document.querySelector('#content .edit-form');
+  var path = document.getElementById('content-path');
+  var area = document.querySelector('#content textarea.file-content');
+  if (!form || !path || !area) {
+    return;
+  }
+  htmx.ajax('POST', '/save', {
+    source: form,
+    swap: 'none',
+    values: { path: path.value, body: area.value }
+  });
 }
 
 document.body.addEventListener('htmx:beforeRequest', function (evt) {
@@ -680,7 +728,37 @@ document.body.addEventListener('htmx:beforeRequest', function (evt) {
 
 document.body.addEventListener('htmx:afterRequest', function (evt) {
   var elt = evt.detail && evt.detail.elt;
-  if (elt && elt.classList && elt.classList.contains('edit-form')) {
-    setSaveStatus(evt.detail.successful ? 'Saved' : 'Save failed');
+  if (!elt || !elt.classList || !elt.classList.contains('edit-form')) {
+    return;
+  }
+  saveFailed = !evt.detail.successful;
+  if (!saveFailed) {
+    setSaveStatus('Saved', false);
+    return;
+  }
+  var xhr = evt.detail.xhr;
+  var why = (xhr && (xhr.responseText || xhr.statusText) || '').trim();
+  setSaveStatus('NOT SAVED' + (why ? ' — ' + why : '') + ' — your edits are only in this editor', true);
+});
+
+// Opening another page replaces the editor, and with it the only copy of an
+// edit that could not be saved. Ask first rather than drop it silently.
+document.body.addEventListener('htmx:confirm', function (evt) {
+  var elt = evt.detail && evt.detail.elt;
+  var target = elt && elt.getAttribute && elt.getAttribute('hx-target');
+  if (!saveFailed || target !== '#content') {
+    return;
+  }
+  evt.preventDefault();
+  if (window.confirm('The current page has edits that could not be saved. Opening another page discards them. Continue?')) {
+    evt.detail.issueRequest(true);
+  }
+});
+
+// The same for a reload or a closed tab, which htmx never sees.
+window.addEventListener('beforeunload', function (evt) {
+  if (saveFailed) {
+    evt.preventDefault();
+    evt.returnValue = '';
   }
 });
