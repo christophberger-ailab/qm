@@ -23,6 +23,15 @@
 var divFence = /^ {0,3}(:{3,})[ \t]*(.*)$/;
 var codeFence = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 
+// atxHeading matches a CommonMark ATX heading with its text; headingAttrs
+// matches the heading's own trailing Pandoc attribute block, e.g.
+// `# Schulungen {.unnumbered .unlisted}`. The `{...}` is only the
+// heading's own when it is not preceded by `]`, which would make it the
+// attributes of a bracketed span instead (`# [Spickzettel]{.pol}`) -- the
+// same rule the bookmaker applies on the Go side.
+var atxHeading = /^( {0,3}#{1,6})([ \t]+.*)$/;
+var headingAttrs = /(^|[^\]])\{[^{}]*\}[ \t]*$/;
+
 // unsafeTags are dropped from the rendered preview: a page may contain raw
 // HTML, and the preview must display it, not run it.
 var unsafeTags = 'script,style,iframe,frame,frameset,object,embed,link,meta,base,form';
@@ -90,6 +99,40 @@ function attrsToHTML(attrs) {
 // attributes.
 function divAttrs(attrs) {
   return attrsToHTML(attrs);
+}
+
+// stripHeadingAttrs removes the Pandoc attribute block from every ATX
+// heading, so that `# Schulungen {.unnumbered .unlisted}` previews as
+// "Schulungen". The attributes tell Quarto how to render the heading --
+// keep it out of the numbering, out of the sidebar -- and are not part of
+// what it says, so showing them would only be noise. Headings inside code
+// blocks are left alone, being code and not headings.
+function stripHeadingAttrs(body) {
+  var fence = null; // the open code fence's delimiter, if any
+
+  return body.split('\n').map(function (line) {
+    var code = line.match(codeFence);
+    if (fence !== null) {
+      if (code && code[1].charAt(0) === fence.charAt(0) &&
+        code[1].length >= fence.length && code[2].trim() === '') {
+        fence = null;
+      }
+      return line;
+    }
+    if (code) {
+      fence = code[1];
+      return line;
+    }
+    var head = line.match(atxHeading);
+    if (!head) {
+      return line;
+    }
+    // The closing "#" run goes first: an attribute block sits inside it
+    // (`## Title {.foo} ##`), so it has to be out of the way before the
+    // block can be recognized as trailing.
+    var text = head[2].replace(/[ \t]+#+[ \t]*$/, '');
+    return head[1] + text.replace(headingAttrs, '$1').replace(/[ \t]+$/, '');
+  }).join('\n');
 }
 
 // convertDivs rewrites fenced divs into HTML block tags, surrounded by blank
@@ -455,7 +498,7 @@ function renderPreview(el, text, pagePath) {
   if (page.front.trim() !== '') {
     html += '<pre class="preview-frontmatter">' + escapeHTML(page.front) + '</pre>';
   }
-  html += marked.parse(convertDivs(page.body));
+  html += marked.parse(convertDivs(stripHeadingAttrs(page.body)));
   el.innerHTML = html;
   // Order matters: sanitize drops the sources that must never be fetched,
   // and only what survives is worth pointing at /media or captioning.

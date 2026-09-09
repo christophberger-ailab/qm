@@ -73,6 +73,36 @@ func TestFirstHeading(t *testing.T) {
 			src:  "#\tTabbed\n",
 			want: "Tabbed",
 		},
+		{
+			name: "attribute block stripped",
+			src:  "# PERLE OnCall-Schulungen {.unnumbered .unlisted}\n",
+			want: "PERLE OnCall-Schulungen",
+		},
+		{
+			name: "attribute block without a space before it",
+			src:  "## Title{#sec-title}\n",
+			want: "Title",
+		},
+		{
+			name: "attribute block inside the closing hash run",
+			src:  "## Chapter {.unnumbered} ##\n",
+			want: "Chapter",
+		},
+		{
+			name: "span attributes are not a heading attribute block",
+			src:  "# [Polizei-]{.pol}[Feuerwehr-]{.fw}Spickzettel\n",
+			want: "[Polizei-]{.pol}[Feuerwehr-]{.fw}Spickzettel",
+		},
+		{
+			name: "trailing span keeps its attributes",
+			src:  "# Spickzettel [Polizei]{.pol}\n",
+			want: "Spickzettel [Polizei]{.pol}",
+		},
+		{
+			name: "heading of nothing but an attribute block falls through",
+			src:  "# {.unlisted}\n# Next\n",
+			want: "Next",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -237,6 +237,9 @@ func (s *server) load() (state, error) {
 	st.Render = s.renderView()
 	st.Page = s.lastPage()
 	tree, err := project.Load(s.root)
+	if tree != nil {
+		flattenTreeSpans(tree.Pages, spanSymbols(s.loadCSS(st.ActiveCSS)))
+	}
 	st.Tree = tree
 	return st, err
 }
