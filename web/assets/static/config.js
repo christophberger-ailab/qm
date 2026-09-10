@@ -1,4 +1,4 @@
-// Quarto Sorter - configuration page behavior (plain ES6, no build step)
+// Quarto Manager - configuration page behavior (plain ES6, no build step)
 
 // initPreviewCSSEditor mounts CodeMirror on the custom preview stylesheet
 // textarea. The textarea remains the form field, so submitting the form

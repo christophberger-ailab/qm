@@ -1,4 +1,4 @@
-// Quarto Sorter - app behavior (plain ES6, no build step)
+// Quarto Manager - app behavior (plain ES6, no build step)
 
 var sortableInstances = [];
 
@@ -143,7 +143,7 @@ function initDivider(dividerID, paneID, key, side) {
     divider.addEventListener('pointerup', onUp);
   });
 }
-    
+
 // Markdown preview
 //
 // The preview lives to the right of the editor and is rendered in the

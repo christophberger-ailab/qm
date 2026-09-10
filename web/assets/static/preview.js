@@ -1,4 +1,4 @@
-// Quarto Sorter - Markdown preview rendering (plain ES6, no build step)
+// Quarto Manager - Markdown preview rendering (plain ES6, no build step)
 //
 // The preview is produced in the browser from the text in the editor, so it
 // follows typing without a server round trip. It approximates Quarto's

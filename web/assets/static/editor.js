@@ -1,4 +1,4 @@
-// Quarto Sorter - the Markdown editor (plain ES6, no build step)
+// Quarto Manager - the Markdown editor (plain ES6, no build step)
 //
 // CodeMirror mounts on top of the textarea in the content template rather
 // than replacing it: the textarea stays the field the edit form posts to
