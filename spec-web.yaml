@@ -102,3 +102,19 @@ constraints:
       8-6: A collapsed branch that contains hits is shown open while the search is active, without changing the branch's remembered collapsed state
       8-7: The highlighting survives tree refreshes, page switches, and edits, and the query is remembered across sessions, so the results stay until the query changes
       8-8: The hits of the current query are highlighted in the editor as well, and opening a page scrolls its editor to the first hit
+      9: The Open field in the top bar offers the projects opened before, most recent first
+      9-1: The field itself shows only the last element of the open project's path, since the folder name is what tells one project from another; the full path is its tooltip and is what a submit opens
+      9-2: A path typed or pasted into the field is opened as written, whatever the field showed before
+      9-3: The dropdown holds the ten most recently opened projects, no project twice, and is remembered across restarts in `<user config dir>/qm/recent.json`
+      9-4: A project opened from the command line counts as opened, so it is in the dropdown of the next session
+      9-5: Opening a project updates the field and its dropdown along with the panes, the render panel, and the Git panel, all of which describe the project just opened
+      10: A Git button to the right of the Render button opens a popup, like the render panel, that shows the changes since the last commit
+      10-1: The changes are shown in two lists -- staged, which is what the next commit would carry, and not staged, which is what it would leave behind -- each entry with its porcelain status letters and the path; a file changed in both the index and the working tree appears in both lists
+      10-2: Each entry can be staged or unstaged individually, and each list as a whole
+      10-3: The panel commits the staged changes under a message the user types, and pushes the branch to its remote; a branch that tracks nothing yet is pushed with its upstream set
+      10-4: Committing is offered only while something is staged, and a commit without a message is refused before git is called, since git would otherwise open an editor there is no terminal for
+      10-5: The panel names the branch, its upstream, and how far the two have drifted apart
+      10-6: What git said is shown as it stands -- the summary of a commit, the transcript of a push, the reason a hook or a remote refused
+      10-7: A project that is not inside a Git working tree, and a machine without git installed, are told so instead of being offered operations that cannot run
+      10-8: The status is read when the panel is opened and after every operation, never with the page, because a working tree changes under the app and a status read minutes ago is worse than none
+      10-9: The operations run the `git` command, so the project's hooks, credential helpers, signing keys, and config apply as they do in a terminal; no prompt is issued, since no terminal is attached, and a call that outlasts the timeout is reported as such

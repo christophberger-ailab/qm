@@ -43,6 +43,12 @@ type server struct {
 	prefsFile string
 	prefs     map[string]projectPrefs
 
+	// recentFile persists the projects opened through the Open field,
+	// most recent first; empty keeps the list to this run. recent holds
+	// its content.
+	recentFile string
+	recent     []string
+
 	// cssDir holds the custom preview stylesheets, next to the render
 	// prefs; empty disables persistence and serves the baked-in default
 	// from memory instead.
@@ -76,13 +82,15 @@ func newServer(prefsFile string) (*server, error) {
 		return nil, err
 	}
 	s := &server{
-		mux:       http.NewServeMux(),
-		tmpl:      tmpl,
-		prefsFile: prefsFile,
-		cssDir:    cssDirForPrefs(prefsFile),
+		mux:        http.NewServeMux(),
+		tmpl:       tmpl,
+		prefsFile:  prefsFile,
+		recentFile: recentFileForPrefs(prefsFile),
+		cssDir:     cssDirForPrefs(prefsFile),
 	}
 	ensureDefaultCSS(s.cssDir)
 	s.loadPrefs()
+	s.loadRecent()
 	static, err := iofs.Sub(assets, "assets/static")
 	if err != nil {
 		return nil, err
@@ -109,6 +117,11 @@ func newServer(prefsFile string) (*server, error) {
 	s.mux.HandleFunc("POST /render", s.startRender)
 	s.mux.HandleFunc("POST /render/select", s.selectRender)
 	s.mux.HandleFunc("GET /render/status", s.renderStatus)
+	s.mux.HandleFunc("GET /git", s.gitStatusHandler)
+	s.mux.HandleFunc("POST /git/stage", s.gitStageHandler)
+	s.mux.HandleFunc("POST /git/unstage", s.gitUnstageHandler)
+	s.mux.HandleFunc("POST /git/commit", s.gitCommitHandler)
+	s.mux.HandleFunc("POST /git/push", s.gitPushHandler)
 	return s, nil
 }
 
@@ -119,6 +132,9 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // state bundles everything the page templates need.
 type state struct {
 	Root string
+	// Open is the Open field: the project it shows and the recently
+	// opened ones its dropdown offers.
+	Open openView
 	Tree *project.Tree
 	// Page is the page the editor opens with — the one this project last
 	// had open — or nil when there is none to restore.
@@ -130,6 +146,52 @@ type state struct {
 	// them appears above the preview only when there is more than one.
 	CSSFiles  []string
 	ActiveCSS string
+}
+
+// openView is the Open field in the top bar. The field itself shows only
+// the last element of a path — the project's folder name is what tells one
+// project from another, and the rest of the path is what makes the field
+// too narrow to read — while the full path travels with it, so a submit
+// still opens the project the label stands for. Recent lists the projects
+// opened before, most recent first.
+type openView struct {
+	// Path is the full path of the open project, "" when none is open.
+	Path string
+	// Label is what the field shows: the last element of Path.
+	Label string
+	// Recent are the projects the dropdown offers.
+	Recent []recentPath
+}
+
+// recentPath is one entry of the Open field's dropdown: the folder name it
+// shows, and the full path it opens.
+type recentPath struct {
+	Path  string
+	Label string
+}
+
+// pathLabel is the last element of a path: what the Open field shows. A
+// path that has no last element to speak of — the root directory, an empty
+// path — is shown as it is.
+func pathLabel(p string) string {
+	if p == "" {
+		return ""
+	}
+	base := filepath.Base(p)
+	if base == "." || base == string(filepath.Separator) {
+		return p
+	}
+	return base
+}
+
+// openViewFor assembles the Open field from the project now open and the
+// recently opened ones. The caller must hold s.mu.
+func (s *server) openViewFor() openView {
+	v := openView{Path: s.root, Label: pathLabel(s.root)}
+	for _, p := range s.recent {
+		v.Recent = append(v.Recent, recentPath{Path: p, Label: pathLabel(p)})
+	}
+	return v
 }
 
 // contentView is the editor pane: a page's title, its project-relative
@@ -230,7 +292,7 @@ type checkbox struct {
 
 // load builds the current template state; the caller must hold s.mu.
 func (s *server) load() (state, error) {
-	st := state{Root: s.root, CSSFiles: s.cssFiles(), ActiveCSS: s.activeCSS()}
+	st := state{Root: s.root, Open: s.openViewFor(), CSSFiles: s.cssFiles(), ActiveCSS: s.activeCSS()}
 	if s.root == "" {
 		return st, nil
 	}
@@ -476,9 +538,18 @@ func (s *server) open(w http.ResponseWriter, r *http.Request) {
 	}
 	s.rebaseOnState(st)
 	s.render(w, "main", st)
-	// The panel lives in the header, which the #main swap does not reach.
+	// The top bar is not reached by the #main swap, so the parts of it
+	// that describe the project just opened are sent out of band: the
+	// render panel, the Git panel, and the Open field, whose label and
+	// dropdown have both moved on.
 	fmt.Fprint(w, `<div hx-swap-oob="innerHTML:#render-panel">`)
 	s.render(w, "render", st)
+	fmt.Fprint(w, `</div>`)
+	fmt.Fprint(w, `<div hx-swap-oob="innerHTML:#git-panel">`)
+	s.render(w, "git", st)
+	fmt.Fprint(w, `</div>`)
+	fmt.Fprint(w, `<div hx-swap-oob="innerHTML:#open-panel">`)
+	s.render(w, "open-form", st)
 	fmt.Fprint(w, `</div>`)
 }
 
@@ -497,6 +568,7 @@ func (s *server) setRoot(dir string) error {
 		return fmt.Errorf("%s is not a directory", root)
 	}
 	s.root = root
+	s.rememberRoot(root)
 	// The editor pane is replaced along with the project, so whatever text
 	// it held belongs to the project being left.
 	s.forgetBase()

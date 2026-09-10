@@ -86,6 +86,54 @@ body {
   align-items: center;
 }
 
+/* The Open field and the dropdown of recently opened projects, which hangs
+   below it like the render panel hangs below its button. */
+.path-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.path-field input {
+  width: 11rem;
+}
+
+.path-menu-toggle {
+  padding: 0.3rem 0.4rem;
+}
+
+.path-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 10;
+  margin: 0.3rem 0 0;
+  padding: 0.2rem;
+  list-style: none;
+  min-width: 100%;
+  max-width: min(30rem, 80vw);
+  max-height: 60vh;
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 18%);
+}
+
+.path-menu button {
+  display: block;
+  width: 100%;
+  justify-content: flex-start;
+  border: none;
+  background: none;
+  white-space: nowrap;
+}
+
+.path-menu button:hover {
+  background: var(--hover);
+}
+
 /* Search */
 
 .search-form {
@@ -108,7 +156,8 @@ body {
 
 /* Render panel */
 
-.render>summary {
+.render>summary,
+.git>summary {
   cursor: pointer;
   padding: 0.25rem 0.6rem;
   border: 1px solid var(--border);
@@ -118,12 +167,14 @@ body {
   user-select: none;
 }
 
-.render>summary:hover {
+.render>summary:hover,
+.git>summary:hover {
   background: var(--hover);
 }
 
-/* The panel hangs below the top bar rather than widening it. */
-.render-body {
+/* The panels hang below the top bar rather than widening it. */
+.render-body,
+.git-body {
   position: absolute;
   z-index: 10;
   margin-top: 0.4rem;
@@ -200,6 +251,112 @@ body {
 
 .render-status.ok {
   color: var(--accent);
+}
+
+/* Git panel */
+
+.git-body {
+  min-width: 22rem;
+  font-size: 0.85rem;
+}
+
+.git-branch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+  margin-bottom: 0.5rem;
+}
+
+.git-branch-name {
+  font-weight: 600;
+}
+
+.git-upstream,
+.git-ahead,
+.git-behind {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.git-group {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.4rem 0.6rem;
+  margin: 0 0 0.5rem;
+}
+
+.git-group legend {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  padding: 0 0.3rem;
+}
+
+.git-all {
+  font-size: 0.75rem;
+  padding: 0.1rem 0.35rem;
+}
+
+.git-files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 40vh;
+  overflow: auto;
+}
+
+.git-file {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+}
+
+/* The two status letters, in the column width they need so the paths of
+   all rows line up. */
+.git-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre;
+  color: var(--muted);
+}
+
+.git-path {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.git-file button {
+  font-size: 0.75rem;
+  padding: 0.1rem 0.35rem;
+}
+
+.git-commit {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.git-commit input {
+  flex: 1;
+}
+
+.git-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.git-output {
+  max-height: 15rem;
+  overflow: auto;
+  margin: 0.6rem 0 0;
+  padding: 0.5rem;
+  background: var(--hover);
+  border-radius: 4px;
+  font-size: 0.78rem;
+  white-space: pre-wrap;
 }
 
 /* Forms / inputs */

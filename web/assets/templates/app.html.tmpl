@@ -37,10 +37,7 @@
 <body>
   <header class="topbar">
     <h1>Quarto Manager</h1>
-    <form class="open-form" hx-post="/open" hx-target="#main" hx-swap="innerHTML">
-      <input name="path" placeholder="/path/to/quarto/project" value="{{.Root}}">
-      <button type="submit">Open</button>
-    </form>
+    <div id="open-panel">{{template "open-form" .}}</div>
     {{/* The field carries the request itself rather than sitting in a form:
          there is nothing to submit, the hits arrive while it is typed in,
          and htmx sends the value of the element that asks. */}}
@@ -52,6 +49,7 @@
       <span id="search-results" class="search-results"></span>
     </div>
     <div id="render-panel">{{template "render" .}}</div>
+    <div id="git-panel">{{template "git" .}}</div>
     <a class="button topbar-config" href="/config">Config</a>
   </header>
   <main class="panes" id="main">
@@ -59,6 +57,79 @@
   </main>
 </body>
 </html>{{end}}
+
+{{/* The Open field shows the last element of the project's path -- the
+     folder name is what tells one project from another -- while the full
+     path rides along in data-full and is what a submit sends. Typing or
+     pasting into the field drops the full path (app.js), so a pasted path
+     is opened as written. */}}
+{{define "open-form"}}<form class="open-form" hx-post="/open" hx-target="#main" hx-swap="innerHTML">
+  <div class="path-field">
+    <input name="path" id="open-path" placeholder="/path/to/quarto/project" autocomplete="off"
+           spellcheck="false" value="{{.Open.Label}}" data-full="{{.Open.Path}}"
+           title="{{if .Open.Path}}{{.Open.Path}}{{else}}Path of the Quarto project to open{{end}}">
+    {{if .Open.Recent}}<button type="button" class="path-menu-toggle" id="open-recent-toggle"
+            aria-haspopup="listbox" aria-expanded="false" title="Recently opened projects">▾</button>
+    <ul class="path-menu" id="open-recent" role="listbox" hidden>
+      {{range .Open.Recent}}<li><button type="button" class="path-recent" role="option" data-path="{{.Path}}" title="{{.Path}}">{{.Label}}</button></li>
+      {{end}}
+    </ul>{{end}}
+  </div>
+  <button type="submit">Open</button>
+</form>{{end}}
+
+{{/* The Git panel is a popup like the render one. Its body is fetched when
+     the panel opens rather than with the page: the working tree changes
+     under the app all the time, and a status that was read minutes ago is
+     worse than none. The trigger's filter keeps the close from asking
+     again. */}}
+{{define "git"}}{{if .Root}}<details class="git" id="git-details">
+  <summary title="Show the changes since the last commit, stage them, commit, and push">Git</summary>
+  <div class="git-body" id="git-body" hx-get="/git" hx-target="#git-body" hx-swap="innerHTML"
+       hx-trigger="toggle[document.getElementById('git-details').open] from:#git-details"></div>
+</details>{{end}}{{end}}
+
+{{define "git-status"}}{{if .Error}}<div class="error">{{.Error}}</div>{{end}}
+{{if .Message}}<div class="notice">{{.Message}}</div>{{end}}
+{{if .Repo}}
+<div class="git-branch">
+  <span class="git-branch-name">{{.Branch}}</span>
+  {{if .Upstream}}<span class="git-upstream">→ {{.Upstream}}</span>{{end}}
+  {{if .Ahead}}<span class="git-ahead">{{.Ahead}} to push</span>{{end}}
+  {{if .Behind}}<span class="git-behind">{{.Behind}} behind</span>{{end}}
+</div>
+{{if .Staged}}
+<fieldset class="git-group">
+  <legend>Staged <button type="button" class="git-all" hx-post="/git/unstage" hx-vals='{"all":"1"}' hx-target="#git-body" hx-swap="innerHTML">Unstage all</button></legend>
+  <ul class="git-files">{{range .Staged}}<li class="git-file">
+    <span class="git-code" title="{{.Description}}">{{.Code}}</span>
+    <span class="git-path">{{.Path}}</span>
+    <button type="button" hx-post="/git/unstage" hx-vals='{"path":"{{.Path}}"}' hx-target="#git-body" hx-swap="innerHTML">Unstage</button>
+  </li>{{end}}</ul>
+</fieldset>
+{{end}}
+{{if .Unstaged}}
+<fieldset class="git-group">
+  <legend>Not staged <button type="button" class="git-all" hx-post="/git/stage" hx-vals='{"all":"1"}' hx-target="#git-body" hx-swap="innerHTML">Stage all</button></legend>
+  <ul class="git-files">{{range .Unstaged}}<li class="git-file">
+    <span class="git-code" title="{{.Description}}">{{.Code}}</span>
+    <span class="git-path">{{.Path}}</span>
+    <button type="button" hx-post="/git/stage" hx-vals='{"path":"{{.Path}}"}' hx-target="#git-body" hx-swap="innerHTML">Stage</button>
+  </li>{{end}}</ul>
+</fieldset>
+{{end}}
+{{if and (not .Staged) (not .Unstaged)}}<p class="empty">No changes since the last commit.</p>{{end}}
+<form class="git-commit" hx-post="/git/commit" hx-target="#git-body" hx-swap="innerHTML">
+  <input name="message" id="git-message" placeholder="Commit message" autocomplete="off"{{if not .Staged}} disabled{{end}}>
+  <button type="submit"{{if not .Staged}} disabled title="Stage a file to commit it"{{end}}>Commit</button>
+</form>
+<div class="git-actions">
+  <button type="button" hx-post="/git/push" hx-target="#git-body" hx-swap="innerHTML"
+          title="Push the commits of this branch to its remote">Push</button>
+  <button type="button" hx-get="/git" hx-target="#git-body" hx-swap="innerHTML" title="Read the working tree again">↻ Refresh</button>
+</div>
+{{end}}
+{{if .Output}}<pre class="git-output">{{.Output}}</pre>{{end}}{{end}}
 
 {{define "render"}}{{with .Render}}{{if .Books}}<details class="render">
   <summary title="Build each selected topic into one flat document and render it">Render</summary>

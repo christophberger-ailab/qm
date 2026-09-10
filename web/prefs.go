@@ -69,6 +69,69 @@ func defaultPrefsFile() string {
 	return filepath.Join(dir, "qm", "render.json")
 }
 
+// recentFileForPrefs returns the file that holds the recently opened
+// project paths, beside the render prefs, or "" when persistence is
+// disabled. It is a file of its own because render.json is a map keyed by
+// project root, with no room for a project-independent entry.
+func recentFileForPrefs(prefsFile string) string {
+	if prefsFile == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(prefsFile), "recent.json")
+}
+
+// maxRecent is how many project paths the Open field's dropdown offers.
+// Ten is what fits in a glance; older paths drop off the end.
+const maxRecent = 10
+
+// rememberRoot puts dir at the head of the recently opened projects, so
+// the Open dropdown offers the most recent one first and never lists the
+// same project twice. The caller must hold s.mu.
+func (s *server) rememberRoot(dir string) {
+	if dir == "" {
+		return
+	}
+	s.recent = append([]string{dir}, slices.DeleteFunc(s.recent, func(p string) bool {
+		return p == dir
+	})...)
+	if len(s.recent) > maxRecent {
+		s.recent = s.recent[:maxRecent]
+	}
+	s.saveRecent()
+}
+
+// saveRecent writes the recent paths. Like the prefs, persistence is best
+// effort: a failure only loses the list across restarts. The caller must
+// hold s.mu.
+func (s *server) saveRecent() {
+	if s.recentFile == "" {
+		return
+	}
+	b, err := json.MarshalIndent(s.recent, "", "  ")
+	if err != nil {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(s.recentFile), 0o755); err != nil {
+		return
+	}
+	os.WriteFile(s.recentFile, b, 0o644)
+}
+
+// loadRecent reads the recent paths. A missing or unreadable file just
+// means no project was opened through the field yet.
+func (s *server) loadRecent() {
+	s.recent = nil
+	if s.recentFile == "" {
+		return
+	}
+	if b, err := os.ReadFile(s.recentFile); err == nil {
+		json.Unmarshal(b, &s.recent)
+	}
+	if len(s.recent) > maxRecent {
+		s.recent = s.recent[:maxRecent]
+	}
+}
+
 // cssDirForPrefs returns the directory that holds the custom preview
 // stylesheets, beside the render prefs, or "" when persistence is
 // disabled.

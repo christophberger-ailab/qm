@@ -1,5 +1,75 @@
 // Quarto Manager - app behavior (plain ES6, no build step)
 
+// Open field
+//
+// The field shows the last element of the open project's path: the folder
+// name is what tells one project from another, and the whole path only
+// makes the field too narrow to read. The full path rides along in
+// data-full and is what the submit sends, so the short label still opens
+// the right project. Typing or pasting drops the full path, which is what
+// lets a pasted path be opened as written.
+
+function openPathInput() {
+  return document.getElementById('open-path');
+}
+
+// showRecent opens or closes the dropdown of recently opened projects.
+function showRecent(on) {
+  var menu = document.getElementById('open-recent');
+  var toggle = document.getElementById('open-recent-toggle');
+  if (menu) {
+    menu.hidden = !on;
+  }
+  if (toggle) {
+    toggle.setAttribute('aria-expanded', on ? 'true' : 'false');
+  }
+}
+
+// pickRecent puts a chosen project into the field -- short label, full
+// path, full path as the tooltip -- and opens it.
+function pickRecent(path, label) {
+  var input = openPathInput();
+  if (input) {
+    input.value = label;
+    input.dataset.full = path;
+    input.title = path;
+  }
+  showRecent(false);
+  htmx.ajax('POST', '/open', {
+    target: '#main',
+    swap: 'innerHTML',
+    values: { path: path }
+  });
+}
+
+document.body.addEventListener('click', function (evt) {
+  var toggle = evt.target.closest('#open-recent-toggle');
+  if (toggle) {
+    var menu = document.getElementById('open-recent');
+    showRecent(!!menu && menu.hidden);
+    return;
+  }
+  var entry = evt.target.closest('.path-recent');
+  if (entry) {
+    pickRecent(entry.dataset.path, entry.textContent.trim());
+    return;
+  }
+  // A click anywhere else closes the dropdown, the way a menu closes.
+  if (!evt.target.closest('.path-field')) {
+    showRecent(false);
+  }
+});
+
+// A field the user has typed or pasted into no longer stands for the
+// project it was showing, so the full path behind it is dropped and the
+// text itself is what gets opened.
+document.body.addEventListener('input', function (evt) {
+  if (evt.target.id === 'open-path') {
+    evt.target.dataset.full = '';
+    evt.target.title = evt.target.value;
+  }
+});
+
 var sortableInstances = [];
 
 // Collapsed branches, keyed by each node's data-key. #tree is fully
@@ -576,6 +646,14 @@ document.body.addEventListener('htmx:configRequest', function (evt) {
   var elt = evt.detail && evt.detail.elt;
   if (elt && elt.classList && elt.classList.contains('new-file-form')) {
     evt.detail.parameters.after = currentPath || '';
+  }
+  // The Open field posts the label it shows; the project it stands for is
+  // the full path behind it, which is what the server has to be given.
+  if (elt && elt.classList && elt.classList.contains('open-form')) {
+    var input = openPathInput();
+    if (input && input.dataset.full) {
+      evt.detail.parameters.path = input.dataset.full;
+    }
   }
 });
 

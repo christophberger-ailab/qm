@@ -107,6 +107,14 @@ whole project, and runs renders in the background from the same flow
 `qm render` uses. The render selection and the page last open are remembered
 per project in `<user config dir>/qm/render.json`.
 
+The Open field shows the last element of the project's path and offers the ten
+projects opened before, remembered in `<user config dir>/qm/recent.json`; a
+full path can still be typed or pasted into it. The Git button beside Render
+opens a panel that lists the changes since the last commit, stages and unstages
+them file by file or all at once, commits them, and pushes the branch. It runs
+the `git` command, so the repository's hooks, credential helpers and config
+apply as they do in a terminal.
+
 ## How a project is set up
 
 `qm` expects a Quarto project laid out along three profile axes.
@@ -192,6 +200,7 @@ internal/qmcore/     axes, selections, profiles, the render matrix, front matter
 internal/bookmaker/  folder tree → one flat document (+ the slide deck)
 internal/bookrender/ the build documents and the `quarto` invocation
 internal/project/    the editable page tree behind the web UI
+internal/gitrepo/    the `git` command behind the web UI's Git panel
 insert/ move/ remove/  the `qm chapters` subcommands
 lint/ flatten/ render/ prepare/ finalize/ web/   the leaf commands
 spec.yaml, spec-*.yaml   the specification each package implements
