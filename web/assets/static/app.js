@@ -726,6 +726,45 @@ document.body.addEventListener('click', function (evt) {
     return;
   }
 
+  // A path in the Git panel: htmx fetches the diff into the pane; the
+  // mark is what says whose diff is standing there, since the pane keeps
+  // showing it while the user reads on down the list.
+  var gitPath = evt.target.closest('.git-path');
+  if (gitPath) {
+    document.querySelectorAll('#git-body .git-path.selected').forEach(function (el) {
+      el.classList.remove('selected');
+    });
+    gitPath.classList.add('selected');
+    return;
+  }
+
+  // Close the diff, leaving the file lists as they are: nothing has to be
+  // asked of the server for that, so nothing is.
+  if (evt.target.closest('.git-diff-close')) {
+    var pane = document.getElementById('git-diff');
+    if (pane) {
+      pane.innerHTML = '';
+    }
+    document.querySelectorAll('#git-body .git-path.selected').forEach(function (el) {
+      el.classList.remove('selected');
+    });
+    return;
+  }
+
+  // "Open in editor": htmx puts the file in the editor pane, which the
+  // popup covers, so the popup closes; the tree marks the page as the one
+  // open, the way clicking it there would have.
+  var openInEditor = evt.target.closest('.git-diff-open');
+  if (openInEditor) {
+    var details = document.getElementById('git-details');
+    if (details) {
+      details.open = false;
+    }
+    currentPath = openInEditor.dataset.path || null;
+    applySelection();
+    return;
+  }
+
   // Expand all: forget every collapsed branch and reveal each subtree.
   if (evt.target.closest('#expand-all')) {
     collapsed.clear();

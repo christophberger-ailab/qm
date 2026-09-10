@@ -1,7 +1,10 @@
 package web
 
 import (
+	"errors"
 	"net/http"
+	"os"
+	"slices"
 	"strings"
 
 	"github.com/christophberger-ailab/qm/internal/gitrepo"
@@ -149,4 +152,133 @@ func (s *server) gitPushHandler(w http.ResponseWriter, r *http.Request) {
 		v.Message, v.Error = "", err.Error()
 	}
 	s.renderGit(w, v)
+}
+
+// diffView is the diff pane inside the Git panel: the change to the one
+// file the user clicked, split into the lines the pane colours.
+type diffView struct {
+	Path string
+	// Staged says which of a file's two diffs is shown — what the next
+	// commit would carry, or what it would leave behind — because a file
+	// changed in both places has one of each and they differ.
+	Staged bool
+	// Added and Removed count the lines of the diff, so the header can
+	// say how big the change is without the user reading it.
+	Added   int
+	Removed int
+	// Editable says whether the pane offers to open the file in the
+	// editor: a file that is gone from the working tree, one git calls
+	// binary, and one that lies outside the open project have nothing the
+	// editor could show.
+	Editable bool
+	Lines    []diffLine
+	Error    string
+}
+
+// diffLine is one line of a unified diff and what it is: an added line, a
+// removed one, the "@@" that starts a hunk, one of git's notes about the
+// file itself, or a line of unchanged context.
+type diffLine struct {
+	Kind string
+	Text string
+}
+
+// gitDiffHandler answers with the diff of one path. It is a GET because
+// nothing changes: the pane is a view of the working tree, and asking for
+// it again is what the file lists do after every operation.
+func (s *server) gitDiffHandler(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	v := diffView{Path: q.Get("path"), Staged: q.Get("staged") != ""}
+	if err := s.readDiff(&v); err != nil {
+		v.Error = err.Error()
+	}
+	s.render(w, "git-diff", v)
+}
+
+// readDiff fills the pane from the working tree. What it cannot do it
+// reports, and the pane shows that instead of a diff.
+func (s *server) readDiff(v *diffView) error {
+	root, abs, err := s.gitPath(v.Path)
+	if err != nil {
+		return err
+	}
+	out, err := gitrepo.Diff(root, v.Path, v.Staged)
+	if err != nil {
+		return err
+	}
+	lines, added, removed, binary := diffLines(out)
+	v.Lines, v.Added, v.Removed = lines, added, removed
+	// The file has to be there to be opened, and to be text to be worth
+	// opening; git is what says it is not the second.
+	if !binary {
+		st, err := os.Stat(abs)
+		v.Editable = err == nil && st.Mode().IsRegular()
+	}
+	return nil
+}
+
+// gitPath resolves a path the panel sent against the open project. The
+// paths git reports are the panel's own, but they arrive back as a query
+// parameter, and the same rule that keeps the editor inside the project
+// keeps the diff there: without it, a path of git's `--no-index` form
+// would read any file on the machine.
+func (s *server) gitPath(rel string) (root, abs string, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.root == "" {
+		return "", "", errors.New("no project open")
+	}
+	if strings.TrimSpace(rel) == "" {
+		return "", "", errors.New("no file named")
+	}
+	abs, err = s.resolvePath(rel)
+	return s.root, abs, err
+}
+
+// diffHeads are the lines git writes above a file's first hunk that only
+// repeat what the pane's header already says. They are dropped, so what
+// is left is the change itself; everything else git says up there — a new
+// or deleted file, a rename, a mode change, "Binary files ... differ" —
+// is kept, because it is the whole story for a file that has no hunks.
+var diffHeads = []string{"diff --git ", "diff --no-index ", "index ", "--- ", "+++ "}
+
+// diffLines classifies the lines of a unified diff and counts what the
+// change adds and removes.
+//
+// A line is read as one of git's own notes only above the first "@@": a
+// removed line reading "-- a note" arrives as "--- a note" and is a
+// deletion, not the "---" header, and once the hunks start, only the first
+// character of a line says what it is.
+func diffLines(out string) (lines []diffLine, added, removed int, binary bool) {
+	inHunk := false
+	for _, text := range strings.Split(strings.TrimSuffix(out, "\n"), "\n") {
+		switch {
+		case text == "" && !inHunk:
+			continue
+		case strings.HasPrefix(text, "@@"):
+			inHunk = true
+			lines = append(lines, diffLine{Kind: "hunk", Text: text})
+		case !inHunk:
+			if strings.HasPrefix(text, "Binary files ") || text == "GIT binary patch" {
+				binary = true
+			}
+			if slices.ContainsFunc(diffHeads, func(h string) bool { return strings.HasPrefix(text, h) }) {
+				continue
+			}
+			lines = append(lines, diffLine{Kind: "meta", Text: text})
+		case strings.HasPrefix(text, "+"):
+			added++
+			lines = append(lines, diffLine{Kind: "add", Text: text})
+		case strings.HasPrefix(text, "-"):
+			removed++
+			lines = append(lines, diffLine{Kind: "del", Text: text})
+		case strings.HasPrefix(text, `\`):
+			// "\ No newline at end of file" is a note about the line
+			// above it, not a line of the file.
+			lines = append(lines, diffLine{Kind: "meta", Text: text})
+		default:
+			lines = append(lines, diffLine{Kind: "ctx", Text: text})
+		}
+	}
+	return lines, added, removed, binary
 }

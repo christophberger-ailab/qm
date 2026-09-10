@@ -1,6 +1,6 @@
 // Package gitrepo is the thin layer between qm and the `git` command: the
-// working tree's status, and the four operations the web UI offers on it —
-// stage, unstage, commit, push.
+// working tree's status, the diff of one file in it, and the four
+// operations the web UI offers on it — stage, unstage, commit, push.
 //
 // It shells out rather than linking a Git implementation in: the projects
 // qm manages are ordinary clones the user also works with from a terminal,
@@ -246,11 +246,59 @@ func Push(dir string) (string, error) {
 	return run(dir, "push")
 }
 
+// Diff is the change to one path, as `git diff` writes it.
+//
+// staged asks for the diff between HEAD and the index — what the next
+// commit would carry — rather than the one between the index and the
+// working tree. An untracked file is in neither, so it is diffed against
+// an empty file instead, which is what makes a file the panel lists as new
+// show its content rather than nothing at all.
+//
+// The external diff drivers and textconv filters a repository may
+// configure are turned off: they are meant for a terminal, may open a
+// program of their own, and what the panel colours are the lines git
+// itself produces.
+func Diff(dir, path string, staged bool) (string, error) {
+	if strings.TrimSpace(path) == "" {
+		return "", errors.New("no file named")
+	}
+	args := []string{"diff", "--no-ext-diff", "--no-color", "--find-renames"}
+	switch {
+	case staged:
+		args = append(args, "--cached")
+	case !tracked(dir, path):
+		// --no-index reports "they differ" as exit status 1, which here
+		// is the answer rather than a failure.
+		return runAllowing(dir, 1, "diff", "--no-ext-diff", "--no-color", "--no-index", "--", devNull, path)
+	}
+	return run(dir, append(args, "--", path)...)
+}
+
+// devNull is the empty file git compares an untracked one against. Git
+// spells it this way on every platform, Windows included: the name is
+// recognised by git itself, not handed to the operating system.
+const devNull = "/dev/null"
+
+// tracked reports whether the index knows the path. A file staged for the
+// first commit it appears in counts: the index is where a diff against
+// HEAD finds it.
+func tracked(dir, path string) bool {
+	_, err := run(dir, "ls-files", "--error-unmatch", "--", path)
+	return err == nil
+}
+
 // run executes git in dir and returns its combined output. Git says what
 // went wrong on stderr, and that text is the whole point of showing the
 // output in the panel, so failures carry it rather than just the exit
 // status.
 func run(dir string, args ...string) (string, error) {
+	return runAllowing(dir, 0, args...)
+}
+
+// runAllowing is run with one non-zero exit status treated as success:
+// `git diff --no-index` says "the two differ" by exiting 1, and there that
+// is the answer, not a failure. An ok of 0 allows nothing.
+func runAllowing(dir string, ok int, args ...string) (string, error) {
 	if !Available() {
 		return "", ErrNoGit
 	}
@@ -266,6 +314,10 @@ func run(dir string, args ...string) (string, error) {
 	if err != nil {
 		if ctx.Err() != nil {
 			return string(out), fmt.Errorf("git %s timed out after %s", args[0], Timeout)
+		}
+		var exit *exec.ExitError
+		if ok != 0 && errors.As(err, &exit) && exit.ExitCode() == ok {
+			return string(out), nil
 		}
 		if msg := strings.TrimSpace(string(out)); msg != "" {
 			return string(out), errors.New(msg)

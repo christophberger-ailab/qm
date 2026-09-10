@@ -111,9 +111,10 @@ The Open field shows the last element of the project's path and offers the ten
 projects opened before, remembered in `<user config dir>/qm/recent.json`; a
 full path can still be typed or pasted into it. The Git button beside Render
 opens a panel that lists the changes since the last commit, stages and unstages
-them file by file or all at once, commits them, and pushes the branch. It runs
-the `git` command, so the repository's hooks, credential helpers and config
-apply as they do in a terminal.
+them file by file or all at once, commits them, and pushes the branch. Clicking
+a path shows that file's diff, coloured line by line, with a button that opens
+the file in the editor. It runs the `git` command, so the repository's hooks,
+credential helpers and config apply as they do in a terminal.
 
 ## How a project is set up
 

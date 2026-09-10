@@ -103,7 +103,8 @@
   <legend>Staged <button type="button" class="git-all" hx-post="/git/unstage" hx-vals='{"all":"1"}' hx-target="#git-body" hx-swap="innerHTML">Unstage all</button></legend>
   <ul class="git-files">{{range .Staged}}<li class="git-file">
     <span class="git-code" title="{{.Description}}">{{.Code}}</span>
-    <span class="git-path">{{.Path}}</span>
+    <button type="button" class="git-path" title="{{.Description}} — show the diff"
+            hx-get="/git/diff?path={{urlquery .Path}}&amp;staged=1" hx-target="#git-diff" hx-swap="innerHTML">{{.Path}}</button>
     <button type="button" hx-post="/git/unstage" hx-vals='{"path":"{{.Path}}"}' hx-target="#git-body" hx-swap="innerHTML">Unstage</button>
   </li>{{end}}</ul>
 </fieldset>
@@ -113,12 +114,18 @@
   <legend>Not staged <button type="button" class="git-all" hx-post="/git/stage" hx-vals='{"all":"1"}' hx-target="#git-body" hx-swap="innerHTML">Stage all</button></legend>
   <ul class="git-files">{{range .Unstaged}}<li class="git-file">
     <span class="git-code" title="{{.Description}}">{{.Code}}</span>
-    <span class="git-path">{{.Path}}</span>
+    <button type="button" class="git-path" title="{{.Description}} — show the diff"
+            hx-get="/git/diff?path={{urlquery .Path}}" hx-target="#git-diff" hx-swap="innerHTML">{{.Path}}</button>
     <button type="button" hx-post="/git/stage" hx-vals='{"path":"{{.Path}}"}' hx-target="#git-body" hx-swap="innerHTML">Stage</button>
   </li>{{end}}</ul>
 </fieldset>
 {{end}}
 {{if and (not .Staged) (not .Unstaged)}}<p class="empty">No changes since the last commit.</p>{{end}}
+{{/* The diff of the file last clicked. It sits inside the body, so every
+     operation clears it: staging a file moves it to the other list, where
+     its diff is a different one, and a diff left standing would be of a
+     state that no longer exists. */ -}}
+<div id="git-diff">{{if or .Staged .Unstaged}}<p class="empty git-diff-hint">Click a path to see its diff.</p>{{end}}</div>
 <form class="git-commit" hx-post="/git/commit" hx-target="#git-body" hx-swap="innerHTML">
   <input name="message" id="git-message" placeholder="Commit message" autocomplete="off"{{if not .Staged}} disabled{{end}}>
   <button type="submit"{{if not .Staged}} disabled title="Stage a file to commit it"{{end}}>Commit</button>
@@ -130,6 +137,26 @@
 </div>
 {{end}}
 {{if .Output}}<pre class="git-output">{{.Output}}</pre>{{end}}{{end}}
+
+{{/* One file's diff, shown for reading only: the Git panel is where the
+     changes are looked over, and the editor is where they are made, so the
+     pane's one way of changing anything is the button that opens the file
+     there. */}}
+{{define "git-diff"}}<div class="git-diff">
+  <div class="git-diff-head">
+    <span class="git-diff-path" title="{{.Path}}">{{.Path}}</span>
+    <span class="git-diff-which">{{if .Staged}}staged{{else}}not staged{{end}}</span>
+    {{if .Added}}<span class="git-diff-added">+{{.Added}}</span>{{end}}
+    {{if .Removed}}<span class="git-diff-removed">−{{.Removed}}</span>{{end}}
+    {{if .Editable}}<button type="button" class="git-diff-open" data-path="{{.Path}}" hx-get="/content?path={{urlquery .Path}}"
+            hx-target="#content" hx-swap="innerHTML" title="Open this file in the editor">Open in editor</button>{{end}}
+    <button type="button" class="git-diff-close" title="Close the diff" aria-label="Close the diff">✕</button>
+  </div>
+  {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
+  {{/* Each line is a block of its own, so the lines are not separated by a
+       newline as well: that would show the diff double-spaced. */ -}}
+  {{if .Lines}}<pre class="git-diff-body">{{range .Lines}}<span class="git-dl git-dl-{{.Kind}}">{{.Text}}</span>{{end}}</pre>{{else if not .Error}}<p class="empty">Nothing to show: this side of the file has no textual change.</p>{{end}}
+</div>{{end}}
 
 {{define "render"}}{{with .Render}}{{if .Books}}<details class="render">
   <summary title="Build each selected topic into one flat document and render it">Render</summary>
