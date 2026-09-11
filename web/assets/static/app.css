@@ -803,6 +803,17 @@ li.page.unordered>.row>.title {
   color: var(--muted);
 }
 
+/* A draft -- `draft: true` in the page's frontmatter -- is greyed out: the
+   page is in the tree, but it is not part of what a render publishes yet.
+   The whole row goes grey rather than the title alone, so a draft reads as
+   one whether it is numbered or not. Placed before the bad-fences rule,
+   which keeps unmatched fences visible as the warning they are even on a
+   draft. */
+li.page.draft>.row,
+li.page.draft>.row>.title {
+  color: var(--muted);
+}
+
 /* Unmatched Quarto block fences: muted orange title. Placed after the
    unordered rule so it wins for pages that are both. */
 li.page.bad-fences>.row>.title {

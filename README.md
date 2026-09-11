@@ -107,6 +107,13 @@ whole project, and runs renders in the background from the same flow
 `qm render` uses. The render selection and the page last open are remembered
 per project in `<user config dir>/qm/render.json`.
 
+A page marked `draft: true` in its front matter is greyed out in the tree: it
+is there, but it is not part of what a render publishes yet. A page written for
+one audience — an `_FW` or `_POL` suffix on its name or on a folder above it —
+is previewed inside that audience's `::: fw` / `::: pol` div, the way the
+flattener wraps it, so the custom preview stylesheet tints and marks the whole
+page just as it marks such a block written into the page by hand.
+
 The Open field shows the last element of the project's path and offers the ten
 projects opened before, remembered in `<user config dir>/qm/recent.json`; a
 full path can still be typed or pasted into it. The Git button beside Render

@@ -26,6 +26,27 @@ func TestParseFrontmatter(t *testing.T) {
 	}
 }
 
+// `draft: true` is Quarto's own way of saying a page is not finished. The
+// tree shows such a page greyed out, so the flag has to come out of the
+// frontmatter -- and nothing else may look like it.
+func TestParseFrontmatterDraft(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		src  string
+		want bool
+	}{
+		{"true", "---\ntitle: X\ndraft: true\n---\nbody\n", true},
+		{"false", "---\ntitle: X\ndraft: false\n---\nbody\n", false},
+		{"absent", "---\ntitle: X\n---\nbody\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ParseFrontmatter([]byte(tc.src)).Draft; got != tc.want {
+				t.Errorf("Draft = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestParseFrontmatterNoOrder(t *testing.T) {
 	fm := ParseFrontmatter([]byte("---\ntitle: X\n---\nbody\n"))
 	if fm.Order != nil {

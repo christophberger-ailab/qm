@@ -106,6 +106,29 @@ func TestLoadTree(t *testing.T) {
 	}
 }
 
+// A page marked `draft: true` is loaded like any other -- it is in the
+// project and the tree lists it -- but carries the flag the UI greys it by.
+func TestLoadMarksDrafts(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "wip.qmd"),
+		[]byte("---\ntitle: WIP\norder: 1\ndraft: true\n---\n# WIP\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "done.qmd"),
+		[]byte("---\ntitle: Done\norder: 2\n---\n# Done\n"), 0o644)
+	tree, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := paths(tree.Pages); !reflect.DeepEqual(got, []string{"wip.qmd", "done.qmd"}) {
+		t.Fatalf("pages = %v, want [wip.qmd done.qmd]", got)
+	}
+	if !tree.Pages[0].Draft {
+		t.Error("wip.qmd is a draft but is not marked as one")
+	}
+	if tree.Pages[1].Draft {
+		t.Error("done.qmd is marked as a draft")
+	}
+}
+
 func TestLoadTitleFallback(t *testing.T) {
 	root := t.TempDir()
 	os.WriteFile(filepath.Join(root, "untitled.qmd"), []byte("body\n"), 0o644)
