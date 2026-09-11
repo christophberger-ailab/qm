@@ -524,6 +524,15 @@ button,
   text-decoration: none;
 }
 
+/* A button laid out as a flex box says so even while it is hidden, and a
+   `display` of any kind wins over the browser's own `[hidden]` rule -- so
+   without this the Overwrite button, shown only after a save was refused,
+   would sit in the header from the start. */
+button[hidden],
+.button[hidden] {
+  display: none;
+}
+
 button:hover,
 .button:hover {
   background: var(--accent-bg);

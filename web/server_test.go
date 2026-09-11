@@ -148,6 +148,22 @@ func TestPreviewWrapsATargetGroupPage(t *testing.T) {
 	}
 }
 
+// The Overwrite button is offered only after a save was refused, and the
+// template ships it with the `hidden` attribute. Every button in the app is
+// laid out as a flex box, and any `display` beats the browser's own rule
+// for `[hidden]`, so the stylesheet has to hide a hidden button itself.
+func TestHiddenButtonsStayHidden(t *testing.T) {
+	srv, _ := testServer(t)
+	css := get(t, srv, "/static/app.css").Body.String()
+	if !strings.Contains(css, "button[hidden]") {
+		t.Error("the stylesheet does not hide a button carrying the hidden attribute")
+	}
+	body := get(t, srv, "/content?path=chapter2/second.qmd").Body.String()
+	if !strings.Contains(body, `id="save-overwrite" hidden`) {
+		t.Errorf("the Overwrite button is not shipped hidden:\n%s", body)
+	}
+}
+
 // A move reorders the tree on disk and leaves every _quarto*.yml config
 // alone: chapter lists are no longer maintained by the sorter.
 func TestMoveReordersAndLeavesConfigsAlone(t *testing.T) {
