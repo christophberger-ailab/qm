@@ -277,6 +277,11 @@ func TestAddAlternateCSSFile(t *testing.T) {
 	if !strings.Contains(body, `id="preview-css-select"`) {
 		t.Errorf("content pane missing stylesheet dropdown once two files exist:\n%s", body)
 	}
+	// The dropdown says how the preview is styled, so it stands below the
+	// preview it describes rather than above it.
+	if preview, sel := strings.Index(body, `id="preview"`), strings.Index(body, `id="preview-css-select"`); !(preview >= 0 && preview < sel) {
+		t.Errorf("the stylesheet dropdown is not below the preview:\n%s", body)
+	}
 	for _, want := range []string{`value="custom.css"`, `value="dark.css"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("stylesheet dropdown missing option %q:\n%s", want, body)

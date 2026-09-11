@@ -491,9 +491,9 @@ func TestEditorAssetOrder(t *testing.T) {
 
 // The editor pane carries the vim toggle, which starts unpressed: vim mode
 // is a choice the user makes, not the default. The toggle sits in the
-// editor's own column -- between the form that holds the text and the
-// divider the preview begins after -- so that it stands above the editor it
-// acts on rather than above the preview.
+// editor's own column -- below the text it acts on and above the divider
+// the preview begins after -- so it is out of the way of the text rather
+// than standing over the preview.
 func TestContentServesVimToggle(t *testing.T) {
 	srv, _ := testServer(t)
 	body := get(t, srv, "/content?path=index.qmd").Body.String()
@@ -503,11 +503,38 @@ func TestContentServesVimToggle(t *testing.T) {
 	if !strings.Contains(body, `id="vim-toggle" aria-pressed="false"`) {
 		t.Error("vim toggle does not start unpressed")
 	}
-	form := strings.Index(body, `class="edit-form"`)
+	text := strings.Index(body, `class="file-content"`)
 	toggle := strings.Index(body, `id="vim-toggle"`)
 	divider := strings.Index(body, `id="preview-divider"`)
-	if !(form < toggle && toggle < divider) {
-		t.Errorf("vim toggle is not in the editor column:\n%s", body)
+	if !(text < toggle && toggle < divider) {
+		t.Errorf("vim toggle is not below the editor text in its own column:\n%s", body)
+	}
+}
+
+// The buttons that page through the book sit below the preview, and start
+// out of use: which pages they lead to is read from the tree in the
+// browser, so until that has been read there is nothing to lead to.
+func TestContentServesPageFlipButtons(t *testing.T) {
+	srv, _ := testServer(t)
+	body := get(t, srv, "/content?path=index.qmd").Body.String()
+	for _, want := range []string{`id="page-prev"`, `id="page-next"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("editor pane has no %s button:\n%s", want, body)
+		}
+	}
+	for _, button := range []string{`id="page-prev"`, `id="page-next"`} {
+		at := strings.Index(body, button)
+		if at < 0 {
+			continue
+		}
+		if rest := body[at:]; !strings.Contains(rest[:min(len(rest), 120)], "disabled") {
+			t.Errorf("%s does not start out of use:\n%s", button, body)
+		}
+	}
+	preview := strings.Index(body, `id="preview"`)
+	prev := strings.Index(body, `id="page-prev"`)
+	if !(preview >= 0 && preview < prev) {
+		t.Errorf("the flip buttons are not below the preview:\n%s", body)
 	}
 }
 

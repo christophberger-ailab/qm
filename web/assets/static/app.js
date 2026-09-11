@@ -317,6 +317,85 @@ function applySelection() {
   document.querySelectorAll('#tree li.page').forEach(function (li) {
     li.classList.toggle('selected', !!currentPath && li.dataset.path === currentPath);
   });
+  // The flip buttons name the pages around the selected one, so they are
+  // answered from the same tree at the same moments.
+  applyPageNav();
+}
+
+// Page flipping
+//
+// The two buttons below the preview open the page before and the page after
+// the open one. The tree standing in the page is what they read: it holds
+// the project in the order the book has it, it is refreshed every two
+// seconds, and reading it there is what keeps the buttons right while pages
+// are created, deleted, and dragged around under the editor.
+
+// pageLinks are the tree's page entries, in the order the tree lists them.
+// Only a page carries a link -- a folder that is not a page of its own is a
+// span -- so this is exactly what can be flipped to.
+function pageLinks() {
+  return Array.prototype.slice.call(document.querySelectorAll('#tree a.title'));
+}
+
+// pageNeighbour is the tree entry step places away from the open page, or
+// null when there is none: at either end of the book, and whenever the
+// editor holds something the tree does not list, such as a file opened from
+// the Git panel.
+function pageNeighbour(step) {
+  var links = pageLinks();
+  var at = -1;
+  for (var i = 0; i < links.length; i++) {
+    var li = links[i].closest('li.page');
+    if (li && currentPath && li.dataset.path === currentPath) {
+      at = i;
+      break;
+    }
+  }
+  if (at < 0) {
+    return null;
+  }
+  var to = at + step;
+  return to >= 0 && to < links.length ? links[to] : null;
+}
+
+// applyPageNav offers each button the page it would open, by name, and
+// takes it out of use where there is no such page.
+function applyPageNav() {
+  [['page-prev', -1, 'The page before this one'],
+  ['page-next', 1, 'The page after this one']].forEach(function (nav) {
+    var button = document.getElementById(nav[0]);
+    if (!button) {
+      return;
+    }
+    var link = pageNeighbour(nav[1]);
+    button.disabled = !link;
+    button.title = link ? link.textContent.trim() : nav[2] + ': there is none';
+  });
+}
+
+// flipPage opens the neighbouring page through its own entry in the tree,
+// so that flipping is the same act as clicking the page there -- the
+// unsaved-edit confirmation and the tree's selection included. A page
+// inside a collapsed branch is revealed the way a restored one is.
+function flipPage(step) {
+  var link = pageNeighbour(step);
+  if (!link) {
+    return;
+  }
+  link.click();
+  revealSelection();
+}
+
+// Image freshness
+//
+// The preview's images are files the browser fetches and caches by URL, and
+// an image replaced on disk keeps the URL the page names it by -- so the
+// browser would go on showing the picture it cached. The URLs carry a stamp
+// (see preview.js) that is renewed here: once at load, and again whenever
+// the user asks for the page from disk again, which is what makes ↻ Reload
+// reach the images as well as the text.
+function bumpMediaVersion() {
+  setMediaVersion(String(Date.now()));
 }
 
 // revealSelection expands the collapsed branches above the selected page,
@@ -585,6 +664,7 @@ document.body.addEventListener('htmx:beforeSwap', function (evt) {
 });
 
 document.addEventListener('DOMContentLoaded', function () {
+  bumpMediaVersion(); // before the first preview, which builds image URLs
   loadCollapsed();
   initTree();
   initDivider('divider', 'tree-pane', 'treePaneWidth', 'left');
@@ -702,6 +782,21 @@ document.body.addEventListener('click', function (evt) {
   // left scrolled to. htmx posts the button itself, so this only marks it.
   if (evt.target.closest('#render-run')) {
     renderLogFollow = true;
+  }
+
+  // Reload asks the server for the page's text again; its images are the
+  // browser's to fetch, and a renewed stamp is what makes it fetch them
+  // instead of showing what it cached. htmx carries out the request
+  // itself -- this only marks the images as due.
+  if (evt.target.closest('#content-reload')) {
+    bumpMediaVersion();
+  }
+
+  // The buttons below the preview: one page back, one page on.
+  var flip = evt.target.closest('#page-prev, #page-next');
+  if (flip) {
+    flipPage(flip.id === 'page-prev' ? -1 : 1);
+    return;
   }
 
   // Overwrite: the user answering a refused save with "mine wins".

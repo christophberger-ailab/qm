@@ -41,6 +41,8 @@ constraints:
       3-0-3: A change to the file that the tree cannot account for -- an edit made outside the browser -- is answered as a conflict: the save is refused, the file is left as it is, and the user is offered the choice between reloading that version and overwriting it
       3-0-4: A replay is reported to the user, because the editor still shows the text from before it and only a reload brings the pane in line
       3-1: A Markdown preview of the edited page sits to the right of the editor, separated by a draggable divider
+      3-1-1: Two buttons below the preview open the page before and the page after the open one, in the order the page tree lists them; each names the page it would open, and the one at either end of the project is shown out of use
+      3-1-2: The buttons flip to a page the way a click in the tree opens it, so a page inside a collapsed branch is revealed, the tree's selection follows, and an edit that could not be saved is still asked about before the editor is replaced
       3-2: The preview follows the editor's content as the user types
       3-3: A toggle button in the content header opens and closes the preview; the choice is remembered across sessions
       3-4: The preview is rendered in the browser from the embedded marked library; it approximates the page, it is not a Quarto render
@@ -50,8 +52,10 @@ constraints:
       3-5-2: A relative image path resolves against the folder the edited page sits in
       3-5-3: The route serves image files only, and only from inside the open project
       3-5-4: An image standing alone in a paragraph -- a blank line before and after it -- is shown with its alt text as a caption below the image, the way Quarto renders such an image; an image inside a paragraph of text, and one without alt text, get no caption
+      3-5-5: Reloading a page from disk shows its images as they are on disk, an image replaced under the same name included: the image URLs carry a stamp that the reload renews, so the browser fetches the files again instead of showing what it cached
+      3-5-6: The stamp changes only when the page is loaded or reloaded, so the images are not fetched again for every keystroke the preview follows
       3-6: The editor is CodeMirror, embedded in the binary like the other assets, and highlights the page's YAML frontmatter and Markdown
-      3-6-1: A toggle button in the editor's own column, above the editor text, switches Vim keybindings on and off; the choice is remembered across sessions
+      3-6-1: A toggle button in the editor's own column, below the editor text, switches Vim keybindings on and off; the choice is remembered across sessions
       3-6-2: Vim mode is off unless the user turns it on
       3-6-3: "`:w` saves the page immediately instead of waiting for the autosave delay"
       3-6-4: The textarea remains the field the edit form posts, so autosave and the preview are unaffected by the editor
@@ -86,7 +90,7 @@ constraints:
       7-4-1: The editor lets the user add an alternate stylesheet by name and switch which one it is editing once more than one exists
       7-5: The app links the active custom preview stylesheet document-wide after `/static/app.css`, the route serves only the requested stored stylesheet as `text/css`, and an empty or absent stylesheet has no effect
       7-6: The editor tells the user to scope rules with `.markdown-preview` when they should affect only the preview
-      7-7: When more than one custom CSS file exists, a dropdown above the Markdown preview lets the user switch which one is active; the choice is remembered across restarts and the preview reloads to apply the newly selected stylesheet
+      7-7: When more than one custom CSS file exists, a dropdown below the Markdown preview lets the user switch which one is active; the choice is remembered across restarts and the preview reloads to apply the newly selected stylesheet
       8: A search field in the top bar searches the text of all pages of the open project
       8-1: The search is answered from a word index that is rebuilt in the background whenever the project changed on disk, so typing never waits for a scan of the project
       8-2: While the index is being built the field says so, and the query repeats itself until the index is ready
@@ -127,3 +131,4 @@ constraints:
       10-16: The paths the panel sends back are checked the way the editor's are, against the working tree they belong to, since a diff of an arbitrary path would otherwise read any file on the machine
       10-17: Every operation runs at the top of the working tree, because that is what the paths of a status are relative to and the only directory in which git accepts them back; a project that is a subdirectory of a larger repository is therefore managed like one that is a repository of its own
       10-18: The panel lists the whole working tree's changes, so a file outside the open project is shown and staged like any other; only the editor, which addresses pages by their path inside the project, is not offered such a file
+      10-19: The popup keeps one width and one place whether a diff is open or not -- it is as wide as a diff needs from the start and hangs from the right edge of the top bar -- so opening or closing a diff never moves the paths out from under the pointer, and the popup stays inside the window instead of pushing the page sideways
