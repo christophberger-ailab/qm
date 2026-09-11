@@ -217,6 +217,38 @@ function normalizePath(p) {
   return out.join('/');
 }
 
+// Image freshness
+//
+// A browser caches an image by its URL, and an image replaced on disk keeps
+// the name the page addresses it by -- so the URL stays the same and the
+// cached picture is what the preview would go on showing. Every /media URL
+// therefore carries a stamp, and a new stamp is a URL the cache has nothing
+// for, which is what makes the browser fetch the file again. app.js sets
+// it: once when the page loads, and again on every ↻ Reload, so that
+// reloading a page reloads its images along with its text.
+var mediaVersion = '';
+
+function setMediaVersion(version) {
+  mediaVersion = version;
+}
+
+// stampVersion appends the current stamp to a /media URL, as a query
+// parameter and ahead of the fragment: the fragment is not part of what is
+// fetched, so a stamp behind it would be no stamp at all.
+function stampVersion(url, suffix) {
+  if (mediaVersion === '') {
+    return url + suffix;
+  }
+  var fragment = '';
+  var mark = suffix.indexOf('#');
+  if (mark >= 0) {
+    fragment = suffix.slice(mark);
+    suffix = suffix.slice(0, mark);
+  }
+  var sep = suffix === '' ? '?' : '&';
+  return url + suffix + sep + 'v=' + encodeURIComponent(mediaVersion) + fragment;
+}
+
 // mediaURL turns the source of an image on a page into a URL the server
 // serves it from. Pages address their media the way the rendered website
 // does -- `/assets/images/x.png`, relative to the project root, which is
@@ -243,7 +275,7 @@ function mediaURL(src, baseDir) {
   if (rel === '' || rel === '..' || rel.slice(0, 3) === '../') {
     return src;
   }
-  return '/media/' + rel.split('/').map(encodeURIComponent).join('/') + suffix;
+  return stampVersion('/media/' + rel.split('/').map(encodeURIComponent).join('/'), suffix);
 }
 
 // resolveMedia points the images of the rendered page at /media, the only
