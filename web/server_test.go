@@ -104,6 +104,66 @@ func TestOpenRendersTree(t *testing.T) {
 	}
 }
 
+// A page whose frontmatter says `draft: true` is listed like any other,
+// but marked so the stylesheet can grey it out: it is part of the project
+// and not part of what a render publishes.
+func TestTreeMarksDrafts(t *testing.T) {
+	srv, root := testServer(t)
+	page := "---\ntitle: Sketch\norder: 4\ndraft: true\n---\n# Sketch\n"
+	if err := os.WriteFile(filepath.Join(root, "chapter2", "sketch.qmd"), []byte(page), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	body := get(t, srv, "/tree").Body.String()
+	if !strings.Contains(body, `draft" data-path="chapter2/sketch.qmd"`) {
+		t.Errorf("sketch.qmd not marked draft:\n%s", body)
+	}
+	if strings.Contains(body, `draft" data-path="chapter2/second.qmd"`) {
+		t.Errorf("second.qmd wrongly marked draft:\n%s", body)
+	}
+	css := get(t, srv, "/static/app.css").Body.String()
+	if !strings.Contains(css, "li.page.draft>.row") {
+		t.Error("the stylesheet does not grey out a draft page")
+	}
+}
+
+// A page written for one target group -- an `_FW` or `_POL` suffix on its
+// name or on a folder above it -- is previewed inside that group's Quarto
+// div, so the custom stylesheet tints and marks the whole page the way it
+// does a `::: fw` block the page carries itself. The wrapping happens in
+// the browser, out of a Go test's reach; what can be checked here is that
+// the script still does it.
+func TestPreviewWrapsATargetGroupPage(t *testing.T) {
+	preview, err := assets.ReadFile("assets/static/preview.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"var groupSuffix = /_(fw|pol)$/i;",
+		"function targetGroupOf(pagePath)",
+		`'<div class="quarto ' + escapeHTML(group) + '">'`,
+	} {
+		if !strings.Contains(string(preview), want) {
+			t.Errorf("preview.js does not wrap a target group's page, missing %q", want)
+		}
+	}
+}
+
+// The Overwrite button is offered only after a save was refused, and the
+// template ships it with the `hidden` attribute. Every button in the app is
+// laid out as a flex box, and any `display` beats the browser's own rule
+// for `[hidden]`, so the stylesheet has to hide a hidden button itself.
+func TestHiddenButtonsStayHidden(t *testing.T) {
+	srv, _ := testServer(t)
+	css := get(t, srv, "/static/app.css").Body.String()
+	if !strings.Contains(css, "button[hidden]") {
+		t.Error("the stylesheet does not hide a button carrying the hidden attribute")
+	}
+	body := get(t, srv, "/content?path=chapter2/second.qmd").Body.String()
+	if !strings.Contains(body, `id="save-overwrite" hidden`) {
+		t.Errorf("the Overwrite button is not shipped hidden:\n%s", body)
+	}
+}
+
 // A move reorders the tree on disk and leaves every _quarto*.yml config
 // alone: chapter lists are no longer maintained by the sorter.
 func TestMoveReordersAndLeavesConfigsAlone(t *testing.T) {

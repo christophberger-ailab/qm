@@ -14,6 +14,9 @@
 //   - an image standing alone in a paragraph becomes a figure with its alt
 //     text as the caption below it, the way Pandoc's implicit figures --
 //     which Quarto builds on -- come out (see captionFigures),
+//   - a page written for one target group -- an `_FW` or `_POL` suffix on
+//     its name or on a folder above it -- is shown inside that group's
+//     Quarto div, the way the flattener wraps it (see targetGroupOf),
 //   - everything else is CommonMark/GFM as the embedded marked library reads
 //     it. Shortcodes, citations, and math stay as written.
 
@@ -58,6 +61,40 @@ function splitFrontmatter(text) {
     }
   }
   return { front: '', body: text }; // unterminated: treat it all as body
+}
+
+// Target groups
+//
+// A page meant for one target group carries the group's name as a suffix
+// of its file name -- `spickzettel_POL.qmd` -- or sits in a folder that
+// does -- `betriebszustaende_FW/seite.qmd`. The flattener wraps such a
+// page's content in the group's own Quarto div (`::: pol`, `::: fw`), so
+// the preview shows the page inside the very same div: whatever the custom
+// stylesheet does to `.quarto.pol` -- the tint, the symbol in front of it
+// -- it does to the whole page, exactly as it does to a block the page
+// carries itself.
+//
+// groupSuffix names the groups; it is the pattern the Go side matches them
+// by (internal/bookmaker/tree.go), so a group added there is added here.
+var groupSuffix = /_(fw|pol)$/i;
+
+// targetGroupOf returns the class of the target group the page at pagePath
+// belongs to, or "" for a page that is written for all of them. The
+// deepest name decides, as it does for the audience filter: a `_POL` page
+// inside an `_FW` folder is a POL page.
+function targetGroupOf(pagePath) {
+  var segments = (pagePath || '').split('/');
+  var group = '';
+  segments.forEach(function (segment, i) {
+    if (i === segments.length - 1) {
+      segment = segment.replace(/\.[^.\/]*$/, ''); // the extension is not part of the name
+    }
+    var match = groupSuffix.exec(segment);
+    if (match) {
+      group = match[1].toLowerCase();
+    }
+  });
+  return group;
 }
 
 // parseAttrs reads the attribute text of a fenced div or bracketed span --
@@ -516,8 +553,9 @@ function registerImageExtension() {
 }
 
 // renderPreview fills el with the preview of the Quarto Markdown in text.
-// pagePath is the edited page's path relative to the project root, which is
-// what the image paths resolve against.
+// pagePath is the edited page's path relative to the project root: it is
+// what the image paths resolve against, and what says which target group
+// the page belongs to.
 function renderPreview(el, text, pagePath) {
   if (typeof marked === 'undefined') { // asset missing: show the source
     el.textContent = text;
@@ -530,8 +568,14 @@ function renderPreview(el, text, pagePath) {
   if (page.front.trim() !== '') {
     html += '<pre class="preview-frontmatter">' + escapeHTML(page.front) + '</pre>';
   }
-  html += marked.parse(convertDivs(stripHeadingAttrs(page.body)));
-  el.innerHTML = html;
+  var body = marked.parse(convertDivs(stripHeadingAttrs(page.body)));
+  var group = targetGroupOf(pagePath);
+  if (group !== '') {
+    // The frontmatter stays outside the wrapper: it directs the render, it
+    // is not content the group's div would hold.
+    body = '<div class="quarto ' + escapeHTML(group) + '">' + body + '</div>';
+  }
+  el.innerHTML = html + body;
   // Order matters: sanitize drops the sources that must never be fetched,
   // and only what survives is worth pointing at /media or captioning.
   sanitize(el);

@@ -308,7 +308,7 @@
 {{define "pages"}}<ul class="children" data-parent="{{.Parent}}">
 {{range .Pages}}{{template "node" .}}{{end}}</ul>{{end}}
 
-{{define "node"}}<li class="page {{if .Order}}ordered{{else}}unordered{{end}}{{if .BadFences}} bad-fences{{end}}{{if .Children}} has-children{{end}}" data-path="{{.Path}}" data-key="{{if .Path}}{{.Path}}{{else}}{{.Dir}}{{end}}">
+{{define "node"}}<li class="page {{if .Order}}ordered{{else}}unordered{{end}}{{if .BadFences}} bad-fences{{end}}{{if .Draft}} draft{{end}}{{if .Children}} has-children{{end}}" data-path="{{.Path}}" data-key="{{if .Path}}{{.Path}}{{else}}{{.Dir}}{{end}}">
   <div class="row">
     <span class="toggle" title="Collapse or expand"></span>
     {{if .Path}}<span class="drag-handle" title="Drag to move">⠿</span>{{end}}

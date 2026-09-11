@@ -605,12 +605,14 @@ A separate package from `bookmaker`, and deliberately so: it reads and *edits*
 the website's page tree, where `bookmaker` only reads it to flatten it. It came
 from quarto-sorter (see `internal/project/doc.go`).
 
-`Load` (`tree.go:43`) walks the project for `.qmd` files, parses each one's
+`Load` (`tree.go:44`) walks the project for `.qmd` files, parses each one's
 front matter, and assembles a `Page` tree. The interesting rules: `name/index.qmd`
 represents its directory and sorts among its *parent's* pages; `name.qmd` next
 to a `name/` directory does the same when there is no index; markers (🚒/🚔) are
 derived from `_FW`/`_POL` suffixes and inherited by children (`markPages`,
-`tree.go:172`).
+`tree.go:179`). A page's `draft: true` rides along as `Page.Draft`, which is
+what the tree template greys the entry by — the page stays in the tree, since
+it is still there to be opened, moved, and searched.
 
 `Move` (`move.go:19`) is the drag-and-drop operation, and it keeps three things
 in sync at once: it moves files when the parent changes (`reparent`,
@@ -694,6 +696,14 @@ the interactions, Sortable for the drag and drop, marked for the live Markdown
 preview, and CodeMirror 5 for the editor (with a Vim keymap behind a toggle).
 `assets/static/codemirror/README.md` documents exactly which files were taken
 from which tarball paths and why CodeMirror 5 rather than 6.
+
+`preview.js` approximates a Quarto render rather than performing one, and two
+of its rules come from elsewhere in the codebase: `convertDivs` mirrors
+`bookmaker`'s fence handling, and `targetGroupOf` mirrors its `_FW`/`_POL`
+suffix rule (`internal/bookmaker/tree.go:14`), wrapping the whole page in the
+group's own `quarto` div so that the stylesheet marks a page written for one
+audience the way it marks a block written for one. The deepest name decides,
+as it does for the audience filter.
 
 ---
 

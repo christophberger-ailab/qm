@@ -19,6 +19,7 @@ type Page struct {
 	Title     string
 	Order     *int
 	BadFences bool   // the file has unmatched Quarto block fences
+	Draft     bool   // the page's frontmatter says `draft: true`
 	Marker    string // emoji marker from a _FW/_POL suffix (own or inherited)
 	Children  []*Page
 }
@@ -81,7 +82,13 @@ func Load(root string) (*Tree, error) {
 			return nil, err
 		}
 		fm := ParseFrontmatter(src)
-		p := &Page{Path: f, Title: fm.Title, Order: fm.Order, BadFences: !BalancedFences(src)}
+		p := &Page{
+			Path:      f,
+			Title:     fm.Title,
+			Order:     fm.Order,
+			Draft:     fm.Draft,
+			BadFences: !BalancedFences(src),
+		}
 		if p.Title == "" {
 			if h := FirstHeading(src); h != "" {
 				p.Title = h

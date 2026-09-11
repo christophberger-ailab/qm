@@ -524,6 +524,15 @@ button,
   text-decoration: none;
 }
 
+/* A button laid out as a flex box says so even while it is hidden, and a
+   `display` of any kind wins over the browser's own `[hidden]` rule -- so
+   without this the Overwrite button, shown only after a save was refused,
+   would sit in the header from the start. */
+button[hidden],
+.button[hidden] {
+  display: none;
+}
+
 button:hover,
 .button:hover {
   background: var(--accent-bg);
@@ -800,6 +809,17 @@ li.page.unordered>.row>.num::before {
 }
 
 li.page.unordered>.row>.title {
+  color: var(--muted);
+}
+
+/* A draft -- `draft: true` in the page's frontmatter -- is greyed out: the
+   page is in the tree, but it is not part of what a render publishes yet.
+   The whole row goes grey rather than the title alone, so a draft reads as
+   one whether it is numbered or not. Placed before the bad-fences rule,
+   which keeps unmatched fences visible as the warning they are even on a
+   draft. */
+li.page.draft>.row,
+li.page.draft>.row>.title {
   color: var(--muted);
 }
 

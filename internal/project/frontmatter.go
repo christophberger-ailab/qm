@@ -12,10 +12,12 @@ import (
 )
 
 // FrontMatter holds the frontmatter fields the sorter cares about.
-// Order is nil when the file has no order field.
+// Order is nil when the file has no order field. Draft is Quarto's own
+// `draft: true`, which keeps a page out of what a render publishes.
 type FrontMatter struct {
 	Title string `yaml:"title"`
 	Order *int   `yaml:"order"`
+	Draft bool   `yaml:"draft"`
 }
 
 var fmDelim = []byte("---\n")
@@ -34,7 +36,8 @@ func splitFrontmatter(src []byte) (block, body []byte) {
 	return src[:n], src[n:]
 }
 
-// ParseFrontmatter extracts title and order from a page's frontmatter.
+// ParseFrontmatter extracts title, order, and draft from a page's
+// frontmatter.
 func ParseFrontmatter(src []byte) FrontMatter {
 	var fm FrontMatter
 	block, _ := splitFrontmatter(src)
