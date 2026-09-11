@@ -14,6 +14,10 @@
   --danger: #dc2626;
   --input-bg: #ffffff;
   --code-atom: #7c3aed;
+  --diff-add: #e6ffec;
+  --diff-add-fg: #116329;
+  --diff-del: #ffebe9;
+  --diff-del-fg: #a40e26;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -30,6 +34,10 @@
     --danger: #f87171;
     --input-bg: #1b1e24;
     --code-atom: #c4b5fd;
+    --diff-add: #12261e;
+    --diff-add-fg: #7ee787;
+    --diff-del: #2a1214;
+    --diff-del-fg: #ffa198;
   }
 }
 
@@ -322,12 +330,34 @@ body {
   color: var(--muted);
 }
 
+/* The path is a button: clicking it shows the file's diff. It is styled
+   as the text it replaces, so the row still reads as a list of paths. */
 .git-path {
   flex: 1;
   overflow-wrap: anywhere;
+  border: none;
+  background: none;
+  padding: 0.05rem 0.2rem;
+  font: inherit;
+  color: inherit;
+  /* The buttons of the app are centred flex boxes; a path reads as the
+     text it stands in for, so this one starts at the left edge. */
+  justify-content: flex-start;
+  text-align: left;
+  border-radius: 3px;
+  cursor: pointer;
 }
 
-.git-file button {
+.git-path:hover {
+  background: var(--hover);
+  text-decoration: underline;
+}
+
+.git-path.selected {
+  background: var(--accent-bg);
+}
+
+.git-file button:not(.git-path) {
   font-size: 0.75rem;
   padding: 0.1rem 0.35rem;
 }
@@ -357,6 +387,98 @@ body {
   border-radius: 4px;
   font-size: 0.78rem;
   white-space: pre-wrap;
+}
+
+/* Diff pane. A diff needs room the file lists do not, so the popup widens
+   while one is open and goes back to its own width when it is closed. */
+.git-body:has(.git-diff) {
+  max-width: min(58rem, 95vw);
+}
+
+.git-diff-hint {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+}
+
+.git-diff {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin: 0 0 0.5rem;
+  overflow: hidden;
+}
+
+.git-diff-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.3rem 0.5rem;
+  background: var(--hover);
+  border-bottom: 1px solid var(--border);
+}
+
+.git-diff-path {
+  flex: 1;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.git-diff-which {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.git-diff-added {
+  color: var(--diff-add-fg);
+  font-size: 0.75rem;
+}
+
+.git-diff-removed {
+  color: var(--diff-del-fg);
+  font-size: 0.75rem;
+}
+
+.git-diff-head button {
+  font-size: 0.75rem;
+  padding: 0.1rem 0.35rem;
+}
+
+.git-diff-body {
+  margin: 0;
+  padding: 0.25rem 0;
+  max-height: 45vh;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+/* A long line wraps rather than pushing a horizontal scrollbar under the
+   whole pane: the popup is narrow, and prose lines in a .qmd are long. */
+.git-dl {
+  display: block;
+  padding: 0 0.5rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.git-dl-add {
+  background: var(--diff-add);
+  color: var(--diff-add-fg);
+}
+
+.git-dl-del {
+  background: var(--diff-del);
+  color: var(--diff-del-fg);
+}
+
+.git-dl-hunk {
+  color: var(--accent);
+  background: var(--hover);
+}
+
+.git-dl-meta {
+  color: var(--muted);
 }
 
 /* Forms / inputs */

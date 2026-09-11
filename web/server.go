@@ -118,6 +118,7 @@ func newServer(prefsFile string) (*server, error) {
 	s.mux.HandleFunc("POST /render/select", s.selectRender)
 	s.mux.HandleFunc("GET /render/status", s.renderStatus)
 	s.mux.HandleFunc("GET /git", s.gitStatusHandler)
+	s.mux.HandleFunc("GET /git/diff", s.gitDiffHandler)
 	s.mux.HandleFunc("POST /git/stage", s.gitStageHandler)
 	s.mux.HandleFunc("POST /git/unstage", s.gitUnstageHandler)
 	s.mux.HandleFunc("POST /git/commit", s.gitCommitHandler)

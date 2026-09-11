@@ -118,3 +118,10 @@ constraints:
       10-7: A project that is not inside a Git working tree, and a machine without git installed, are told so instead of being offered operations that cannot run
       10-8: The status is read when the panel is opened and after every operation, never with the page, because a working tree changes under the app and a status read minutes ago is worse than none
       10-9: The operations run the `git` command, so the project's hooks, credential helpers, signing keys, and config apply as they do in a terminal; no prompt is issued, since no terminal is attached, and a call that outlasts the timeout is reported as such
+      10-10: A click on a path in either list shows that file's diff in the panel, below the lists; the diff is for reading only, since the panel is where the changes are looked over and the editor is where they are made
+      10-11: The diff shown is the one the list the click came from stands for -- what the next commit would carry, or what it would leave behind -- so a file changed in both places shows a different diff from each list
+      10-12: An untracked file is diffed against an empty file, so the file the panel lists as new shows its whole content as added rather than nothing at all
+      10-13: The diff pane names the file, says which of the two diffs it shows, counts the added and removed lines, and offers to open the file in the editor, which closes the panel and marks the page in the tree as the tree's own click would
+      10-14: A file that is gone from the working tree, one git calls binary, and one that lies outside the open project are not offered to the editor, since there is nothing it could show
+      10-15: Every operation clears the diff, because staging a file moves it to the other list, where its diff is a different one, and a diff left standing would be of a state that no longer exists
+      10-16: The paths the panel sends back are checked against the open project the same way the editor's are, since a diff of an arbitrary path would otherwise read any file on the machine

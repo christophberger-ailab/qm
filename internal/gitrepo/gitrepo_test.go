@@ -232,3 +232,68 @@ func TestCommitNothingStaged(t *testing.T) {
 		t.Errorf("error = %q, want git's own message", err)
 	}
 }
+
+// The three diffs the panel asks for: what the working tree changed, what
+// the index holds, and the whole content of a file git has never seen.
+func TestDiff(t *testing.T) {
+	dir := testRepo(t)
+	write(t, dir, "index.qmd", "---\ntitle: Changed\n---\n")
+	write(t, dir, "new.qmd", "---\ntitle: New\n---\n")
+
+	out, err := Diff(dir, "index.qmd", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "-title: Home") || !strings.Contains(out, "+title: Changed") {
+		t.Errorf("working tree diff misses the change:\n%s", out)
+	}
+
+	// Nothing is staged yet, so the diff against HEAD is empty rather than
+	// an error: the file simply differs on the other side.
+	if out, err := Diff(dir, "index.qmd", true); err != nil || strings.TrimSpace(out) != "" {
+		t.Errorf("staged diff = %q, %v; want empty", out, err)
+	}
+
+	// An untracked file is in neither HEAD nor the index, so its diff is
+	// the whole file, added.
+	out, err = Diff(dir, "new.qmd", false)
+	if err != nil {
+		t.Fatalf("untracked diff: %v", err)
+	}
+	if !strings.Contains(out, "+title: New") {
+		t.Errorf("untracked diff misses the content:\n%s", out)
+	}
+
+	if _, err := Stage(dir, "index.qmd"); err != nil {
+		t.Fatal(err)
+	}
+	out, err = Diff(dir, "index.qmd", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "+title: Changed") {
+		t.Errorf("staged diff misses the change:\n%s", out)
+	}
+}
+
+// A diff of nothing would be a diff of everything, which is not what a
+// click on one file asks for.
+func TestDiffNeedsAPath(t *testing.T) {
+	if _, err := Diff(t.TempDir(), "  ", false); err == nil {
+		t.Error("Diff without a path succeeded")
+	}
+}
+
+// A path with a space is one argument to git, not two, and is not read as
+// a pathspec pattern either.
+func TestDiffSpacedPath(t *testing.T) {
+	dir := testRepo(t)
+	write(t, dir, "a page.qmd", "---\ntitle: Spaced\n---\n")
+	out, err := Diff(dir, "a page.qmd", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "+title: Spaced") {
+		t.Errorf("diff of a spaced path:\n%s", out)
+	}
+}
