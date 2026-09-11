@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -74,6 +75,35 @@ func IsRepo(dir string) bool {
 	return err == nil && strings.TrimSpace(out) == "true"
 }
 
+// Root is the top of the working tree dir is in — the directory the paths
+// of a status are relative to, which is not the directory qm was pointed
+// at whenever the project sits somewhere inside a larger repository.
+func Root(dir string) (string, error) {
+	out, err := run(dir, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", err
+	}
+	// Git answers with forward slashes on every platform.
+	return filepath.FromSlash(strings.TrimSpace(out)), nil
+}
+
+// top is Root for the callers that have nowhere to report a failure: a
+// directory that is not in a working tree has no top, and the command run
+// there will say so better than this could.
+//
+// Every operation below runs at the top rather than at the project, because
+// that is the one directory in which the paths git reports are the paths
+// git accepts. Run from a project that is a subdirectory of its repository,
+// `git add -- doc/book/index.qmd` looks for doc/book/index.qmd *inside*
+// doc/book, finds nothing, and fails.
+func top(dir string) string {
+	root, err := Root(dir)
+	if err != nil {
+		return dir
+	}
+	return root
+}
+
 // GetStatus reads the changes since the last commit.
 //
 // The porcelain v1 format is asked for explicitly and read with NUL
@@ -81,7 +111,7 @@ func IsRepo(dir string) bool {
 // stable across versions and the only one in which a path containing a
 // space, a quote, or a newline still arrives in one piece.
 func GetStatus(dir string) (Status, error) {
-	out, err := run(dir, "status", "--porcelain", "-z", "--branch", "--untracked-files=all")
+	out, err := run(top(dir), "status", "--porcelain", "-z", "--branch", "--untracked-files=all")
 	if err != nil {
 		return Status{}, err
 	}
@@ -198,6 +228,7 @@ func describe(x, y byte) string {
 // Stage adds a path to the index, so the next commit carries it. An empty
 // path stages every change in the repository.
 func Stage(dir, path string) (string, error) {
+	dir = top(dir)
 	if path == "" {
 		return run(dir, "add", "--all", "--", ".")
 	}
@@ -211,6 +242,7 @@ func Stage(dir, path string) (string, error) {
 // repository whose first commit is still to come is unstaged with `rm
 // --cached` instead: there is no HEAD to name.
 func Unstage(dir, path string) (string, error) {
+	dir = top(dir)
 	args := []string{"restore", "--staged", "--"}
 	if !hasHead(dir) {
 		args = []string{"rm", "--cached", "-r", "--"}
@@ -232,13 +264,14 @@ func Commit(dir, message string) (string, error) {
 	if strings.TrimSpace(message) == "" {
 		return "", errors.New("a commit needs a message")
 	}
-	return run(dir, "commit", "-m", message)
+	return run(top(dir), "commit", "-m", message)
 }
 
 // Push sends the current branch to its remote. A branch that tracks
 // nothing yet is pushed with its upstream set, which is what the same
 // branch's next push then follows.
 func Push(dir string) (string, error) {
+	dir = top(dir)
 	st, err := GetStatus(dir)
 	if err == nil && st.Upstream == "" && st.Branch != "" {
 		return run(dir, "push", "--set-upstream", "origin", st.Branch)
@@ -262,6 +295,7 @@ func Diff(dir, path string, staged bool) (string, error) {
 	if strings.TrimSpace(path) == "" {
 		return "", errors.New("no file named")
 	}
+	dir = top(dir)
 	args := []string{"diff", "--no-ext-diff", "--no-color", "--find-renames"}
 	switch {
 	case staged:

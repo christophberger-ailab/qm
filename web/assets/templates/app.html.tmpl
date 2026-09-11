@@ -148,7 +148,7 @@
     <span class="git-diff-which">{{if .Staged}}staged{{else}}not staged{{end}}</span>
     {{if .Added}}<span class="git-diff-added">+{{.Added}}</span>{{end}}
     {{if .Removed}}<span class="git-diff-removed">−{{.Removed}}</span>{{end}}
-    {{if .Editable}}<button type="button" class="git-diff-open" data-path="{{.Path}}" hx-get="/content?path={{urlquery .Path}}"
+    {{if .Editable}}<button type="button" class="git-diff-open" data-path="{{.EditPath}}" hx-get="/content?path={{urlquery .EditPath}}"
             hx-target="#content" hx-swap="innerHTML" title="Open this file in the editor">Open in editor</button>{{end}}
     <button type="button" class="git-diff-close" title="Close the diff" aria-label="Close the diff">✕</button>
   </div>

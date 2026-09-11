@@ -745,10 +745,18 @@ func (s *server) resolvePath(rel string) (string, error) {
 	if s.root == "" {
 		return "", fmt.Errorf("no project open")
 	}
-	if clean := path.Clean(rel); clean != rel || path.IsAbs(rel) || strings.HasPrefix(rel, "..") {
+	if !safeRel(rel) {
 		return "", fmt.Errorf("invalid path")
 	}
 	return filepath.Join(s.root, filepath.FromSlash(rel)), nil
+}
+
+// safeRel reports whether a path that came from the browser is one the app
+// may resolve: relative, written the one way it cleans to, and not reaching
+// above the directory it is joined to.
+func safeRel(rel string) bool {
+	clean := path.Clean(rel)
+	return clean == rel && !path.IsAbs(rel) && !strings.HasPrefix(rel, "..")
 }
 
 // mediaExts are the file types /media serves. The route exists so that the
