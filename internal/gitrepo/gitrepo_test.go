@@ -297,3 +297,88 @@ func TestDiffSpacedPath(t *testing.T) {
 		t.Errorf("diff of a spaced path:\n%s", out)
 	}
 }
+
+// subdirRepo is a repository whose Quarto project sits well inside it, the
+// way a book kept in a documentation monorepo does. It returns the
+// repository root and the project directory qm would be pointed at.
+func subdirRepo(t *testing.T) (root, proj string) {
+	t.Helper()
+	root = testRepo(t)
+	proj = filepath.Join(root, "doc", "Training", "book")
+	if err := os.MkdirAll(proj, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, proj, "index.qmd", "---\ntitle: Book\n---\n# Book\n")
+	if _, err := Stage(proj, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Commit(proj, "book"); err != nil {
+		t.Fatal(err)
+	}
+	return root, proj
+}
+
+// The paths a status reports are relative to the top of the working tree,
+// not to the directory git ran in, so every operation has to run at the
+// top: from the project, `git add -- doc/Training/book/index.qmd` would
+// look inside doc/Training/book for a doc/Training/book of its own.
+func TestOperationsOnAProjectInsideARepository(t *testing.T) {
+	_, proj := subdirRepo(t)
+	write(t, proj, "index.qmd", "---\ntitle: Book\n---\n# Edited\n")
+	write(t, proj, "new.qmd", "---\ntitle: New\n---\n")
+
+	st, err := GetStatus(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"doc/Training/book/index.qmd", "doc/Training/book/new.qmd"}
+	if got := paths(st.Unstaged); !equal(got, want) {
+		t.Fatalf("unstaged = %v, want %v", got, want)
+	}
+
+	// Each of the paths the status just reported has to be one the other
+	// operations accept.
+	for _, path := range want {
+		out, err := Diff(proj, path, false)
+		if err != nil {
+			t.Errorf("Diff(%q): %v", path, err)
+		}
+		if !strings.Contains(out, "+") {
+			t.Errorf("Diff(%q) shows no change:\n%s", path, out)
+		}
+		if _, err := Stage(proj, path); err != nil {
+			t.Errorf("Stage(%q): %v", path, err)
+		}
+	}
+	st, _ = GetStatus(proj)
+	if got := paths(st.Staged); !equal(got, want) {
+		t.Errorf("staged = %v, want %v", got, want)
+	}
+	if _, err := Unstage(proj, want[0]); err != nil {
+		t.Errorf("Unstage(%q): %v", want[0], err)
+	}
+
+	out, err := Diff(proj, want[0], true)
+	if err != nil || strings.TrimSpace(out) != "" {
+		t.Errorf("staged diff after unstaging = %q, %v; want empty", out, err)
+	}
+}
+
+// Root is the top of the working tree, whichever directory inside it is
+// asked.
+func TestRoot(t *testing.T) {
+	root, proj := subdirRepo(t)
+	got, err := Root(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The temporary directory may be reached through a symlink (/tmp on
+	// macOS), and git answers with the resolved path.
+	want, _ := filepath.EvalSymlinks(root)
+	if got != want {
+		t.Errorf("Root(%q) = %q, want %q", proj, got, want)
+	}
+	if _, err := Root(t.TempDir()); err == nil {
+		t.Error("Root outside a repository succeeded")
+	}
+}

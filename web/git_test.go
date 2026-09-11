@@ -3,7 +3,9 @@ package web
 import (
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -290,5 +292,99 @@ func TestDiffLinesBinary(t *testing.T) {
 	_, _, _, binary := diffLines("diff --git a/i.png b/i.png\nBinary files a/i.png and b/i.png differ")
 	if !binary {
 		t.Error("a binary diff not recognized")
+	}
+}
+
+// gitSubProject opens a project that sits inside a larger repository — a
+// Quarto book in a documentation monorepo — rather than being one. The
+// paths git then reports are the project's seen from the repository root,
+// which is not where the project is.
+func gitSubProject(t *testing.T) (srv *server, repo, proj string) {
+	t.Helper()
+	if !gitrepo.Available() {
+		t.Skip("git is not installed")
+	}
+	repo = t.TempDir()
+	proj = filepath.Join(repo, "doc", "Training", "book")
+	if err := os.MkdirAll(filepath.Dir(proj), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.CopyFS(proj, os.DirFS(fixture(t))); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, repo, "README.md", "# The repository\n")
+	for _, args := range [][]string{
+		{"init", "-b", "main"},
+		{"config", "user.email", "qm@example.com"},
+		{"config", "user.name", "QM Test"},
+		{"add", "--all"},
+		{"commit", "-m", "first"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	srv, err := newServer("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := post(t, srv, "/open", url.Values{"path": {proj}}); rec.Code != http.StatusOK {
+		t.Fatalf("open: status %d: %s", rec.Code, rec.Body)
+	}
+	return srv, repo, proj
+}
+
+// A project inside a repository is the case the paths have to survive: git
+// reports them from the repository root, and every operation the panel
+// offers has to accept them back.
+func TestGitDiffInAProjectInsideARepository(t *testing.T) {
+	srv, _, proj := gitSubProject(t)
+	writeFile(t, proj, "chapter2/second.qmd", "---\ntitle: Second\norder: 1\n---\n# Edited\n")
+	const rel = "doc/Training/book/chapter2/second.qmd"
+
+	body := get(t, srv, "/git").Body.String()
+	if !strings.Contains(body, rel) {
+		t.Fatalf("the change is not listed by its repository path:\n%s", body)
+	}
+
+	body = get(t, srv, "/git/diff?path="+url.QueryEscape(rel)).Body.String()
+	if strings.Contains(body, `class="error"`) {
+		t.Fatalf("the diff failed:\n%s", body)
+	}
+	if !strings.Contains(body, "# Edited") {
+		t.Errorf("the change is missing from the diff:\n%s", body)
+	}
+	// The editor addresses pages by their path inside the project, which
+	// is the repository path with the project's own part taken off.
+	if !strings.Contains(body, `hx-get="/content?path=chapter2%2Fsecond.qmd"`) {
+		t.Errorf("the editor is not offered the project's own path:\n%s", body)
+	}
+	// And staging, which has the same paths to deal with.
+	body = post(t, srv, "/git/stage", url.Values{"path": {rel}}).Body.String()
+	if strings.Contains(body, `class="error"`) {
+		t.Errorf("staging failed:\n%s", body)
+	}
+	if !strings.Contains(body, "<legend>Staged") {
+		t.Errorf("the file was not staged:\n%s", body)
+	}
+}
+
+// A file elsewhere in the repository is part of the same working tree and
+// is shown, but the editor has no path to it, so it is not offered.
+func TestGitDiffOutsideTheProject(t *testing.T) {
+	srv, repo, _ := gitSubProject(t)
+	writeFile(t, repo, "README.md", "# The repository, edited\n")
+
+	body := get(t, srv, "/git/diff?path=README.md").Body.String()
+	if strings.Contains(body, `class="error"`) {
+		t.Fatalf("the diff failed:\n%s", body)
+	}
+	if !strings.Contains(body, "edited") {
+		t.Errorf("the change is missing from the diff:\n%s", body)
+	}
+	if strings.Contains(body, "git-diff-open") {
+		t.Errorf("a file the editor cannot reach was offered to it:\n%s", body)
 	}
 }

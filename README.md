@@ -113,8 +113,10 @@ full path can still be typed or pasted into it. The Git button beside Render
 opens a panel that lists the changes since the last commit, stages and unstages
 them file by file or all at once, commits them, and pushes the branch. Clicking
 a path shows that file's diff, coloured line by line, with a button that opens
-the file in the editor. It runs the `git` command, so the repository's hooks,
-credential helpers and config apply as they do in a terminal.
+the file in the editor. The panel covers the whole repository, so a project
+kept in a subdirectory of a larger one is managed just the same. It runs the
+`git` command, so the repository's hooks, credential helpers and config apply
+as they do in a terminal.
 
 ## How a project is set up
 

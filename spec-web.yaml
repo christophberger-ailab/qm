@@ -124,4 +124,6 @@ constraints:
       10-13: The diff pane names the file, says which of the two diffs it shows, counts the added and removed lines, and offers to open the file in the editor, which closes the panel and marks the page in the tree as the tree's own click would
       10-14: A file that is gone from the working tree, one git calls binary, and one that lies outside the open project are not offered to the editor, since there is nothing it could show
       10-15: Every operation clears the diff, because staging a file moves it to the other list, where its diff is a different one, and a diff left standing would be of a state that no longer exists
-      10-16: The paths the panel sends back are checked against the open project the same way the editor's are, since a diff of an arbitrary path would otherwise read any file on the machine
+      10-16: The paths the panel sends back are checked the way the editor's are, against the working tree they belong to, since a diff of an arbitrary path would otherwise read any file on the machine
+      10-17: Every operation runs at the top of the working tree, because that is what the paths of a status are relative to and the only directory in which git accepts them back; a project that is a subdirectory of a larger repository is therefore managed like one that is a repository of its own
+      10-18: The panel lists the whole working tree's changes, so a file outside the open project is shown and staged like any other; only the editor, which addresses pages by their path inside the project, is not offered such a file

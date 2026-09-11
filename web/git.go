@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -169,8 +170,10 @@ type diffView struct {
 	// Editable says whether the pane offers to open the file in the
 	// editor: a file that is gone from the working tree, one git calls
 	// binary, and one that lies outside the open project have nothing the
-	// editor could show.
+	// editor could show. EditPath is what the editor opens it by, which
+	// is Path seen from the project rather than from the repository.
 	Editable bool
+	EditPath string
 	Lines    []diffLine
 	Error    string
 }
@@ -198,41 +201,70 @@ func (s *server) gitDiffHandler(w http.ResponseWriter, r *http.Request) {
 // readDiff fills the pane from the working tree. What it cannot do it
 // reports, and the pane shows that instead of a diff.
 func (s *server) readDiff(v *diffView) error {
-	root, abs, err := s.gitPath(v.Path)
+	p, err := s.gitPath(v.Path)
 	if err != nil {
 		return err
 	}
-	out, err := gitrepo.Diff(root, v.Path, v.Staged)
+	out, err := gitrepo.Diff(p.root, v.Path, v.Staged)
 	if err != nil {
 		return err
 	}
 	lines, added, removed, binary := diffLines(out)
 	v.Lines, v.Added, v.Removed = lines, added, removed
-	// The file has to be there to be opened, and to be text to be worth
-	// opening; git is what says it is not the second.
-	if !binary {
-		st, err := os.Stat(abs)
+	// The file has to be there to be opened, to be text to be worth
+	// opening, and to be inside the project for the editor to have a path
+	// to it at all. Git is what says it is not the second.
+	if !binary && p.edit != "" {
+		st, err := os.Stat(p.abs)
 		v.Editable = err == nil && st.Mode().IsRegular()
+		v.EditPath = p.edit
 	}
 	return nil
 }
 
-// gitPath resolves a path the panel sent against the open project. The
-// paths git reports are the panel's own, but they arrive back as a query
-// parameter, and the same rule that keeps the editor inside the project
-// keeps the diff there: without it, a path of git's `--no-index` form
-// would read any file on the machine.
-func (s *server) gitPath(rel string) (root, abs string, err error) {
+// gitFile is where a path the panel sent actually is.
+type gitFile struct {
+	// root is the open project, which is what a git operation is asked
+	// for; git itself goes on from there to the top of the working tree.
+	root string
+	// abs is the file on disk, and edit is the path the editor opens it
+	// by — the file seen from the project. It is empty for a file that
+	// lies elsewhere in the repository, which the editor cannot address
+	// and so is not offered.
+	abs  string
+	edit string
+}
+
+// gitPath locates a path the panel sent. The paths git reports are
+// relative to the top of the working tree, which is the project itself
+// only until someone keeps their Quarto book in a subdirectory of a larger
+// repository; so they are resolved against the top, and what the editor
+// needs is worked back out from there.
+//
+// They arrive as a query parameter, so the rule that keeps the editor
+// inside the project applies here too, against the repository: without it,
+// a path of git's `--no-index` form would read any file on the machine.
+func (s *server) gitPath(rel string) (gitFile, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.root == "" {
-		return "", "", errors.New("no project open")
+		return gitFile{}, errors.New("no project open")
 	}
 	if strings.TrimSpace(rel) == "" {
-		return "", "", errors.New("no file named")
+		return gitFile{}, errors.New("no file named")
 	}
-	abs, err = s.resolvePath(rel)
-	return s.root, abs, err
+	if !safeRel(rel) {
+		return gitFile{}, errors.New("invalid path")
+	}
+	top, err := gitrepo.Root(s.root)
+	if err != nil {
+		return gitFile{}, err
+	}
+	f := gitFile{root: s.root, abs: filepath.Join(top, filepath.FromSlash(rel))}
+	if in, err := filepath.Rel(s.root, f.abs); err == nil && safeRel(filepath.ToSlash(in)) {
+		f.edit = filepath.ToSlash(in)
+	}
+	return f, nil
 }
 
 // diffHeads are the lines git writes above a file's first hunk that only
