@@ -453,7 +453,8 @@
 {{/* What one run came back with. Each suggestion names the passage it is
      about; the ones found in the page carry its position, which is what
      app.js highlights the text by and what a click on the entry scrolls
-     the editor to. */}}
+     the editor to. A suggestion that says what to put there instead
+     carries that text as well, and offers to write it into the page. */}}
 {{define "copyedit-suggestions"}}<div class="copyedit-suggestions">
   <div class="copyedit-suggestions-head">
     <button type="button" class="copyedit-back" id="copyedit-back" title="Back to the editing tasks"
@@ -464,11 +465,19 @@
   {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
   {{if .Suggestions}}<ol class="copyedit-list">
     {{range .Suggestions}}<li class="copyedit-suggestion{{if not .Located}} unlocated{{end}}"
-        {{if .Located}}data-start="{{.Start}}" data-end="{{.End}}" title="Scroll the editor to this passage"{{end}}>
+        {{if .Located}}data-start="{{.Start}}" data-end="{{.End}}" title="Scroll the editor to this passage"{{end}}
+        {{if .Applicable}}data-replacement="{{.Replacement}}"{{end}}>
       <blockquote class="copyedit-original">{{.Original}}</blockquote>
       {{if .Replacement}}<p class="copyedit-replacement">{{.Replacement}}</p>{{end}}
       {{if .Comment}}<p class="copyedit-comment">{{.Comment}}</p>{{end}}
       {{if not .Located}}<p class="copyedit-unlocated">Not found in the page as quoted, so it is not highlighted.</p>{{end}}
+      {{/* Only a suggestion that was found in the page and says what to
+           put there instead can be written in; the others are read and
+           carried out by hand. */ -}}
+      {{if .Applicable}}<div class="copyedit-suggestion-actions">
+        <button type="button" class="copyedit-apply"
+                title="Replace the passage in the editor with this text">Apply</button>
+      </div>{{end}}
     </li>
     {{end}}
   </ol>

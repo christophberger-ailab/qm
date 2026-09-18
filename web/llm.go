@@ -82,6 +82,15 @@ type suggestion struct {
 	Located     bool
 }
 
+// Applicable says whether this suggestion can be written into the page at
+// the click of a button: it must name a passage that was found there, and
+// say what to put in its place. A suggestion that only comments on the
+// text, or quotes something the page does not contain, is read and carried
+// out by hand.
+func (s suggestion) Applicable() bool {
+	return s.Located && s.Replacement != ""
+}
+
 // llmReply is the JSON the model is asked for. The fields are read
 // leniently: models spell the replacement "suggestion", "replacement", or
 // "revised", and a run is not worth losing over the word one picked.

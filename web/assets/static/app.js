@@ -380,6 +380,39 @@ function selectSuggestion(entry) {
   focusCopyeditMark(entries.indexOf(entry));
 }
 
+// applySuggestion writes a suggestion into the page. The editor does the
+// writing, at the mark rather than at the offsets the suggestion arrived
+// with, so a passage that has moved under an edit is still the one
+// replaced; from there the change is an ordinary edit, which the autosave
+// and the preview pick up on their own, and which Ctrl-Z takes back.
+//
+// The entry stays in the list, marked as carried out: it says what was
+// changed, and it is no longer something to click.
+function applySuggestion(entry) {
+  var index = suggestionEntries().indexOf(entry);
+  var done = applyCopyeditMark(index, entry.dataset.replacement || '');
+  var button = entry.querySelector('.copyedit-apply');
+  if (!done) {
+    // The passage is gone from the page -- deleted or rewritten since the
+    // run -- so there is nothing to replace, and saying so beats leaving
+    // a button that does nothing.
+    entry.classList.add('stale');
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Gone';
+      button.title = 'This passage is no longer in the page';
+    }
+    return;
+  }
+  entry.classList.add('applied');
+  entry.classList.remove('selected');
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Applied';
+    button.title = 'Written into the page — undo it in the editor';
+  }
+}
+
 // currentPath is the page open in the editor; applySelection re-highlights
 // it after every tree re-render (moves, saves, reloads).
 var currentPath = null;
@@ -905,6 +938,14 @@ document.body.addEventListener('click', function (evt) {
     }
     applyPreview();
     refreshEditor(); // the editor may just have lost half the pane
+    return;
+  }
+
+  // Apply: write the suggestion into the page. It is inside the entry, so
+  // it is asked about before the entry's own click.
+  var apply = evt.target.closest('.copyedit-apply');
+  if (apply) {
+    applySuggestion(apply.closest('.copyedit-suggestion'));
     return;
   }
 

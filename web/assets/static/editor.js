@@ -273,6 +273,40 @@ function focusCopyeditMark(index) {
   }
 }
 
+// applyCopyeditMark writes a suggestion into the page: the nth marked
+// passage is replaced by text. The mark is what says where -- not the
+// offsets the suggestion arrived with -- because the user may have typed
+// since, and a mark moves with the text while an offset does not.
+//
+// The edit goes through CodeMirror like a typed one, so everything that
+// hangs off an edit follows by itself: the textarea is updated, the
+// autosave posts it, the preview catches up, and Ctrl-Z takes it back.
+// The mark is dropped afterwards: the passage it stood for is gone, and
+// the suggestion about it has been carried out.
+//
+// It returns false when there is nothing to replace -- no editor, or a
+// passage the user has since deleted -- so the caller can say so instead
+// of reporting a change that did not happen.
+function applyCopyeditMark(index, text) {
+  if (!cm) {
+    return false;
+  }
+  var mark = copyeditMarks[index];
+  var at = mark && mark.find();
+  if (!at) {
+    return false;
+  }
+  cm.replaceRange(text, at.from, at.to);
+  mark.clear();
+  copyeditMarks[index] = null;
+  if (index === copyeditActive) {
+    copyeditActive = -1;
+  }
+  // The text just written is what the user will want to look at.
+  cm.scrollIntoView({ from: at.from, to: cm.posFromIndex(cm.indexFromPos(at.from) + text.length) }, 80);
+  return true;
+}
+
 // refreshEditor makes CodeMirror remeasure, which it needs whenever the
 // pane it sits in changes width.
 function refreshEditor() {

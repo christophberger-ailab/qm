@@ -155,6 +155,12 @@ constraints:
       11-8-3: The positions are counted in UTF-16 code units, which is what the browser counts string positions in, so an emoji or a CJK character ahead of a passage does not shift its mark
       11-8-4: A suggestion whose passage is nowhere in the page is listed and says so, rather than being dropped or marking the wrong place
       11-9: Clicking a suggestion singles it out among the marks and scrolls the editor to its passage; it scrolls only, since moving the cursor would take the editor away from where the user is working
-      11-10: 'The marks go with the suggestions: the Back button, a page switch, and a run that found nothing all take them off the text'
-      11-11: The model call runs without the server's lock, because it takes as long as it takes and the tree, the editor, and the autosave must stay answerable while the pane waits
-      11-12: 'What went wrong is shown in the pane where the suggestions would be: no connection configured, the API''s own refusal, an unreadable answer'
+      11-10: A suggestion that says what to put in the passage's place offers to write it into the page
+      11-10-1: Only a suggestion found in the page and carrying a replacement offers it; one that only comments on the text, and one whose passage is nowhere in the page, are carried out by hand
+      11-10-2: The replacement is written at the mark rather than at the position the suggestion arrived with, so a passage that has moved under an edit made since the run is still the one replaced
+      11-10-3: The change is made through the editor like a typed one, so the autosave writes it through, the preview follows it, and the editor's own undo takes it back
+      11-10-4: An applied suggestion is kept in the list, saying it was applied and no longer offering to be; its mark goes, the passage it stood for being gone
+      11-10-5: A passage the user has deleted since the run cannot be applied, and the entry says so instead of offering a button that does nothing
+      11-11: 'The marks go with the suggestions: the Back button, a page switch, and a run that found nothing all take them off the text'
+      11-12: The model call runs without the server's lock, because it takes as long as it takes and the tree, the editor, and the autosave must stay answerable while the pane waits
+      11-13: 'What went wrong is shown in the pane where the suggestions would be: no connection configured, the API''s own refusal, an unreadable answer'

@@ -1429,6 +1429,36 @@ li.CodeMirror-hint-active {
   opacity: 0.75;
 }
 
+/* One that has been written into the page is kept -- it says what was
+   changed -- but it steps back: there is nothing left to do with it. */
+.copyedit-suggestion.applied,
+.copyedit-suggestion.stale {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.copyedit-suggestion.applied .copyedit-replacement {
+  text-decoration: none;
+  color: var(--muted);
+}
+
+.copyedit-suggestion-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.4rem;
+}
+
+.copyedit-apply {
+  font-size: 0.8rem;
+}
+
+.copyedit-apply:disabled,
+.copyedit-apply:disabled:hover {
+  opacity: 0.6;
+  cursor: default;
+  background: var(--hover);
+}
+
 .copyedit-original {
   margin: 0;
   padding-left: 0.6rem;

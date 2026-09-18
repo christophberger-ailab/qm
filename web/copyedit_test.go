@@ -363,3 +363,45 @@ func TestOpenAIConnectionPostsChatCompletions(t *testing.T) {
 		t.Errorf("suggestion not located in the text:\n%s", body)
 	}
 }
+
+func TestOnlyASuggestionThatCanBeWrittenInOffersToBe(t *testing.T) {
+	srv, _ := configTestServer(t)
+	addPrompt(t, srv, "Passive voice", "Rewrite passive sentences actively.")
+	stub := newStubModel(t, `{"suggestions":[
+		{"original":"was written by the editor","suggestion":"the editor wrote","comment":"Passive."},
+		{"original":"The page","comment":"Vague, but I have no better word."},
+		{"original":"nowhere in the page","suggestion":"—","comment":"Not there."}]}`)
+	addConnection(t, srv, "Stub", "anthropic", stub.URL+"/v1", "stub-model", "sk-test")
+
+	body := post(t, srv, "/copyedit/run", url.Values{
+		"prompt": {"p1"}, "path": {"index.qmd"},
+		"body": {"# Title\n\nThe page was written by the editor.\n"},
+	}).Body.String()
+
+	// The one that was found and says what to put there instead carries
+	// the text to write and the button to write it.
+	if !strings.Contains(body, `data-replacement="the editor wrote"`) {
+		t.Errorf("the replacement text is not on the entry:\n%s", body)
+	}
+	if n := strings.Count(body, `class="copyedit-apply"`); n != 1 {
+		t.Errorf("%d Apply buttons, want 1 — a comment-only and an unlocated suggestion have nothing to apply:\n%s", n, body)
+	}
+}
+
+func TestReplacementTextSurvivesAsAnAttribute(t *testing.T) {
+	srv, _ := configTestServer(t)
+	addPrompt(t, srv, "Quotes", "Fix the quoting.")
+	// A replacement carrying the characters an attribute is delimited and
+	// escaped with, and a line break: what the button writes into the page
+	// must be what the model said, not markup.
+	stub := newStubModel(t, `{"suggestions":[{"original":"said hi","suggestion":"said \"hi\" & <waved>\nwarmly"}]}`)
+	addConnection(t, srv, "Stub", "anthropic", stub.URL+"/v1", "stub-model", "k")
+
+	body := post(t, srv, "/copyedit/run", url.Values{
+		"prompt": {"p1"}, "body": {"She said hi.\n"},
+	}).Body.String()
+	want := "data-replacement=\"said &#34;hi&#34; &amp; &lt;waved&gt;\nwarmly\""
+	if !strings.Contains(body, want) {
+		t.Errorf("the replacement did not reach the attribute intact:\n%s", body)
+	}
+}

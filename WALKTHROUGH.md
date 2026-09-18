@@ -739,6 +739,19 @@ an edit, and CodeMirror moves it along as the text around it is typed. A
 suggestion the server could not locate is passed as a gap, so the nth entry
 and the nth mark stay the same suggestion.
 
+`Apply` writes a suggestion into the page, and it writes it *at the mark*
+(`applyCopyeditMark`, `editor.js`), not at the offsets the suggestion arrived
+with: the user may have typed since, and a mark moves with the text while an
+offset does not. The replacement goes in through `cm.replaceRange`, which
+makes it an ordinary edit — the textarea follows, the autosave posts it, the
+preview catches up, and Ctrl-Z takes it back — and the mark is dropped
+afterwards, the passage it stood for being gone. A passage deleted since the
+run has no mark left to find, and the entry says "Gone" rather than offering a
+button that does nothing. Which suggestions offer the button at all is decided
+on the Go side: `suggestion.Applicable` (`llm.go`) wants a located passage and
+a replacement to put there, so comment-only advice is read and carried out by
+hand.
+
 `preview.js` approximates a Quarto render rather than performing one, and two
 of its rules come from elsewhere in the codebase: `convertDivs` mirrors
 `bookmaker`'s fence handling, and `targetGroupOf` mirrors its `_FW`/`_POL`

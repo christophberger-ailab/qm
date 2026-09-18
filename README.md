@@ -125,6 +125,12 @@ suggestion's passage is highlighted in the editor, and clicking the suggestion
 scrolls to it; a Back button returns to the task list and takes the highlights
 off the text.
 
+A suggestion that says what to put in the passage's place carries an **Apply**
+button that writes it into the page. It is written at the highlight, so a
+passage that moved under an edit made since the run is still the one replaced,
+and it is written through the editor like a typed change — the autosave takes
+it to disk, the preview follows, and the editor's own undo takes it back.
+
 The models are configured under *Config → Copyedit: API connections*: any
 number of them, each naming the API it speaks — Anthropic
 (`<base URL>/messages`) or OpenAI-compatible (`<base URL>/chat/completions`,
