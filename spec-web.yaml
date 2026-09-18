@@ -135,3 +135,26 @@ constraints:
       10-17: Every operation runs at the top of the working tree, because that is what the paths of a status are relative to and the only directory in which git accepts them back; a project that is a subdirectory of a larger repository is therefore managed like one that is a repository of its own
       10-18: The panel lists the whole working tree's changes, so a file outside the open project is shown and staged like any other; only the editor, which addresses pages by their path inside the project, is not offered such a file
       10-19: The popup keeps one width and one place whether a diff is open or not -- it is as wide as a diff needs from the start and hangs from the right edge of the top bar -- so opening or closing a diff never moves the paths out from under the pointer, and the popup stays inside the window instead of pushing the page sideways
+      11: A copyediting tool sits beside the editor, in the same column as the Markdown preview
+      11-1: The column is tabbed; one tab is the preview, the other the copyedit pane, and the tab last looked at is remembered across page switches and sessions
+      11-1-1: Picking a tab while the column is closed opens it, since a tab that answers with nothing only looks broken
+      11-2: The copyedit pane lists the editing tasks the user configured, by title alone; the prompt itself is the task's tooltip
+      11-3: An editing task is a prompt with a title, written on a config page that adds, edits, and deletes them; a task without a title or without a prompt is refused
+      11-4: The model an editing task runs on is configured as an API connection -- name, API kind, base URL, model, and key -- on a config page of its own that saves any number of them
+      11-4-1: 'The API kinds are Anthropic (`<base URL>/messages`) and OpenAI-compatible (`<base URL>/chat/completions`), which is what OpenAI, Ollama, LM Studio, and OpenRouter all speak; a local model needs no key'
+      11-4-2: The tasks and the connections are the user's own rather than the project's, so they are stored beside the render prefs in `<user config dir>/qm/copyedit.json`, written for its owner alone because it holds API keys
+      11-4-3: A stored key is never sent back to the browser; the form says one is stored, and an empty key field on an edit keeps it
+      11-5: A dropdown at the head of the copyedit pane selects which connection a run goes to; the choice is remembered across restarts, and a selection whose connection is gone falls back to the first one
+      11-6: Clicking an editing task sends the text the editor holds -- the text, not the file, so unsaved edits are edited too -- to the selected model, together with the task's prompt
+      11-6-1: 'The answer is asked for as JSON: a list of suggestions, each quoting the passage of the page it applies to, what to put in its place, and why'
+      11-6-2: A model that wrapped the JSON in a code fence, or wrote a line above it, is still understood; prose where JSON was asked for is reported as such
+      11-7: The pane switches from the task list to the suggestions the run came back with; a Back button brings the task list again
+      11-8: Each suggestion's passage is located in the page and highlighted in the editor, so the advice is read on the text it is about
+      11-8-1: 'A passage the model re-wrapped is still found: any run of whitespace in the page answers a whitespace in the quote'
+      11-8-2: A passage that occurs twice is given two places, so two suggestions about the same wording do not mark the same one
+      11-8-3: The positions are counted in UTF-16 code units, which is what the browser counts string positions in, so an emoji or a CJK character ahead of a passage does not shift its mark
+      11-8-4: A suggestion whose passage is nowhere in the page is listed and says so, rather than being dropped or marking the wrong place
+      11-9: Clicking a suggestion singles it out among the marks and scrolls the editor to its passage; it scrolls only, since moving the cursor would take the editor away from where the user is working
+      11-10: 'The marks go with the suggestions: the Back button, a page switch, and a run that found nothing all take them off the text'
+      11-11: The model call runs without the server's lock, because it takes as long as it takes and the tree, the editor, and the autosave must stay answerable while the pane waits
+      11-12: 'What went wrong is shown in the pane where the suggestions would be: no connection configured, the API''s own refusal, an unreadable answer'

@@ -623,6 +623,60 @@ button:hover,
   margin-bottom: 0.75rem;
 }
 
+/* The config pages that hold a list of things to edit -- the editing
+   tasks, the API connections -- show each of them as one form. */
+
+.config-items {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1.2rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.config-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+}
+
+.config-form label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.config-form input,
+.config-form select,
+.config-form textarea {
+  display: block;
+  width: 100%;
+  margin-top: 0.2rem;
+  color: var(--fg);
+  font-size: 0.95rem;
+}
+
+.config-form textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  resize: vertical;
+}
+
+.config-new {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+}
+
+.config-new h3 {
+  margin: 0 0 0.6rem;
+}
+
+.danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
 /* Panes */
 
 .panes {
@@ -1239,6 +1293,170 @@ li.CodeMirror-hint-active {
   padding: 0 0.2rem 0 1rem;
   font-size: 0.9rem;
   line-height: 1.55;
+}
+
+/* The tabs of the column beside the editor: the preview, and the
+   copyediting tool. */
+
+.pane-tabs {
+  display: flex;
+  gap: 0.25rem;
+  flex: none;
+  padding: 0 0.2rem 0.3rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.pane-tab {
+  font-size: 0.85rem;
+  background: none;
+  border: 1px solid transparent;
+}
+
+.pane-tab.active {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Whichever panel is not the active tab's is hidden outright, so the two
+   never share the space the column has. */
+.pane-panel[hidden] {
+  display: none;
+}
+
+/* Copyedit tab */
+
+.copyedit {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0.5rem 0.2rem 0 1rem;
+  font-size: 0.9rem;
+}
+
+.copyedit-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: none;
+  margin-bottom: 0.5rem;
+}
+
+.copyedit-connection {
+  flex: 1;
+  min-width: 0;
+}
+
+#copyedit-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.copyedit-tasks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.copyedit-task {
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+
+/* The indicator htmx marks while a run is out. A model takes its time,
+   and a pane that says nothing for half a minute reads as broken. */
+.copyedit-running {
+  display: none;
+  margin: 0.6rem 0 0;
+  color: var(--muted);
+}
+
+.copyedit-running.htmx-request {
+  display: block;
+}
+
+.copyedit-suggestions-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.copyedit-task-name {
+  font-weight: 600;
+}
+
+.copyedit-model {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.copyedit-list {
+  margin: 0;
+  padding-left: 1.4rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.copyedit-suggestion {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+  cursor: pointer;
+}
+
+.copyedit-suggestion:hover {
+  background: var(--hover);
+}
+
+.copyedit-suggestion.selected {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+
+/* A suggestion whose passage is nowhere in the page cannot be pointed at,
+   so it does not pretend to be clickable. */
+.copyedit-suggestion.unlocated {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.copyedit-original {
+  margin: 0;
+  padding-left: 0.6rem;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+  font-style: italic;
+}
+
+.copyedit-replacement {
+  margin: 0.35rem 0 0;
+}
+
+.copyedit-comment,
+.copyedit-unlocated {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* The passages the suggestions are about, marked in the editor's text. */
+.CodeMirror .copyedit-mark {
+  background: var(--accent-bg);
+  border-bottom: 2px solid var(--accent);
+}
+
+.CodeMirror .copyedit-mark-active {
+  background: var(--warn);
+  color: var(--bg);
 }
 
 /* Closing the preview leaves the editor the whole pane. */

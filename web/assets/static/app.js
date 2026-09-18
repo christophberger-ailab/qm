@@ -228,6 +228,33 @@ var previewOpen = localStorage.getItem(PREVIEW_KEY) !== 'closed';
 
 var previewTimer = null;
 
+// The column beside the editor is tabbed: the Markdown preview, and the
+// copyediting tool. Both work on the text the editor holds, so they share
+// the column rather than crowding each other out of it. Which tab was
+// last looked at outlives the page switches that re-render the pane, and
+// the session, the way the preview's own open/closed choice does.
+
+var TAB_KEY = 'paneTab';
+
+var activeTab = localStorage.getItem(TAB_KEY) === 'copyedit' ? 'copyedit' : 'preview';
+
+// applyTabs shows the panel of the active tab and marks its button. It
+// runs wherever applyPreview does: the tab bar is part of the editor pane
+// and is re-rendered with it.
+function applyTabs() {
+  document.querySelectorAll('.pane-tab').forEach(function (button) {
+    var on = button.dataset.tab === activeTab;
+    button.classList.toggle('active', on);
+    button.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  ['preview', 'copyedit'].forEach(function (name) {
+    var panel = document.getElementById(name);
+    if (panel) {
+      panel.hidden = name !== activeTab;
+    }
+  });
+}
+
 // applyPreview brings the pane and the toggle button in line with
 // previewOpen. It runs after every swap that replaces the editor, both on
 // afterSwap (so nothing flashes) and on afterSettle (which restores the
@@ -241,7 +268,8 @@ function applyPreview() {
   if (button) {
     button.setAttribute('aria-pressed', previewOpen ? 'true' : 'false');
   }
-  if (previewOpen) {
+  applyTabs();
+  if (previewOpen && activeTab === 'preview') {
     updatePreview();
   }
 }
@@ -261,7 +289,7 @@ function updatePreview() {
 
 // schedulePreview coalesces the keystrokes of fast typing into one render.
 function schedulePreview() {
-  if (!previewOpen) {
+  if (!previewOpen || activeTab !== 'preview') {
     return;
   }
   clearTimeout(previewTimer);
@@ -299,6 +327,58 @@ document.body.addEventListener('change', function (evt) {
   });
   updatePreview();
 });
+
+// Copyediting
+//
+// The copyedit tab lists the editing tasks the user configured. Picking
+// one posts the page the editor holds to the selected model (htmx does
+// that itself) and swaps the list for the suggestions it answered with.
+// Each suggestion carries the place in the page it is about, and those
+// places are what the editor marks, so the advice is read on the text it
+// is about. The Back button asks for the task list again, which clears
+// the marks along with the suggestions.
+
+// The dropdown in the copyedit tab's head picks the connection a run goes
+// to. The choice is remembered server-side, beside the connections
+// themselves, so it survives a restart and a fresh /open.
+document.body.addEventListener('change', function (evt) {
+  if (evt.target.id !== 'copyedit-connection') {
+    return;
+  }
+  fetch('/copyedit/active', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'connection=' + encodeURIComponent(evt.target.value)
+  });
+});
+
+function suggestionEntries() {
+  return Array.prototype.slice.call(document.querySelectorAll('#copyedit-body .copyedit-suggestion'));
+}
+
+// readSuggestions hands the editor the passages the suggestions now on
+// screen are about. A suggestion whose passage was not found in the page
+// carries no position and is passed as a gap, so that the nth entry and
+// the nth mark stay the same suggestion. The task list carries no entries
+// at all, which is what takes the marks off the page again.
+function readSuggestions() {
+  setCopyeditMarks(suggestionEntries().map(function (li) {
+    if (li.dataset.start === undefined) {
+      return null;
+    }
+    return { start: Number(li.dataset.start), end: Number(li.dataset.end) };
+  }));
+}
+
+// selectSuggestion singles out the entry the user clicked, in the list and
+// in the text, and scrolls the editor to the passage it is about.
+function selectSuggestion(entry) {
+  var entries = suggestionEntries();
+  entries.forEach(function (li) {
+    li.classList.toggle('selected', li === entry);
+  });
+  focusCopyeditMark(entries.indexOf(entry));
+}
 
 // currentPath is the page open in the editor; applySelection re-highlights
 // it after every tree re-render (moves, saves, reloads).
@@ -712,6 +792,11 @@ document.body.addEventListener('htmx:afterSwap', function (evt) {
     initEditor(); // mount before the preview reads the editor's text
     applyPreview();
   }
+  if (id === 'copyedit-body') {
+    // Either the suggestions of a run just arrived, or the task list came
+    // back; both are answered by marking exactly what is listed now.
+    readSuggestions();
+  }
   if (id === 'render-log') {
     var out = renderLogOutput();
     if (out) {
@@ -803,6 +888,31 @@ document.body.addEventListener('click', function (evt) {
   if (evt.target.closest('#save-overwrite')) {
     showOverwrite(false);
     saveNow(true);
+    return;
+  }
+
+  // A tab beside the editor: the preview, or the copyediting tool. The
+  // tabs share the column the preview toggle opens and closes, so picking
+  // one while it is closed opens it -- a tab that answers with nothing
+  // would only look broken.
+  var tab = evt.target.closest('.pane-tab');
+  if (tab) {
+    activeTab = tab.dataset.tab === 'copyedit' ? 'copyedit' : 'preview';
+    localStorage.setItem(TAB_KEY, activeTab);
+    if (!previewOpen) {
+      previewOpen = true;
+      localStorage.setItem(PREVIEW_KEY, 'open');
+    }
+    applyPreview();
+    refreshEditor(); // the editor may just have lost half the pane
+    return;
+  }
+
+  // A suggestion: show which one is being read, and bring the passage it
+  // is about into view.
+  var suggestion = evt.target.closest('.copyedit-suggestion');
+  if (suggestion) {
+    selectSuggestion(suggestion);
     return;
   }
 

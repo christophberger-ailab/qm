@@ -67,6 +67,7 @@ function initEditor() {
     hintOptions: pathHintOptions
   });
   clearCompletionCache();
+  clearCopyeditMarks(); // the marks belonged to the pane just replaced
   cm.on('inputRead', maybeOpenPathCompletion);
 
   // The textarea is what /save posts and what the preview reads, so it has
@@ -180,6 +181,95 @@ function scrollToFirstHit() {
   var cursor = cm.getSearchCursor(pattern, { line: 0, ch: 0 }, { multiline: false });
   if (cursor.findNext()) {
     cm.scrollIntoView({ from: cursor.from(), to: cursor.to() }, 80);
+  }
+}
+
+// Copyedit highlighting
+//
+// A copyedit run answers with suggestions, each quoting the passage of the
+// page it applies to, and the server hands over where that passage sits in
+// the text. Marking those places is what ties a suggestion to the page:
+// the list beside the editor says what to change, the marks say where.
+//
+// markText paints a range without touching the document, so a mark is not
+// an edit and nothing is saved by it; CodeMirror moves a mark along as the
+// text around it is typed, so the marks stay on their passages while the
+// user works through them.
+//
+// app.js owns the list; the editor is only told which ranges it named.
+
+// copyeditMarks holds one mark per suggestion, in the list's own order --
+// null where a suggestion quoted something the page does not contain --
+// so a click on the nth entry finds the nth mark. copyeditActive is the
+// entry last clicked, which is the one mark shown picked out.
+var copyeditMarks = [];
+var copyeditActive = -1;
+
+// setCopyeditMarks paints the given ranges, replacing whatever was painted
+// before. A range is a pair of offsets in UTF-16 code units -- what a
+// browser counts string positions in, and what the server measures the
+// page in for that reason. An empty list clears the marks.
+function setCopyeditMarks(ranges) {
+  copyeditActive = -1;
+  if (!cm) {
+    copyeditMarks = [];
+    return;
+  }
+  paintCopyeditMarks((ranges || []).map(function (range) {
+    if (!range) {
+      return null;
+    }
+    return { from: cm.posFromIndex(range.start), to: cm.posFromIndex(range.end) };
+  }));
+}
+
+// paintCopyeditMarks replaces the marks with ones at the given positions.
+// It is given positions rather than offsets because it also repaints: the
+// active entry changes, and the marks have moved with the text since they
+// were first set, so where they are now is what they are painted at again.
+function paintCopyeditMarks(positions) {
+  copyeditMarks.forEach(function (mark) {
+    if (mark) {
+      mark.clear();
+    }
+  });
+  copyeditMarks = [];
+  if (!cm) {
+    return;
+  }
+  positions.forEach(function (at, i) {
+    if (!at) {
+      copyeditMarks.push(null); // nothing to mark, but the place is kept
+      return;
+    }
+    copyeditMarks.push(cm.markText(at.from, at.to, {
+      className: i === copyeditActive ? 'copyedit-mark copyedit-mark-active' : 'copyedit-mark'
+    }));
+  });
+}
+
+// clearCopyeditMarks takes the highlighting off the page: the suggestions
+// are gone, or they were about a page the editor no longer holds.
+function clearCopyeditMarks() {
+  copyeditActive = -1;
+  paintCopyeditMarks([]);
+}
+
+// focusCopyeditMark scrolls to the passage the nth suggestion is about and
+// singles it out among the marks. It scrolls only: moving the cursor would
+// take the editor away from where the user is actually working.
+function focusCopyeditMark(index) {
+  if (!cm) {
+    return;
+  }
+  var positions = copyeditMarks.map(function (mark) {
+    return mark ? mark.find() : null;
+  });
+  copyeditActive = index;
+  paintCopyeditMarks(positions);
+  var at = positions[index];
+  if (at) {
+    cm.scrollIntoView({ from: at.from, to: at.to }, 80);
   }
 }
 
