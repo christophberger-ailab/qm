@@ -662,10 +662,21 @@ button:hover,
   resize: vertical;
 }
 
-.config-new {
+.config-new,
+.config-setting {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.9rem 1rem;
+}
+
+.config-setting {
+  margin-bottom: 1.2rem;
+}
+
+.config-setting h3,
+.config-setting .config-intro {
+  margin-bottom: 0.8rem;
+  font-size: 0.9rem;
 }
 
 .config-new h3 {

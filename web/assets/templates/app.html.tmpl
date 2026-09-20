@@ -481,7 +481,7 @@
     <button type="button" class="copyedit-back" id="copyedit-back" title="Back to the editing tasks"
             hx-get="/copyedit/prompts" hx-target="#copyedit-body" hx-swap="innerHTML">◀ Tasks</button>
     <span class="copyedit-task-name">{{if .Tasks}}{{len .Tasks}} task{{if gt (len .Tasks) 1}}s{{end}}, {{.Count}} suggestion{{if ne .Count 1}}s{{end}}{{end}}</span>
-    {{if .Model}}<span class="copyedit-model">{{.Model}}</span>{{end}}
+    {{if .Model}}<span class="copyedit-model" title="The model this run went to, and how it was carried out">{{.Model}}{{if .Mode}} · {{.Mode}}{{end}}</span>{{end}}
   </div>
   {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
   {{/* One filter per task, for a run of several: the whole run is on
@@ -544,6 +544,15 @@
     <p class="config-intro">Write the prompt as an instruction about the page — "Find sentences in the passive voice and rewrite them actively". The answer's shape is asked for by the app, so the prompt only has to say what to look for.</p>
     {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
     {{if .Message}}<div class="notice">{{.Message}}</div>{{end}}
+    <form class="config-form config-setting" method="post" action="/config/copyedit/mode">
+      <h3>Running several tasks</h3>
+      <p class="config-intro">Ticking several tasks in the pane can go to the model either way. One call sends the page once and is cheaper; one call per task lets the model attend to each task on its own, and may read better. The page is the cached part of a request, so from the second call on a provider that caches serves it without charging full price for it again — which is what makes the per-task way affordable enough to be worth comparing.</p>
+      <label>Mode<select name="mode">
+        <option value="batched"{{if not .PerTask}} selected{{end}}>One call for all ticked tasks</option>
+        <option value="per-task"{{if .PerTask}} selected{{end}}>One call per ticked task</option>
+      </select></label>
+      <div class="config-actions"><button type="submit">Save mode</button></div>
+    </form>
     <ul class="config-items">
       {{range .Prompts}}<li class="config-item">
         <form class="config-form" method="post" action="/config/copyedit" autocomplete="off">

@@ -151,6 +151,11 @@ constraints:
       11-6-1: 'The answer is asked for as JSON: a list of suggestions, each quoting the passage of the page it applies to, what to put in its place, and why'
       11-6-2: A model that wrapped the JSON in a code fence, or wrote a line above it, is still understood; prose where JSON was asked for is reported as such
       11-6-3: Tasks can be ticked and run together, and every ticked task goes in one call rather than one call each; the page is the bulk of what a run sends, and sending it once for five tasks costs a fraction of sending it five times
+      11-6-3-1: 'A config setting decides which way a run of several tasks is carried out: all of them in one call, or one call per task. One call for the lot is the default'
+      11-6-3-2: The per-task way is affordable because the page is the cached part of a request, so from the second call on a provider that caches serves it rather than charging for it again; what the two ways really differ in is the answer, a model given one task at a time attending to it fully where several in one call are answered in one list that tends to be shorter
+      11-6-3-3: The per-task calls are made one after another, not at once, because a cache is written by the call that misses it -- in parallel every call would miss -- and because a burst of calls is what a provider's rate limit answers with refusals
+      11-6-3-4: A task whose call fails does not take the run with it: what the other tasks found is shown, with the failure named beside it; only a run in which nothing succeeded is an error
+      11-6-3-5: A list of suggestions says which way the run that produced it was carried out, since telling one way's answers from the other's is the reason for being able to switch
       11-6-4: Only the tasks the user picked are sent, never all of them; output is the dearer half of a call, so a run of every task would pay for findings nobody asked for
       11-6-5: 'The request is ordered instruction, page, tasks: everything up to the tasks is then the same from run to run, which is what a provider''s prompt cache can serve, where the task first would leave the page behind something that changes every run'
       11-6-6: On the Anthropic kind the page carries the cache breakpoint that marks that prefix; the OpenAI-style providers that cache do it by themselves

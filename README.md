@@ -125,10 +125,19 @@ suggestion's passage is highlighted in the editor, and clicking the suggestion
 scrolls to it; a Back button returns to the task list and takes the highlights
 off the text.
 
-Several tasks can be ticked and run together. They go to the model in one
-call, which sends the page once instead of once per task — the page is the
-bulk of what a run costs — and the findings come back grouped by task, with a
-chip per task to narrow the list. Only the tasks you tick are ever sent.
+Several tasks can be ticked and run together. By default they go to the model
+in one call, which sends the page once instead of once per task — the page is
+the bulk of what a run costs — and the findings come back grouped by task,
+with a chip per task to narrow the list. Only the tasks you tick are ever sent.
+
+*Config → Copyedit: Editing tasks* can switch that to one call per ticked
+task instead. The page sits in the cached part of a request, so from the
+second call on a provider that caches serves it rather than charging for it
+again; what the two ways really differ in is the answer, since a model given
+one task at a time attends to it fully where several in one call are answered
+in one list. Which reads better depends on the model and the tasks, so the
+setting is there to be tried both ways — each list of suggestions says which
+way produced it.
 
 Each suggestion carries two buttons. **Apply** writes the replacement into the
 page at the highlight, so a passage that moved under an edit made since the run

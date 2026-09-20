@@ -702,6 +702,20 @@ into the tasks it came from, and `taskOf` (`llm.go`) does the attributing: a
 tag naming no task of the run leaves its suggestion unattributed rather than
 dropped, and a run of one task needs no tag at all.
 
+Which way a run is carried out is a setting (`copyeditConfig.Mode`, the two
+`mode*` constants), because the cost argument above is only half the story:
+one call for five tasks is cheaper, but a model given five instructions
+answers with one list that tends to be shorter than five lists would be, and
+whether that costs findings is a property of the model and the tasks rather
+than something to assume. `runCopyeditPerTask` is the other way — one call per
+task, **in sequence**, not in parallel: the page is the cached part of the
+request, a cache is written by the call that misses it, so firing the tasks at
+once would have them all miss where in sequence the first writes it and the
+rest read it (a burst is also what a rate limit answers with 429s). A task
+whose call fails is reported beside what the others found; only a run in which
+nothing succeeded is an error. Each list of suggestions carries the mode that
+produced it, so two runs of the same tasks can be told apart.
+
 `llm.go` is the call itself, in net/http and encoding/json alone. Two request
 shapes cover what a connection can point at (`requestFor`): Anthropic's
 `/messages` and the OpenAI-style `/chat/completions` every other provider

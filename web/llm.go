@@ -158,6 +158,43 @@ func runCopyedit(conn apiConnection, tasks []editingTask, path, text string) ([]
 	return locateAll(text, sugs), nil
 }
 
+// runCopyeditPerTask asks each task on its own, one call after another,
+// and returns everything they came back with. It is the other way of
+// carrying out a run (see the mode constants in copyedit.go): the model
+// sees one task at a time and attends to it fully, at the price of a
+// request per task.
+//
+// The calls are made one after another rather than at once, on purpose.
+// The page is the cached part of the request, and a cache is written by
+// the call that misses it: firing every task in parallel would have them
+// all miss, where in sequence the first writes the page into the
+// provider's cache and the rest read it. Sequence is also what keeps a
+// long run from arriving at the provider as a burst that its rate limit
+// answers with 429s.
+//
+// A task that fails does not take the run with it: its failure is
+// reported, and what the other tasks found is still shown. Only a run in
+// which nothing succeeded is an error.
+func runCopyeditPerTask(conn apiConnection, tasks []editingTask, path, text string) ([]suggestion, []string, error) {
+	if len(tasks) == 0 {
+		return nil, nil, errors.New("no editing task was selected")
+	}
+	var all []suggestion
+	var failed []string
+	for _, task := range tasks {
+		sugs, err := runCopyedit(conn, []editingTask{task}, path, text)
+		if err != nil {
+			failed = append(failed, task.Title+": "+err.Error())
+			continue
+		}
+		all = append(all, sugs...)
+	}
+	if len(failed) == len(tasks) {
+		return nil, failed, errors.New(strings.Join(failed, "; "))
+	}
+	return all, failed, nil
+}
+
 // pageBlock is the part of the request that stays the same while the user
 // works through the tasks on one page: it is what a provider's prompt
 // cache can hold on to, so it is kept whole and put first.

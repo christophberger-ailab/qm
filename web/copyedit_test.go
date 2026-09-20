@@ -220,6 +220,7 @@ type stubModel struct {
 	*httptest.Server
 	path   string
 	body   map[string]any
+	calls  []map[string]any
 	header http.Header
 }
 
@@ -229,7 +230,12 @@ func newStubModel(t *testing.T, answer string) *stubModel {
 	stub.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		stub.path = r.URL.Path
 		stub.header = r.Header.Clone()
-		json.NewDecoder(r.Body).Decode(&stub.body)
+		// A fresh map per call: decoding into the same one would merge
+		// the calls of a per-task run into each other.
+		body := map[string]any{}
+		json.NewDecoder(r.Body).Decode(&body)
+		stub.body = body
+		stub.calls = append(stub.calls, body)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
 			"content": []map[string]string{{"type": "text", "text": answer}},
@@ -523,6 +529,146 @@ func TestTheTaskListOffersBothWaysToRun(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("task list missing %q:\n%s", want, body)
+		}
+	}
+}
+
+// setMode is the switch on the editing-tasks config page.
+func setMode(t *testing.T, srv *server, mode string) {
+	t.Helper()
+	rec := post(t, srv, "/config/copyedit/mode", url.Values{"mode": {mode}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("set mode: status %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestRunModeIsConfiguredAndRemembered(t *testing.T) {
+	srv, _ := configTestServer(t)
+	if got := srv.runMode(); got != modeBatched {
+		t.Errorf("mode starts as %q, want one call for the lot", got)
+	}
+	body := get(t, srv, "/config/copyedit").Body.String()
+	for _, want := range []string{
+		`action="/config/copyedit/mode"`,
+		`<option value="batched" selected>`,
+		`<option value="per-task">`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("config page missing %q:\n%s", want, body)
+		}
+	}
+
+	setMode(t, srv, modePerTask)
+	if got := srv.runMode(); got != modePerTask {
+		t.Fatalf("mode = %q after switching", got)
+	}
+	// It outlives the run, like the rest of the setup.
+	again, err := newServer(srv.prefsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := again.runMode(); got != modePerTask {
+		t.Errorf("reloaded mode = %q, want the one that was saved", got)
+	}
+	if rec := post(t, srv, "/config/copyedit/mode", url.Values{"mode": {"sideways"}}); !strings.Contains(rec.Body.String(), "no such run mode") {
+		t.Errorf("an unknown mode was accepted:\n%s", rec.Body)
+	}
+}
+
+func TestPerTaskModeAsksEachTaskOnItsOwn(t *testing.T) {
+	srv, _ := configTestServer(t)
+	addPrompt(t, srv, "Passive voice", "Rewrite passive sentences actively.")
+	addPrompt(t, srv, "Long sentences", "Find sentences longer than 25 words.")
+	stub := newStubModel(t, `{"suggestions":[{"original":"was written by the editor","suggestion":"the editor wrote"}]}`)
+	addConnection(t, srv, "Stub", "anthropic", stub.URL+"/v1", "stub-model", "k")
+	setMode(t, srv, modePerTask)
+
+	page := "# Title\n\nThe page was written by the editor.\n"
+	body := post(t, srv, "/copyedit/run", url.Values{
+		"prompt": {"p1", "p2"}, "path": {"index.qmd"}, "body": {page},
+	}).Body.String()
+
+	if len(stub.calls) != 2 {
+		t.Fatalf("%d calls, want one per task", len(stub.calls))
+	}
+	// Each call carries its own task and the same page, and the page is
+	// the marked prefix -- which is what the second call can be served
+	// from the first one's cache.
+	for i, want := range []string{"Passive voice", "Long sentences"} {
+		sent, _ := json.Marshal(stub.calls[i])
+		if !strings.Contains(string(sent), want) {
+			t.Errorf("call %d does not carry %q:\n%s", i+1, want, sent)
+		}
+		if other := []string{"Long sentences", "Passive voice"}[i]; strings.Contains(string(sent), other) {
+			t.Errorf("call %d carries %q as well, so it is not one task per call:\n%s", i+1, other, sent)
+		}
+		blocks := stub.calls[i]["messages"].([]any)[0].(map[string]any)["content"].([]any)
+		first := blocks[0].(map[string]any)
+		if !strings.Contains(first["text"].(string), "The page was written by the editor.") {
+			t.Errorf("call %d does not open with the page:\n%v", i+1, first)
+		}
+		if first["cache_control"] == nil {
+			t.Errorf("call %d does not mark the page as the cacheable prefix", i+1)
+		}
+	}
+
+	// Both tasks' findings come back, each under its own task, and the
+	// pane says which way the run was carried out.
+	for _, want := range []string{`data-task="Passive voice"`, `data-task="Long sentences"`, "one call per task"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("suggestion list missing %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestBatchedModeStaysOneCallAndSaysSo(t *testing.T) {
+	srv, _ := configTestServer(t)
+	addPrompt(t, srv, "Passive voice", "Rewrite passive sentences actively.")
+	addPrompt(t, srv, "Long sentences", "Find sentences longer than 25 words.")
+	stub := newStubModel(t, `{"suggestions":[{"task":"t1","original":"was written","suggestion":"wrote"}]}`)
+	addConnection(t, srv, "Stub", "anthropic", stub.URL+"/v1", "stub-model", "k")
+
+	body := post(t, srv, "/copyedit/run", url.Values{
+		"prompt": {"p1", "p2"}, "body": {"It was written badly.\n"},
+	}).Body.String()
+	if len(stub.calls) != 1 {
+		t.Fatalf("%d calls, want one for the lot", len(stub.calls))
+	}
+	if !strings.Contains(body, "one call for all tasks") {
+		t.Errorf("the pane does not say how the run was carried out:\n%s", body)
+	}
+}
+
+func TestOneFailedTaskDoesNotLoseTheOthers(t *testing.T) {
+	srv, _ := configTestServer(t)
+	addPrompt(t, srv, "Passive voice", "Rewrite passive sentences actively.")
+	addPrompt(t, srv, "Long sentences", "Find sentences longer than 25 words.")
+	// The second call fails; the first one's findings must survive it.
+	var calls int
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 2 {
+			http.Error(w, `{"error":{"message":"rate limited"}}`, http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"content": []map[string]string{
+			{"type": "text", "text": `{"suggestions":[{"original":"was written","suggestion":"wrote"}]}`},
+		}})
+	}))
+	defer stub.Close()
+	addConnection(t, srv, "Stub", "anthropic", stub.URL+"/v1", "stub-model", "k")
+	setMode(t, srv, modePerTask)
+
+	body := post(t, srv, "/copyedit/run", url.Values{
+		"prompt": {"p1", "p2"}, "body": {"It was written badly.\n"},
+	}).Body.String()
+	if !strings.Contains(body, "the editor wrote") && !strings.Contains(body, "wrote") {
+		t.Errorf("the task that succeeded lost its findings:\n%s", body)
+	}
+	for _, want := range []string{"Long sentences", "rate limited"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the failed task is not reported (%q missing):\n%s", want, body)
 		}
 	}
 }

@@ -48,6 +48,55 @@ type copyeditConfig struct {
 	Prompts     []copyeditPrompt `json:"prompts"`
 	Connections []apiConnection  `json:"connections"`
 	Active      string           `json:"active,omitempty"`
+	// Mode is how a run of several tasks is carried out: all of them in
+	// one call, or one call each. Empty means the default.
+	Mode string `json:"mode,omitempty"`
+}
+
+// How a run of several tasks reaches the model.
+//
+// Batched is one call carrying every selected task, which sends the page
+// once. Per-task is one call per task, each sending the page again --
+// except that the page is the cached part of the request (see requestFor),
+// so from the second call on the provider may serve it from its cache and
+// the difference in cost is far smaller than the difference in requests.
+// What the two really differ in is the answer: a model given one task at a
+// time attends to it fully, where five tasks in one call are answered in
+// one list that tends to be shorter than five lists would be. Which reads
+// better is a question about a particular model and a particular set of
+// tasks, so it is the user's to answer, not ours to assume.
+const (
+	modeBatched = "batched"
+	modePerTask = "per-task"
+)
+
+// runMode is the configured mode, defaulting to one call for the lot. The
+// caller must hold s.mu.
+func (s *server) runMode() string {
+	if s.copyedit.Mode == modePerTask {
+		return modePerTask
+	}
+	return modeBatched
+}
+
+// setRunMode records how a run of several tasks is to be carried out. The
+// caller must hold s.mu.
+func (s *server) setRunMode(mode string) error {
+	if mode != modeBatched && mode != modePerTask {
+		return errors.New("no such run mode")
+	}
+	s.copyedit.Mode = mode
+	return s.saveCopyedit()
+}
+
+// modeLabel says in the pane which way a run was carried out, so that a
+// list of suggestions can be told apart from the same tasks run the other
+// way -- which is the whole point of being able to switch.
+func modeLabel(mode string) string {
+	if mode == modePerTask {
+		return "one call per task"
+	}
+	return "one call for all tasks"
 }
 
 // copyeditFileForPrefs returns the file that holds the copyediting setup,
@@ -255,11 +304,24 @@ func (s *server) copyeditPaneView() copyeditPane {
 	return v
 }
 
-// copyeditConfigView is the page data for the editing-tasks config page.
+// copyeditConfigView is the page data for the editing-tasks config page:
+// the tasks themselves, and how a run of several of them is carried out.
 type copyeditConfigView struct {
 	Prompts []copyeditPrompt
+	Mode    string
+	PerTask bool
 	Message string
 	Error   string
+}
+
+// copyeditConfigPageView assembles that page. The caller must hold s.mu.
+func (s *server) copyeditConfigPageView() copyeditConfigView {
+	mode := s.runMode()
+	return copyeditConfigView{
+		Prompts: s.copyedit.Prompts,
+		Mode:    mode,
+		PerTask: mode == modePerTask,
+	}
 }
 
 // connectionsView is the page data for the API connections config page.
@@ -276,8 +338,11 @@ type suggestionsView struct {
 	// Tasks are the titles that were run, in the order the config lists
 	// them; the pane names them and, for a run of several, offers one
 	// filter per task.
-	Tasks  []string
-	Model  string
+	Tasks []string
+	Model string
+	// Mode says which way the run was carried out, so that a list can be
+	// told from the same tasks run the other way.
+	Mode   string
 	Groups []suggestionGroup
 	// Count is how many suggestions came back in all, which is what the
 	// head reports and what tells an empty run from a failed one.
@@ -326,14 +391,15 @@ func groupSuggestions(tasks []editingTask, sugs []suggestion) []suggestionGroup 
 func (s *server) copyeditConfigPage(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.render(w, "copyedit-page", copyeditConfigView{Prompts: s.copyedit.Prompts})
+	s.render(w, "copyedit-page", s.copyeditConfigPageView())
 }
 
 func (s *server) savePromptHandler(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	r.ParseForm()
-	view := copyeditConfigView{Message: "Saved."}
+	view := s.copyeditConfigPageView()
+	view.Message = "Saved."
 	if err := s.savePrompt(r.PostFormValue("id"), r.PostFormValue("title"), r.PostFormValue("prompt")); err != nil {
 		view.Message, view.Error = "", err.Error()
 	}
@@ -345,11 +411,29 @@ func (s *server) deletePromptHandler(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	r.ParseForm()
-	view := copyeditConfigView{Message: "Deleted."}
+	view := s.copyeditConfigPageView()
+	view.Message = "Deleted."
 	if err := s.deletePrompt(r.PostFormValue("id")); err != nil {
 		view.Message, view.Error = "", err.Error()
 	}
 	view.Prompts = s.copyedit.Prompts
+	s.render(w, "copyedit-page", view)
+}
+
+// runModeHandler records whether a run of several tasks goes to the model
+// in one call or in one call per task.
+func (s *server) runModeHandler(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r.ParseForm()
+	view := s.copyeditConfigPageView()
+	if err := s.setRunMode(r.PostFormValue("mode")); err != nil {
+		view.Error = err.Error()
+		s.render(w, "copyedit-page", view)
+		return
+	}
+	view = s.copyeditConfigPageView()
+	view.Message = "Saved."
 	s.render(w, "copyedit-page", view)
 }
 
@@ -433,10 +517,11 @@ func (s *server) copyeditRunHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	conn, ok := s.activeConnection()
+	mode := s.runMode()
 	s.mu.Unlock()
 
 	tasks := tasksFor(prompts)
-	view := suggestionsView{Model: conn.Name}
+	view := suggestionsView{Model: conn.Name, Mode: modeLabel(mode)}
 	for _, t := range tasks {
 		view.Tasks = append(view.Tasks, t.Title)
 	}
@@ -450,11 +535,24 @@ func (s *server) copyeditRunHandler(w http.ResponseWriter, r *http.Request) {
 		s.render(w, "copyedit-suggestions", view)
 		return
 	}
-	sugs, err := runCopyedit(conn, tasks, r.PostFormValue("path"), r.PostFormValue("body"))
+	path, body := r.PostFormValue("path"), r.PostFormValue("body")
+	var sugs []suggestion
+	var failed []string
+	var err error
+	if mode == modePerTask {
+		sugs, failed, err = runCopyeditPerTask(conn, tasks, path, body)
+	} else {
+		sugs, err = runCopyedit(conn, tasks, path, body)
+	}
 	if err != nil {
 		view.Error = err.Error()
 		s.render(w, "copyedit-suggestions", view)
 		return
+	}
+	// A run of one call per task can lose a task and keep the rest; what
+	// the others found is shown, with the failure beside it.
+	if len(failed) > 0 {
+		view.Error = strings.Join(failed, "; ")
 	}
 	view.Groups, view.Count = groupSuggestions(tasks, sugs), len(sugs)
 	s.render(w, "copyedit-suggestions", view)

@@ -114,6 +114,7 @@ func newServer(prefsFile string) (*server, error) {
 	s.mux.HandleFunc("GET /config/copyedit", s.copyeditConfigPage)
 	s.mux.HandleFunc("POST /config/copyedit", s.savePromptHandler)
 	s.mux.HandleFunc("POST /config/copyedit/delete", s.deletePromptHandler)
+	s.mux.HandleFunc("POST /config/copyedit/mode", s.runModeHandler)
 	s.mux.HandleFunc("GET /config/connections", s.connectionsPage)
 	s.mux.HandleFunc("POST /config/connections", s.saveConnectionHandler)
 	s.mux.HandleFunc("POST /config/connections/delete", s.deleteConnectionHandler)
