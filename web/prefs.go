@@ -1,7 +1,6 @@
 package web
 
 import (
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -21,12 +20,12 @@ type projectPrefs struct {
 	// Topics are the selected topic names.
 	Topics []string `json:"topics"`
 	// Audiences maps a topic to the audiences selected for it.
-	Audiences map[string][]string `json:"audiences,omitempty"`
+	Audiences map[string][]string `json:"audiences"`
 	// Formats are the selected format names (handout, handbook, ...).
 	Formats []string `json:"formats"`
 	// Page is the project-relative path of the page last opened in the
 	// editor.
-	Page string `json:"page,omitempty"`
+	Page string `json:"page"`
 }
 
 // defaultPrefs is what a project gets before the user picks anything:
@@ -57,29 +56,6 @@ func intersect(sel, available []string) []string {
 	return out
 }
 
-// defaultPrefsFile returns the per-project preferences file in the user's
-// config directory, or "" if no config directory is available. The file is
-// still called render.json: it began as the render selection alone, and
-// renaming it would drop every selection users have already made.
-func defaultPrefsFile() string {
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(dir, "qm", "render.json")
-}
-
-// recentFileForPrefs returns the file that holds the recently opened
-// project paths, beside the render prefs, or "" when persistence is
-// disabled. It is a file of its own because render.json is a map keyed by
-// project root, with no room for a project-independent entry.
-func recentFileForPrefs(prefsFile string) string {
-	if prefsFile == "" {
-		return ""
-	}
-	return filepath.Join(filepath.Dir(prefsFile), "recent.json")
-}
-
 // maxRecent is how many project paths the Open field's dropdown offers.
 // Ten is what fits in a glance; older paths drop off the end.
 const maxRecent = 10
@@ -91,94 +67,48 @@ func (s *server) rememberRoot(dir string) {
 	if dir == "" {
 		return
 	}
-	s.recent = append([]string{dir}, slices.DeleteFunc(s.recent, func(p string) bool {
+	s.cfg.Recent = append([]string{dir}, slices.DeleteFunc(s.cfg.Recent, func(p string) bool {
 		return p == dir
 	})...)
-	if len(s.recent) > maxRecent {
-		s.recent = s.recent[:maxRecent]
+	if len(s.cfg.Recent) > maxRecent {
+		s.cfg.Recent = s.cfg.Recent[:maxRecent]
 	}
-	s.saveRecent()
+	s.saveConfig()
 }
 
-// saveRecent writes the recent paths. Like the prefs, persistence is best
-// effort: a failure only loses the list across restarts. The caller must
-// hold s.mu.
-func (s *server) saveRecent() {
-	if s.recentFile == "" {
-		return
+// saveConfig writes the settings file. Persistence is best effort for
+// everything that goes through here: the in-memory settings are already
+// updated, so a failed write only loses the change across restarts, and
+// the UI has nowhere useful to report it from. The handlers that let the
+// user type something worth keeping -- the editing tasks, the API
+// connections -- call the store directly and do report what went wrong.
+// The caller must hold s.mu.
+func (s *server) saveConfig() error {
+	if s.configFile == "" {
+		return nil // no config directory: these settings last this run
 	}
-	b, err := json.MarshalIndent(s.recent, "", "  ")
-	if err != nil {
-		return
-	}
-	if err := os.MkdirAll(filepath.Dir(s.recentFile), 0o755); err != nil {
-		return
-	}
-	os.WriteFile(s.recentFile, b, 0o644)
+	return saveConfigFile(s.configFile, s.cfg)
 }
 
-// loadRecent reads the recent paths. A missing or unreadable file just
-// means no project was opened through the field yet.
-func (s *server) loadRecent() {
-	s.recent = nil
-	if s.recentFile == "" {
-		return
-	}
-	if b, err := os.ReadFile(s.recentFile); err == nil {
-		json.Unmarshal(b, &s.recent)
-	}
-	if len(s.recent) > maxRecent {
-		s.recent = s.recent[:maxRecent]
-	}
-}
-
-// cssDirForPrefs returns the directory that holds the custom preview
-// stylesheets, beside the render prefs, or "" when persistence is
-// disabled.
-func cssDirForPrefs(prefsFile string) string {
-	if prefsFile == "" {
+// cssDirFor returns the directory that holds the custom preview
+// stylesheets, beside the settings file, or "" when persistence is
+// disabled. The stylesheets are the one thing that stays out of the
+// settings file: they are CSS, and CSS belongs in .css files where an
+// editor can highlight it.
+func cssDirFor(configFile string) string {
+	if configFile == "" {
 		return ""
 	}
-	return filepath.Join(filepath.Dir(prefsFile), "custom-css")
+	return filepath.Join(filepath.Dir(configFile), "custom-css")
 }
 
 // prefsFor returns the saved selection of the open project, or the default
 // one. The caller must hold s.mu.
 func (s *server) prefsFor(root string) projectPrefs {
-	if p, ok := s.prefs[root]; ok {
+	if p, ok := s.cfg.Projects[root]; ok {
 		return p
 	}
 	return defaultPrefs()
-}
-
-// savePrefs writes the per-project preferences to the prefs file.
-// Persistence is best effort: the in-memory state is already updated, so a
-// write failure only loses the selection across restarts. The caller must
-// hold s.mu.
-func (s *server) savePrefs() {
-	if s.prefsFile == "" {
-		return
-	}
-	b, err := json.MarshalIndent(s.prefs, "", "  ")
-	if err != nil {
-		return
-	}
-	if err := os.MkdirAll(filepath.Dir(s.prefsFile), 0o755); err != nil {
-		return
-	}
-	os.WriteFile(s.prefsFile, b, 0o644)
-}
-
-// loadPrefs reads the prefs file. A missing or unreadable file just means
-// no saved selections yet.
-func (s *server) loadPrefs() {
-	s.prefs = map[string]projectPrefs{}
-	if s.prefsFile == "" {
-		return
-	}
-	if b, err := os.ReadFile(s.prefsFile); err == nil {
-		json.Unmarshal(b, &s.prefs)
-	}
 }
 
 // rememberPage records the page the editor now shows, so the app comes back
@@ -193,8 +123,8 @@ func (s *server) rememberPage(rel string) {
 		return
 	}
 	p.Page = rel
-	s.prefs[s.root] = p
-	s.savePrefs()
+	s.cfg.Projects[s.root] = p
+	s.saveConfig()
 }
 
 // forgetPage drops the remembered page when it is the one named by rel, so
@@ -205,8 +135,8 @@ func (s *server) forgetPage(rel string) {
 	}
 	if p := s.prefsFor(s.root); p.Page == rel {
 		p.Page = ""
-		s.prefs[s.root] = p
-		s.savePrefs()
+		s.cfg.Projects[s.root] = p
+		s.saveConfig()
 	}
 }
 
@@ -285,8 +215,10 @@ func sanitizeCSSName(name string) (string, error) {
 	return name, nil
 }
 
-// activeMarkerFile is the file inside the css directory that records which
-// stylesheet is currently shown by the live preview.
+// activeMarkerFile is the file the active stylesheet used to be recorded
+// in, inside the css directory. It is a setting and lives in the settings
+// file now; the name is kept so that the old marker can be read once and
+// retired (see migrate.go).
 const activeMarkerFile = ".active"
 
 // ensureDefaultCSS materializes the baked-in default stylesheet the first
@@ -382,16 +314,12 @@ func (s *server) createCSS(name string) (string, error) {
 
 // activeCSS returns the stylesheet the live preview currently shows: the
 // one last selected in the dropdown, falling back to the first available
-// stylesheet when nothing was selected yet or the selection no longer
-// exists. The caller must hold s.mu.
+// stylesheet when nothing was selected yet or the selection names a file
+// that is no longer there. The caller must hold s.mu.
 func (s *server) activeCSS() string {
 	files := s.cssFiles()
-	if s.cssDir != "" {
-		if b, err := os.ReadFile(filepath.Join(s.cssDir, activeMarkerFile)); err == nil {
-			if name := strings.TrimSpace(string(b)); slices.Contains(files, name) {
-				return name
-			}
-		}
+	if slices.Contains(files, s.cfg.Preview.CSS) {
+		return s.cfg.Preview.CSS
 	}
 	return files[0]
 }
@@ -399,14 +327,9 @@ func (s *server) activeCSS() string {
 // setActiveCSS remembers name as the stylesheet the live preview shows.
 // The caller must hold s.mu.
 func (s *server) setActiveCSS(name string) error {
-	if s.cssDir == "" {
-		return nil
-	}
 	if !slices.Contains(s.cssFiles(), name) {
 		return errors.New("no such stylesheet")
 	}
-	if err := os.MkdirAll(s.cssDir, 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(s.cssDir, activeMarkerFile), []byte(name), 0o644)
+	s.cfg.Preview.CSS = name
+	return s.saveConfig()
 }

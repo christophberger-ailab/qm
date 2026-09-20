@@ -662,10 +662,21 @@ button:hover,
   resize: vertical;
 }
 
-.config-new {
+.config-new,
+.config-setting {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.9rem 1rem;
+}
+
+.config-setting {
+  margin-bottom: 1.2rem;
+}
+
+.config-setting h3,
+.config-setting .config-intro {
+  margin-bottom: 0.8rem;
+  font-size: 0.9rem;
 }
 
 .config-new h3 {
@@ -1364,10 +1375,65 @@ li.CodeMirror-hint-active {
   gap: 0.35rem;
 }
 
+/* A task's row: the tick that puts it in a batch, and the title that runs
+   it on its own. */
+.copyedit-task-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 .copyedit-task {
   display: block;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   text-align: left;
+}
+
+.copyedit-run-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
+
+.copyedit-run-selected:disabled,
+.copyedit-run-selected:disabled:hover {
+  opacity: 0.5;
+  cursor: default;
+  background: var(--hover);
+}
+
+/* One chip per task of a run, to narrow the list to it. */
+.copyedit-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-bottom: 0.5rem;
+}
+
+.copyedit-filter {
+  font-size: 0.75rem;
+}
+
+.copyedit-filter.active {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.copyedit-group[hidden] {
+  display: none;
+}
+
+.copyedit-group-name {
+  margin: 0.6rem 0 0.35rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.copyedit-none {
+  margin: 0 0 0.4rem;
+  font-size: 0.85rem;
 }
 
 /* The indicator htmx marks while a run is out. A model takes its time,
@@ -1429,9 +1495,11 @@ li.CodeMirror-hint-active {
   opacity: 0.75;
 }
 
-/* One that has been written into the page is kept -- it says what was
-   changed -- but it steps back: there is nothing left to do with it. */
+/* One that has been dealt with -- written in by Apply, or seen to by hand
+   and marked Done -- is kept, since it says what was changed, but it steps
+   back: there is nothing left to do with it. */
 .copyedit-suggestion.applied,
+.copyedit-suggestion.done,
 .copyedit-suggestion.stale {
   opacity: 0.6;
   cursor: default;
@@ -1448,12 +1516,19 @@ li.CodeMirror-hint-active {
   margin-top: 0.4rem;
 }
 
-.copyedit-apply {
+.copyedit-suggestion-actions {
+  gap: 0.4rem;
+}
+
+.copyedit-apply,
+.copyedit-done {
   font-size: 0.8rem;
 }
 
 .copyedit-apply:disabled,
-.copyedit-apply:disabled:hover {
+.copyedit-apply:disabled:hover,
+.copyedit-done:disabled,
+.copyedit-done:disabled:hover {
   opacity: 0.6;
   cursor: default;
   background: var(--hover);

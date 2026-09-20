@@ -46,17 +46,25 @@ const (
 )
 
 // suggestionFormat is the part of the instruction that is ours rather than
-// the user's: the editing task comes from the prompt the user wrote, the
+// the user's: the editing tasks come from the prompts the user wrote, the
 // shape of the answer comes from here. The pane can only highlight what it
 // can find again in the page, so the "original" field is asked for
 // verbatim and kept short.
+//
+// It is the system prompt, and the page follows it unchanged from one run
+// to the next, which is what lets the two of them be cached together (see
+// requestFor). Everything that varies -- which tasks are being run -- is
+// asked for after the page.
 const suggestionFormat = `You are a copy editor working on one page of a Quarto Markdown document.
-Apply the editing task below to the page and report what you would change.
+You are given the page, then one or more editing tasks to apply to it.
+Report what you would change.
 
 Answer with JSON and nothing else, in exactly this shape:
 
-{"suggestions":[{"original":"...","suggestion":"...","comment":"..."}]}
+{"suggestions":[{"task":"t1","original":"...","suggestion":"...","comment":"..."}]}
 
+  - "task" is the id in brackets of the editing task the suggestion comes
+    from, copied exactly. Every suggestion names the task it answers.
   - "original" is the passage the suggestion applies to, copied from the
     page character for character, so that it can be found in the page
     again. Quote as little as possible: the sentence or the phrase, never a
@@ -64,9 +72,11 @@ Answer with JSON and nothing else, in exactly this shape:
   - "suggestion" is the text you would put in its place.
   - "comment" is one short sentence saying why.
 
-Report only what the editing task asks for. Leave Markdown syntax, YAML
-frontmatter, code blocks, and Quarto shortcodes alone unless the task is
-about them. If the page needs no change, answer {"suggestions":[]}.`
+Work through every task you are given and report each one's findings, even
+when one task yields many and another none. Report only what the tasks ask
+for. Leave Markdown syntax, YAML frontmatter, code blocks, and Quarto
+shortcodes alone unless a task is about them. If the page needs no change,
+answer {"suggestions":[]}.`
 
 // suggestion is one piece of advice: the passage it is about, what to put
 // there instead, and why. Start and End locate the passage in the page as
@@ -74,12 +84,25 @@ about them. If the page needs no change, answer {"suggestions":[]}.`
 // — so the editor can mark it; Located says whether the passage was found
 // at all.
 type suggestion struct {
+	// Task is the title of the editing task this came from; a run of
+	// several tasks is grouped by it.
+	Task        string
 	Original    string
 	Replacement string
 	Comment     string
 	Start       int
 	End         int
 	Located     bool
+}
+
+// editingTask is one task as a run gives it to the model: the id the model
+// tags its suggestions with, and the title and prompt the user wrote. The
+// id is the task's place in this run ("t1", "t2"), not the id it has in
+// the config, which is nothing the model needs to know.
+type editingTask struct {
+	ID     string
+	Title  string
+	Prompt string
 }
 
 // Applicable says whether this suggestion can be written into the page at
@@ -96,6 +119,7 @@ func (s suggestion) Applicable() bool {
 // "revised", and a run is not worth losing over the word one picked.
 type llmReply struct {
 	Suggestions []struct {
+		Task        string `json:"task"`
 		Original    string `json:"original"`
 		Suggestion  string `json:"suggestion"`
 		Replacement string `json:"replacement"`
@@ -105,37 +129,136 @@ type llmReply struct {
 	} `json:"suggestions"`
 }
 
-// runCopyedit asks the connection's model to apply task to the text of the
-// page at path and returns the suggestions it made, each located in the
-// text. The path travels with the page because it is part of what the page
-// is: a Quarto page's name carries its audience (`_FW`, `_POL`) and its
-// place in the book, and an editing task may well be about either.
-func runCopyedit(conn apiConnection, task, path, text string) ([]suggestion, error) {
+// runCopyedit asks the connection's model to apply the tasks to the text of
+// the page at path and returns the suggestions they produced, each located
+// in the text and attributed to the task it came from. The path travels
+// with the page because it is part of what the page is: a Quarto page's
+// name carries its audience (`_FW`, `_POL`) and its place in the book, and
+// an editing task may well be about either.
+//
+// Several tasks go in one call rather than one call each. The page is the
+// bulk of what a run sends, and sending it once for five tasks costs a
+// fraction of sending it five times; the tasks are what the user picked,
+// so nothing is asked for that was not.
+func runCopyedit(conn apiConnection, tasks []editingTask, path, text string) ([]suggestion, error) {
+	if len(tasks) == 0 {
+		return nil, errors.New("no editing task was selected")
+	}
 	if strings.TrimSpace(text) == "" {
 		return nil, errors.New("the page is empty, so there is nothing to edit")
 	}
-	page := "The page"
-	if path != "" {
-		page += " (" + path + ")"
-	}
-	answer, err := askModel(conn, suggestionFormat, "Editing task:\n\n"+task+"\n\n"+page+":\n\n"+text)
+	answer, err := askModel(conn, suggestionFormat, pageBlock(path, text), taskBlock(tasks), len(tasks))
 	if err != nil {
 		return nil, err
 	}
-	sugs, err := decodeSuggestions(answer)
+	sugs, err := decodeSuggestions(answer, tasks)
 	if err != nil {
 		return nil, err
 	}
 	return locateAll(text, sugs), nil
 }
 
-// askModel sends one system/user pair to the connection and returns the
-// model's text.
-func askModel(conn apiConnection, system, user string) (string, error) {
+// runCopyeditPerTask asks each task on its own, one call after another,
+// and returns everything they came back with. It is the other way of
+// carrying out a run (see the mode constants in copyedit.go): the model
+// sees one task at a time and attends to it fully, at the price of a
+// request per task.
+//
+// The calls are made one after another rather than at once, on purpose.
+// The page is the cached part of the request, and a cache is written by
+// the call that misses it: firing every task in parallel would have them
+// all miss, where in sequence the first writes the page into the
+// provider's cache and the rest read it. Sequence is also what keeps a
+// long run from arriving at the provider as a burst that its rate limit
+// answers with 429s.
+//
+// A task that fails does not take the run with it: its failure is
+// reported, and what the other tasks found is still shown. Only a run in
+// which nothing succeeded is an error.
+func runCopyeditPerTask(conn apiConnection, tasks []editingTask, path, text string) ([]suggestion, []string, error) {
+	if len(tasks) == 0 {
+		return nil, nil, errors.New("no editing task was selected")
+	}
+	var all []suggestion
+	var failed []string
+	for _, task := range tasks {
+		sugs, err := runCopyedit(conn, []editingTask{task}, path, text)
+		if err != nil {
+			failed = append(failed, task.Title+": "+err.Error())
+			continue
+		}
+		all = append(all, sugs...)
+	}
+	if len(failed) == len(tasks) {
+		return nil, failed, errors.New(strings.Join(failed, "; "))
+	}
+	return all, failed, nil
+}
+
+// pageBlock is the part of the request that stays the same while the user
+// works through the tasks on one page: it is what a provider's prompt
+// cache can hold on to, so it is kept whole and put first.
+func pageBlock(path, text string) string {
+	head := "The page"
+	if path != "" {
+		head += " (" + path + ")"
+	}
+	return head + ":\n\n" + text
+}
+
+// taskBlock spells the selected tasks out, each under the id its
+// suggestions are to be tagged with. It comes after the page, being the
+// part that differs from run to run.
+func taskBlock(tasks []editingTask) string {
+	var b strings.Builder
+	b.WriteString("Editing task")
+	if len(tasks) > 1 {
+		b.WriteString("s")
+	}
+	b.WriteString(":\n")
+	for _, t := range tasks {
+		fmt.Fprintf(&b, "\n[%s] %s\n%s\n", t.ID, t.Title, t.Prompt)
+	}
+	return b.String()
+}
+
+// tasksFor numbers the prompts for one run: "t1", "t2", ... The model sees
+// these ids and tags each suggestion with one, which is how a run of
+// several tasks is sorted back out into the task it came from.
+func tasksFor(prompts []copyeditPrompt) []editingTask {
+	tasks := make([]editingTask, 0, len(prompts))
+	for i, p := range prompts {
+		tasks = append(tasks, editingTask{
+			ID: fmt.Sprintf("t%d", i+1), Title: p.Title, Prompt: p.Prompt,
+		})
+	}
+	return tasks
+}
+
+// answerBudget is the answer's token ceiling. It grows with the number of
+// tasks, because a run of five has five tasks' findings to report and an
+// answer cut off in the middle is not JSON at all -- the whole run is lost
+// with it. The ceiling keeps a runaway answer from being paid for twice
+// over.
+func answerBudget(tasks int) int {
+	if tasks < 1 {
+		tasks = 1
+	}
+	budget := maxTokens + (tasks-1)*2048
+	if budget > 16384 {
+		return 16384
+	}
+	return budget
+}
+
+// askModel sends one request to the connection and returns the model's
+// text. The page and the tasks are passed apart rather than as one string
+// because the request keeps them apart: the page is the cacheable part.
+func askModel(conn apiConnection, system, page, tasks string, count int) (string, error) {
 	if conn.Model == "" {
 		return "", errors.New("the connection names no model")
 	}
-	url, body, err := requestFor(conn, system, user)
+	url, body, err := requestFor(conn, system, page, tasks, count)
 	if err != nil {
 		return "", err
 	}
@@ -160,14 +283,42 @@ func askModel(conn apiConnection, system, user string) (string, error) {
 		return "", err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("%s answered %s: %s", conn.Name, resp.Status, snippet(string(raw)))
+		// The URL is part of the report: a refusal is about the key, but a
+		// 404 is about the address, and the address is composed here from
+		// what the connection carries.
+		return "", fmt.Errorf("%s answered %s for %s: %s", conn.Name, resp.Status, url, snippet(string(raw)))
 	}
 	return answerText(conn.Kind, raw)
 }
 
+// endpointURL puts the API's own path onto a connection's base URL. A base
+// URL that already ends in that path is left as it is: what a provider's
+// documentation prints is the whole endpoint
+// (`https://openrouter.ai/api/v1/chat/completions`), so that is what gets
+// pasted into the field at least as often as the base it asks for, and
+// appending the path a second time only produces a 404.
+func endpointURL(base, path string) string {
+	base = strings.TrimRight(strings.TrimSpace(base), "/")
+	if strings.HasSuffix(strings.ToLower(base), path) {
+		return base
+	}
+	return base + path
+}
+
 // requestFor composes the endpoint and the request body for the
 // connection's API kind.
-func requestFor(conn apiConnection, system, user string) (string, []byte, error) {
+//
+// The order is what makes a run cheap: the instruction and the page come
+// first and are the same for every task run against that page, the tasks
+// come last. A prompt cache matches on the prefix of a request, so
+// everything up to the tasks can be served from the cache of the run
+// before it; the other way round -- the task first -- the page would sit
+// behind something that changes every run and could never be cached at
+// all. On Anthropic the prefix must also be marked, which is what the
+// cache_control breakpoint on the page does; the OpenAI-style providers
+// that cache do it by themselves, and those that do not are simply served
+// a request in a sensible order.
+func requestFor(conn apiConnection, system, page, tasks string, count int) (string, []byte, error) {
 	base := strings.TrimRight(strings.TrimSpace(conn.BaseURL), "/")
 	if base == "" {
 		return "", nil, errors.New("the connection names no base URL")
@@ -176,24 +327,32 @@ func requestFor(conn apiConnection, system, user string) (string, []byte, error)
 	var url string
 	switch conn.Kind {
 	case kindAnthropic:
-		url = base + "/messages"
+		url = endpointURL(base, "/messages")
 		payload = map[string]any{
 			"model":      conn.Model,
-			"max_tokens": maxTokens,
+			"max_tokens": answerBudget(count),
 			"system":     system,
-			"messages": []map[string]string{
-				{"role": "user", "content": user},
-			},
+			"messages": []map[string]any{{
+				"role": "user",
+				"content": []map[string]any{
+					{
+						"type":          "text",
+						"text":          page,
+						"cache_control": map[string]string{"type": "ephemeral"},
+					},
+					{"type": "text", "text": tasks},
+				},
+			}},
 		}
 	default: // OpenAI-style, which is what every other provider speaks
-		url = base + "/chat/completions"
+		url = endpointURL(base, "/chat/completions")
 		payload = map[string]any{
 			"model":       conn.Model,
-			"max_tokens":  maxTokens,
+			"max_tokens":  answerBudget(count),
 			"temperature": 0,
 			"messages": []map[string]string{
 				{"role": "system", "content": system},
-				{"role": "user", "content": user},
+				{"role": "user", "content": page + "\n\n" + tasks},
 			},
 		}
 	}
@@ -261,7 +420,11 @@ func answerText(kind string, raw []byte) (string, error) {
 // decodeSuggestions reads the model's text as the JSON it was asked for. A
 // model that wrapped the JSON in a code fence, or wrote a line above it, is
 // still understood: the object between the outermost braces is the answer.
-func decodeSuggestions(answer string) ([]suggestion, error) {
+//
+// Each suggestion is attributed to the task it names (see taskOf). tasks
+// is what was asked for, so a tag that names none of them can be told from
+// one that names a task properly.
+func decodeSuggestions(answer string, tasks []editingTask) ([]suggestion, error) {
 	text := strings.TrimSpace(answer)
 	if fence := strings.Index(text, "```"); fence >= 0 {
 		rest := text[fence+3:]
@@ -285,12 +448,41 @@ func decodeSuggestions(answer string) ([]suggestion, error) {
 			continue // nothing to point at, so nothing to show
 		}
 		out = append(out, suggestion{
+			Task:        taskOf(tasks, s.Task),
 			Original:    s.Original,
 			Replacement: firstNonEmpty(s.Suggestion, s.Replacement, s.Revised),
 			Comment:     firstNonEmpty(s.Comment, s.Reason),
 		})
 	}
 	return out, nil
+}
+
+// taskOf turns the tag a suggestion carries into the title of the task it
+// belongs to. A run of one task needs no tag to be understood -- there is
+// only one task it can be from -- and a model that tagged by title rather
+// than by id is taken at its word. A tag naming nothing that was asked for
+// leaves the suggestion unattributed, which the pane shows as its own
+// group: the advice is still the model's answer about the page, and
+// dropping it because a label came out wrong would lose real work.
+func taskOf(tasks []editingTask, tag string) string {
+	if len(tasks) == 1 {
+		return tasks[0].Title
+	}
+	tag = strings.TrimSpace(tag)
+	for _, t := range tasks {
+		if strings.EqualFold(tag, t.ID) || strings.EqualFold(tag, t.Title) {
+			return t.Title
+		}
+	}
+	// A model that answered "[t2]" or "t2: Long sentences" rather than the
+	// bare id is still saying which task it means.
+	for _, t := range tasks {
+		if strings.Contains(strings.ToLower(tag), strings.ToLower(t.ID)) ||
+			strings.Contains(strings.ToLower(tag), strings.ToLower(t.Title)) {
+			return t.Title
+		}
+	}
+	return ""
 }
 
 func firstNonEmpty(values ...string) string {

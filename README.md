@@ -106,7 +106,7 @@ rewrites the `order:` front matter and shifts the moved page's headings),
 creates, edits and deletes pages with a live Markdown preview, searches the
 whole project, and runs renders in the background from the same flow
 `qm render` uses. The render selection and the page last open are remembered
-per project in `<user config dir>/qm/render.json`.
+per project in the settings file (below).
 
 A page marked `draft: true` in its front matter is greyed out in the tree: it
 is there, but it is not part of what a render publishes yet. A page written for
@@ -118,30 +118,46 @@ page just as it marks such a block written into the page by hand.
 Beside the editor sits a tabbed column: the Markdown preview, and a copyedit
 pane. The pane lists the editing tasks configured under *Config → Copyedit:
 Editing tasks* — each one a prompt with a title, "Passive voice", "Shorten
-sentences". Picking one sends the text the editor holds, unsaved edits and
+sentences". Clicking one sends the text the editor holds, unsaved edits and
 all, to the model selected in the pane's dropdown, and answers with a list of
 suggestions: what to change, what to put there instead, and why. Each
 suggestion's passage is highlighted in the editor, and clicking the suggestion
 scrolls to it; a Back button returns to the task list and takes the highlights
 off the text.
 
-A suggestion that says what to put in the passage's place carries an **Apply**
-button that writes it into the page. It is written at the highlight, so a
-passage that moved under an edit made since the run is still the one replaced,
-and it is written through the editor like a typed change — the autosave takes
-it to disk, the preview follows, and the editor's own undo takes it back.
+Several tasks can be ticked and run together. By default they go to the model
+in one call, which sends the page once instead of once per task — the page is
+the bulk of what a run costs — and the findings come back grouped by task,
+with a chip per task to narrow the list. Only the tasks you tick are ever sent.
+
+*Config → Copyedit: Editing tasks* can switch that to one call per ticked
+task instead. The page sits in the cached part of a request, so from the
+second call on a provider that caches serves it rather than charging for it
+again; what the two ways really differ in is the answer, since a model given
+one task at a time attends to it fully where several in one call are answered
+in one list. Which reads better depends on the model and the tasks, so the
+setting is there to be tried both ways — each list of suggestions says which
+way produced it.
+
+Each suggestion carries two buttons. **Apply** writes the replacement into the
+page at the highlight, so a passage that moved under an edit made since the run
+is still the one replaced; it is written through the editor like a typed
+change, so the autosave takes it to disk, the preview follows, and the editor's
+own undo takes it back. **Done** is for a suggestion carried out by hand: it
+takes the entry out of use and the highlight off the text. Suggestions with no
+replacement, and those whose passage could not be found, offer Done alone.
 
 The models are configured under *Config → Copyedit: API connections*: any
 number of them, each naming the API it speaks — Anthropic
 (`<base URL>/messages`) or OpenAI-compatible (`<base URL>/chat/completions`,
 which is what OpenAI, Ollama, LM Studio and OpenRouter all speak) — its base
 URL, the model, and the key it takes. A local model usually needs no key. The
-tasks and the connections are stored in `<user config dir>/qm/copyedit.json`,
-readable by its owner alone since it holds the keys, and a stored key is never
-sent back to the browser.
+tasks and the connections are stored in the settings file (below), readable by
+its owner alone since it holds the keys, and a stored key is never sent back to
+the browser.
 
 The Open field shows the last element of the project's path and offers the ten
-projects opened before, remembered in `<user config dir>/qm/recent.json`; a
+projects opened before, remembered in the settings file; a
 full path can still be typed or pasted into it. The Git button beside Render
 opens a panel that lists the changes since the last commit, stages and unstages
 them file by file or all at once, commits them, and pushes the branch. Clicking
@@ -150,6 +166,43 @@ the file in the editor. The panel covers the whole repository, so a project
 kept in a subdirectory of a larger one is managed just the same. It runs the
 `git` command, so the repository's hooks, credential helpers and config apply
 as they do in a terminal.
+
+### Settings
+
+Everything the UI remembers between runs lives in one file,
+`<user config dir>/qm/config.cue`: the projects opened before, the render
+selection and last open page per project, which preview stylesheet is active,
+and the copyediting setup. The stylesheets themselves stay beside it in
+`custom-css/`, being CSS rather than settings.
+
+The file is CUE because it carries its own schema. The definitions are written
+into it above the settings, so the file says what belongs in it and in what
+shape, and every read is checked against them:
+
+```cue
+#Connection: {
+    id:   string & !=""
+    name: string & !=""
+
+    // Which API the endpoint speaks. "anthropic" posts to
+    // <baseURL>/messages, "openai" to <baseURL>/chat/completions.
+    kind: "anthropic" | "openai"
+    ...
+}
+```
+
+A misspelled field, a `kind` that is neither API, a base URL that is not a URL
+— each is reported with the line it is on, and the app stops rather than
+starting on settings it cannot make sense of. A field left out is not an
+error: lists and maps left out are empty, scalars carry the defaults the
+schema names, so a file can be written by hand in part. The file is rewritten
+whenever a setting changes in the UI, schema and all — values you edited by
+hand are read back, comments you left among the settings are not.
+
+The file is created with the defaults on first run. Settings from the JSON
+files qm used to keep (`render.json`, `recent.json`, `copyedit.json`, and the
+`custom-css/.active` marker) are carried over into it once and those files are
+renamed `*.migrated`; they are no longer read and can be deleted.
 
 ## How a project is set up
 
@@ -237,6 +290,7 @@ internal/bookmaker/  folder tree → one flat document (+ the slide deck)
 internal/bookrender/ the build documents and the `quarto` invocation
 internal/project/    the editable page tree behind the web UI
 internal/gitrepo/    the `git` command behind the web UI's Git panel
+web/                 the local web UI: server, settings (CUE), copyediting
 insert/ move/ remove/  the `qm chapters` subcommands
 lint/ flatten/ render/ prepare/ finalize/ web/   the leaf commands
 spec.yaml, spec-*.yaml   the specification each package implements

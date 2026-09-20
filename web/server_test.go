@@ -234,7 +234,7 @@ func TestContent(t *testing.T) {
 // reloads the app page.
 func TestLastOpenedPageIsRestored(t *testing.T) {
 	root := fixture(t)
-	prefs := filepath.Join(t.TempDir(), "render.json")
+	prefs := filepath.Join(t.TempDir(), configFileName)
 	srv, err := newServer(prefs)
 	if err != nil {
 		t.Fatal(err)
@@ -277,7 +277,7 @@ func assertServesPage(t *testing.T, body, rel, text string) {
 // the other one's page along with the swapped-in panes.
 func TestLastOpenedPageIsPerProject(t *testing.T) {
 	one, two := fixture(t), fixture(t)
-	srv, err := newServer(filepath.Join(t.TempDir(), "render.json"))
+	srv, err := newServer(filepath.Join(t.TempDir(), configFileName))
 	if err != nil {
 		t.Fatal(err)
 	}

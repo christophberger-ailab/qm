@@ -657,42 +657,104 @@ whitespace is a word character, emoji included. `parseQuery`
 `TestParseQueryReadsQuotesAndWords` is where the two readings are kept
 honest.
 
-### 9.5 Preferences — `web/prefs.go`
+### 9.5 Settings — `web/settings.go`, `web/migrate.go`, `web/prefs.go`
 
-`projectPrefs` (`prefs.go:20`) is what the UI remembers per project: the render
-selection (topics, formats, per-topic audiences) and the page last open in the
-editor. It is stored as JSON in `<user config dir>/qm/render.json` — still
-called that because it began as the render selection alone, and renaming it
-would drop every selection users have already made.
+Everything the UI remembers between runs is one value, `storedConfig`
+(`settings.go`), in one file: `<user config dir>/qm/config.cue`. It holds the
+recently opened projects, the per-project render selection and last open page
+(`projectPrefs`, `prefs.go`), which preview stylesheet is active, and the
+copyediting setup. It is written with mode 600, because the connections in it
+hold API keys.
 
-The rest of the file manages the custom preview stylesheets in
-`<user config dir>/qm/custom-css/`: `ensureDefaultCSS` (`prefs.go:233`)
-materialises the baked-in default once and never rewrites it,
-`sanitizeCSSName` (`prefs.go:211`) keeps user-supplied names to a safe shape,
-and `activeCSS`/`setActiveCSS` remember which stylesheet the live preview
-uses.
+The file is CUE for one reason: **it carries its own schema.** `configSchema`
+is a Go constant written into every file above the settings, and every read
+unifies the settings with it and calls `Validate(cue.Concrete(true))`. So the
+file tells the user what belongs in it, and a mistake in it is reported with
+the file, line and column — a misspelled field included, since CUE definitions
+are closed. Keeping the schema in a Go constant and rewriting it on every save
+is what stops the file and the binary drifting apart.
+
+Two rules protect the only copy of the user's connections and selections. A
+file that does not check out **stops the app** (`newServer` returns the error,
+`cli.Guard` makes the exit status non-zero) and is left exactly as it stands,
+rather than being replaced by defaults. And `saveConfigFile` reads back what
+it is about to write before it replaces the file: it is our own schema on both
+sides, so it should never fail, which is precisely why it is worth finding out
+before the file is overwritten rather than at the next start.
+
+Lists and maps in the schema carry no `| *[]` default and scalars do. That is
+not a style choice: an omitted list is already the empty list under
+`cue.Concrete`, while the disjunction would turn one bad element into "N errors
+in empty disjunction" and bury the real one.
+
+`migrate.go` reads the JSON files qm used to keep — `render.json`,
+`recent.json`, `copyedit.json`, and the `custom-css/.active` marker — into the
+new file the first time it runs without one, then renames them `*.migrated`:
+no longer read, not thrown away either. `legacyConnection` exists only because
+the old file spelled the base URL `base_url` where the schema spells it
+`baseURL`.
+
+What is left in `prefs.go` is the custom preview stylesheets in
+`<user config dir>/qm/custom-css/`, which stay files of their own because they
+are CSS: `ensureDefaultCSS` materialises the baked-in default once and never
+rewrites it, and `sanitizeCSSName` keeps user-supplied names to a safe shape.
+*Which* of them is active is a setting, so it moved into the settings file.
 
 ### 9.5.2 Copyediting — `web/copyedit.go`, `web/llm.go`
 
 The copyedit tab beside the editor runs an *editing task* — a prompt with a
 title — over the page the editor holds. `copyedit.go` keeps both halves of the
-setup: the tasks, and the API connections they run on, stored together as
-`<user config dir>/qm/copyedit.json` with mode 600, because the connections
-hold API keys. They are the user's own rather than the project's, which is why
-they sit beside the render prefs and not in the tree. `connectionView`
+setup: the tasks, and the API connections they run on. Both are the user's own
+rather than the project's, which is why they live in the settings file
+(§ 9.5) and not in the tree. `connectionView`
 (`copyedit.go:227`) is what the pages and the pane are rendered from, and it
 has no key field at all: the key travels to the API and nowhere else.
 
-`copyeditRunHandler` (`copyedit.go:380`) reads the task and the connection
-under the lock, then drops it before calling the model — a run takes as long
-as the model takes, and the tree, the editor and the autosave must stay
-answerable meanwhile. The text it edits comes from the request, not from disk:
-htmx sends the editor's own textarea, so unsaved edits are edited too.
+`copyeditRunHandler` reads the selected tasks and the connection under the
+lock, then drops it before calling the model — a run takes as long as the
+model takes, and the tree, the editor and the autosave must stay answerable
+meanwhile. The text it edits comes from the request, not from disk: htmx sends
+the editor's own textarea, so unsaved edits are edited too. The form may name
+several tasks (the checkboxes in the pane), and they are collected in the
+order the config lists them, so the groups read the way the task list does.
+
+Several tasks go in **one** call rather than one call each, which is where the
+cost of a run actually sits. The page is the bulk of what a request carries:
+sending it once for five tasks instead of five times cuts a run's input by
+roughly three quarters. What that saving must not buy is output nobody asked
+for — output is priced several times higher than input per token — so only the
+ticked tasks are ever sent; running all of them by default would cost *more*
+than running the two the user wanted. `groupSuggestions` sorts the answer back
+into the tasks it came from, and `taskOf` (`llm.go`) does the attributing: a
+tag naming no task of the run leaves its suggestion unattributed rather than
+dropped, and a run of one task needs no tag at all.
+
+Which way a run is carried out is a setting (`copyeditConfig.Mode`, the two
+`mode*` constants), because the cost argument above is only half the story:
+one call for five tasks is cheaper, but a model given five instructions
+answers with one list that tends to be shorter than five lists would be, and
+whether that costs findings is a property of the model and the tasks rather
+than something to assume. `runCopyeditPerTask` is the other way — one call per
+task, **in sequence**, not in parallel: the page is the cached part of the
+request, a cache is written by the call that misses it, so firing the tasks at
+once would have them all miss where in sequence the first writes it and the
+rest read it (a burst is also what a rate limit answers with 429s). A task
+whose call fails is reported beside what the others found; only a run in which
+nothing succeeded is an error. Each list of suggestions carries the mode that
+produced it, so two runs of the same tasks can be told apart.
 
 `llm.go` is the call itself, in net/http and encoding/json alone. Two request
 shapes cover what a connection can point at (`requestFor`): Anthropic's
 `/messages` and the OpenAI-style `/chat/completions` every other provider
-speaks. `suggestionFormat` is the part of the instruction that is ours rather
+speaks. Both are ordered instruction, page, tasks, and the order is the point:
+a prompt cache matches on a request's prefix, so everything up to the tasks is
+identical from one run to the next on the same page and can be served from the
+run before it. The other way round — the task first, as the first version had
+it — the page would sit behind the one part that changes every run and could
+never be cached at all. On Anthropic the prefix must also be marked, which is
+the `cache_control` breakpoint on the page block. `answerBudget` grows
+`max_tokens` with the number of tasks, since an answer cut off mid-JSON loses
+the whole run rather than one task of it. `suggestionFormat` is the part of the instruction that is ours rather
 than the user's — it asks for JSON, and for each suggestion to quote the
 passage it applies to, verbatim and short, because a passage that cannot be
 found again cannot be highlighted. `decodeSuggestions` reads the answer
@@ -738,6 +800,12 @@ tab's suggestions carry the position of the passage each is about;
 an edit, and CodeMirror moves it along as the text around it is typed. A
 suggestion the server could not locate is passed as a gap, so the nth entry
 and the nth mark stay the same suggestion.
+
+`Done` is the other way a suggestion leaves the list: the user carried it out
+by hand in the editor, so `clearCopyeditMark` takes that one mark off the text
+and the entry stays as a record of what was seen to. It is offered on every
+suggestion — the ones with no replacement and the ones whose passage was never
+found included, those being exactly the ones only a human can carry out.
 
 `Apply` writes a suggestion into the page, and it writes it *at the mark*
 (`applyCopyeditMark`, `editor.js`), not at the offsets the suggestion arrived

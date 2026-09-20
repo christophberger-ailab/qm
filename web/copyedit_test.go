@@ -58,11 +58,11 @@ func TestPromptsAreAddedEditedAndDeleted(t *testing.T) {
 
 	// The setup outlives the run: a second server reading the same config
 	// directory finds the task.
-	again, err := newServer(srv.prefsFile)
+	again, err := newServer(srv.configFile)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := again.copyedit.Prompts; len(got) != 1 || got[0].Title != "Passive voice" {
+	if got := again.cfg.Copyedit.Prompts; len(got) != 1 || got[0].Title != "Passive voice" {
 		t.Fatalf("reloaded prompts = %+v, want the one just added", got)
 	}
 
@@ -72,13 +72,13 @@ func TestPromptsAreAddedEditedAndDeleted(t *testing.T) {
 	if body := rec.Body.String(); !strings.Contains(body, `value="Active voice"`) {
 		t.Errorf("the edited title is not on the page:\n%s", body)
 	}
-	if got := srv.copyedit.Prompts; len(got) != 1 || got[0].Title != "Active voice" || got[0].Prompt != "Rewrite them actively." {
+	if got := srv.cfg.Copyedit.Prompts; len(got) != 1 || got[0].Title != "Active voice" || got[0].Prompt != "Rewrite them actively." {
 		t.Fatalf("prompts after the edit = %+v, want the one task, edited", got)
 	}
 
 	rec = post(t, srv, "/config/copyedit/delete", url.Values{"id": {"p1"}})
-	if len(srv.copyedit.Prompts) != 0 {
-		t.Fatalf("task not deleted: %+v", srv.copyedit.Prompts)
+	if len(srv.cfg.Copyedit.Prompts) != 0 {
+		t.Fatalf("task not deleted: %+v", srv.cfg.Copyedit.Prompts)
 	}
 	if !strings.Contains(rec.Body.String(), "Deleted.") {
 		t.Errorf("delete not reported:\n%s", rec.Body)
@@ -96,8 +96,8 @@ func TestPromptNeedsTitleAndText(t *testing.T) {
 			t.Errorf("%v was accepted:\n%s", form, rec.Body)
 		}
 	}
-	if len(srv.copyedit.Prompts) != 0 {
-		t.Fatalf("an incomplete task was stored: %+v", srv.copyedit.Prompts)
+	if len(srv.cfg.Copyedit.Prompts) != 0 {
+		t.Fatalf("an incomplete task was stored: %+v", srv.cfg.Copyedit.Prompts)
 	}
 }
 
@@ -115,13 +115,13 @@ func TestConnectionsAreSavedWithoutLeakingTheKey(t *testing.T) {
 		t.Fatalf("the API key was sent back to the browser:\n%s", body)
 	}
 
-	// The key file is the user's own.
-	info, err := os.Stat(srv.copyeditFile)
+	// The settings file holds the keys, so it is the user's own.
+	info, err := os.Stat(srv.configFile)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Errorf("copyedit.json mode = %o, want 600", perm)
+		t.Errorf("%s mode = %o, want 600", configFileName, perm)
 	}
 
 	// An edit that leaves the key field empty keeps the stored key.
@@ -129,13 +129,13 @@ func TestConnectionsAreSavedWithoutLeakingTheKey(t *testing.T) {
 		"id": {"c1"}, "name": {"Claude"}, "kind": {"anthropic"},
 		"base_url": {"https://api.anthropic.com/v1"}, "model": {"claude-opus-4-1"}, "key": {""},
 	})
-	if got := srv.copyedit.Connections[0]; got.Key != "sk-secret" || got.Model != "claude-opus-4-1" {
+	if got := srv.cfg.Copyedit.Connections[0]; got.Key != "sk-secret" || got.Model != "claude-opus-4-1" {
 		t.Fatalf("connection after edit = %+v, want the new model and the stored key", got)
 	}
 
 	post(t, srv, "/config/connections/delete", url.Values{"id": {"c1"}})
-	if len(srv.copyedit.Connections) != 0 {
-		t.Fatalf("connection not deleted: %+v", srv.copyedit.Connections)
+	if len(srv.cfg.Copyedit.Connections) != 0 {
+		t.Fatalf("connection not deleted: %+v", srv.cfg.Copyedit.Connections)
 	}
 }
 
@@ -220,6 +220,7 @@ type stubModel struct {
 	*httptest.Server
 	path   string
 	body   map[string]any
+	calls  []map[string]any
 	header http.Header
 }
 
@@ -229,7 +230,12 @@ func newStubModel(t *testing.T, answer string) *stubModel {
 	stub.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		stub.path = r.URL.Path
 		stub.header = r.Header.Clone()
-		json.NewDecoder(r.Body).Decode(&stub.body)
+		// A fresh map per call: decoding into the same one would merge
+		// the calls of a per-task run into each other.
+		body := map[string]any{}
+		json.NewDecoder(r.Body).Decode(&body)
+		stub.body = body
+		stub.calls = append(stub.calls, body)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
 			"content": []map[string]string{{"type": "text", "text": answer}},
@@ -311,13 +317,25 @@ func TestCopyeditRunReportsWhatWentWrong(t *testing.T) {
 	addConnection(t, srv, "Stub", "anthropic", refusing.URL+"/v1", "stub-model", "bad")
 
 	rec = post(t, srv, "/copyedit/run", url.Values{"prompt": {"p1"}, "body": {"# Page\n"}})
-	if body := rec.Body.String(); !strings.Contains(body, "invalid api key") {
+	body := rec.Body.String()
+	if !strings.Contains(body, "invalid api key") {
 		t.Errorf("the API's refusal was not shown:\n%s", body)
 	}
+	// The address is composed from the connection, so a refusal says which
+	// one was called: that is what tells a wrong key from a wrong URL.
+	if !strings.Contains(body, refusing.URL+"/v1/messages") {
+		t.Errorf("the refusal does not name the URL it was answered for:\n%s", body)
+	}
 
+	// An id that names no task leaves the run with nothing to do, which
+	// is the same case as a run with nothing ticked.
 	rec = post(t, srv, "/copyedit/run", url.Values{"prompt": {"nope"}, "body": {"# Page\n"}})
-	if !strings.Contains(rec.Body.String(), "no such editing task") {
+	if !strings.Contains(rec.Body.String(), "No editing task was selected") {
 		t.Errorf("an unknown task was not reported:\n%s", rec.Body)
+	}
+	rec = post(t, srv, "/copyedit/run", url.Values{"body": {"# Page\n"}})
+	if !strings.Contains(rec.Body.String(), "No editing task was selected") {
+		t.Errorf("a run with nothing ticked was not reported:\n%s", rec.Body)
 	}
 }
 
@@ -403,5 +421,254 @@ func TestReplacementTextSurvivesAsAnAttribute(t *testing.T) {
 	want := "data-replacement=\"said &#34;hi&#34; &amp; &lt;waved&gt;\nwarmly\""
 	if !strings.Contains(body, want) {
 		t.Errorf("the replacement did not reach the attribute intact:\n%s", body)
+	}
+}
+
+func TestARunOfSeveralTasksIsOneCallGroupedByTask(t *testing.T) {
+	srv, _ := configTestServer(t)
+	addPrompt(t, srv, "Passive voice", "Rewrite passive sentences actively.")
+	addPrompt(t, srv, "Long sentences", "Find sentences longer than 25 words.")
+	addPrompt(t, srv, "Spelling", "Find misspellings.")
+	stub := newStubModel(t, `{"suggestions":[
+		{"task":"t1","original":"was written by the editor","suggestion":"the editor wrote","comment":"Passive."},
+		{"task":"t2","original":"The page was written by the editor.","suggestion":"Shorter.","comment":"Long."},
+		{"task":"t9","original":"Title","suggestion":"A title","comment":"Stray tag."}]}`)
+	addConnection(t, srv, "Stub", "anthropic", stub.URL+"/v1", "stub-model", "k")
+
+	// Two of the three tasks, the way ticking two boxes posts them.
+	rec := post(t, srv, "/copyedit/run", url.Values{
+		"prompt": {"p1", "p2"}, "path": {"index.qmd"},
+		"body": {"# Title\n\nThe page was written by the editor.\n"},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("run: status %d: %s", rec.Code, rec.Body)
+	}
+	body := rec.Body.String()
+
+	// One call, carrying both prompts and the page once.
+	sent, _ := json.Marshal(stub.body)
+	for _, want := range []string{"[t1] Passive voice", "[t2] Long sentences"} {
+		if !strings.Contains(string(sent), want) {
+			t.Errorf("the call does not carry %q:\n%s", want, sent)
+		}
+	}
+	if strings.Contains(string(sent), "Find misspellings") {
+		t.Errorf("a task nobody ticked was sent:\n%s", sent)
+	}
+	if n := strings.Count(string(sent), "The page was written by the editor."); n != 1 {
+		t.Errorf("the page was sent %d times, want once for the whole run", n)
+	}
+
+	// Grouped, with the stray tag kept rather than dropped.
+	for _, want := range []string{
+		`data-task="Passive voice"`,
+		`data-task="Long sentences"`,
+		"Unattributed",
+		`class="copyedit-filter`, // a chip per group
+		"2 tasks, 3 suggestions",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("suggestion list missing %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestATaskThatFoundNothingStillSaysSo(t *testing.T) {
+	srv, _ := configTestServer(t)
+	addPrompt(t, srv, "Passive voice", "Rewrite passive sentences actively.")
+	addPrompt(t, srv, "Spelling", "Find misspellings.")
+	stub := newStubModel(t, `{"suggestions":[{"task":"t1","original":"was written","suggestion":"wrote"}]}`)
+	addConnection(t, srv, "Stub", "anthropic", stub.URL+"/v1", "stub-model", "k")
+
+	body := post(t, srv, "/copyedit/run", url.Values{
+		"prompt": {"p1", "p2"}, "body": {"It was written badly.\n"},
+	}).Body.String()
+	if !strings.Contains(body, `data-task="Spelling"`) {
+		t.Errorf("the task that found nothing is not listed:\n%s", body)
+	}
+	if !strings.Contains(body, "Nothing to change.") {
+		t.Errorf("the empty group says nothing:\n%s", body)
+	}
+}
+
+func TestEverySuggestionCanBeMarkedDone(t *testing.T) {
+	srv, _ := configTestServer(t)
+	addPrompt(t, srv, "Passive voice", "Rewrite passive sentences actively.")
+	stub := newStubModel(t, `{"suggestions":[
+		{"original":"was written by the editor","suggestion":"the editor wrote"},
+		{"original":"The page","comment":"Vague, but I have no better word."},
+		{"original":"nowhere in the page","suggestion":"—"}]}`)
+	addConnection(t, srv, "Stub", "anthropic", stub.URL+"/v1", "stub-model", "k")
+
+	body := post(t, srv, "/copyedit/run", url.Values{
+		"prompt": {"p1"}, "body": {"# Title\n\nThe page was written by the editor.\n"},
+	}).Body.String()
+
+	// Done is on all three: a suggestion with no replacement, and one
+	// whose passage was never found, are exactly the ones that can only
+	// be carried out by hand.
+	if n := strings.Count(body, `class="copyedit-done"`); n != 3 {
+		t.Errorf("%d Done buttons, want one per suggestion:\n%s", n, body)
+	}
+	if n := strings.Count(body, `class="copyedit-apply"`); n != 1 {
+		t.Errorf("%d Apply buttons, want only the one that can be written in:\n%s", n, body)
+	}
+}
+
+func TestTheTaskListOffersBothWaysToRun(t *testing.T) {
+	srv, _ := configTestServer(t)
+	addPrompt(t, srv, "Passive voice", "Rewrite passive sentences actively.")
+	addPrompt(t, srv, "Long sentences", "Find sentences longer than 25 words.")
+	body := get(t, srv, "/copyedit/prompts").Body.String()
+	for _, want := range []string{
+		`class="copyedit-select" name="prompt" value="p1"`,
+		`class="copyedit-select" name="prompt" value="p2"`,
+		`id="copyedit-run-selected"`,
+		`#copyedit-body .copyedit-select:checked`, // what the batch run posts
+		`class="copyedit-task" data-id="p1"`,      // and the single-task path, still there
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("task list missing %q:\n%s", want, body)
+		}
+	}
+}
+
+// setMode is the switch on the editing-tasks config page.
+func setMode(t *testing.T, srv *server, mode string) {
+	t.Helper()
+	rec := post(t, srv, "/config/copyedit/mode", url.Values{"mode": {mode}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("set mode: status %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestRunModeIsConfiguredAndRemembered(t *testing.T) {
+	srv, _ := configTestServer(t)
+	if got := srv.runMode(); got != modeBatched {
+		t.Errorf("mode starts as %q, want one call for the lot", got)
+	}
+	body := get(t, srv, "/config/copyedit").Body.String()
+	for _, want := range []string{
+		`action="/config/copyedit/mode"`,
+		`<option value="batched" selected>`,
+		`<option value="per-task">`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("config page missing %q:\n%s", want, body)
+		}
+	}
+
+	setMode(t, srv, modePerTask)
+	if got := srv.runMode(); got != modePerTask {
+		t.Fatalf("mode = %q after switching", got)
+	}
+	// It outlives the run, like the rest of the setup.
+	again, err := newServer(srv.configFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := again.runMode(); got != modePerTask {
+		t.Errorf("reloaded mode = %q, want the one that was saved", got)
+	}
+	if rec := post(t, srv, "/config/copyedit/mode", url.Values{"mode": {"sideways"}}); !strings.Contains(rec.Body.String(), "no such run mode") {
+		t.Errorf("an unknown mode was accepted:\n%s", rec.Body)
+	}
+}
+
+func TestPerTaskModeAsksEachTaskOnItsOwn(t *testing.T) {
+	srv, _ := configTestServer(t)
+	addPrompt(t, srv, "Passive voice", "Rewrite passive sentences actively.")
+	addPrompt(t, srv, "Long sentences", "Find sentences longer than 25 words.")
+	stub := newStubModel(t, `{"suggestions":[{"original":"was written by the editor","suggestion":"the editor wrote"}]}`)
+	addConnection(t, srv, "Stub", "anthropic", stub.URL+"/v1", "stub-model", "k")
+	setMode(t, srv, modePerTask)
+
+	page := "# Title\n\nThe page was written by the editor.\n"
+	body := post(t, srv, "/copyedit/run", url.Values{
+		"prompt": {"p1", "p2"}, "path": {"index.qmd"}, "body": {page},
+	}).Body.String()
+
+	if len(stub.calls) != 2 {
+		t.Fatalf("%d calls, want one per task", len(stub.calls))
+	}
+	// Each call carries its own task and the same page, and the page is
+	// the marked prefix -- which is what the second call can be served
+	// from the first one's cache.
+	for i, want := range []string{"Passive voice", "Long sentences"} {
+		sent, _ := json.Marshal(stub.calls[i])
+		if !strings.Contains(string(sent), want) {
+			t.Errorf("call %d does not carry %q:\n%s", i+1, want, sent)
+		}
+		if other := []string{"Long sentences", "Passive voice"}[i]; strings.Contains(string(sent), other) {
+			t.Errorf("call %d carries %q as well, so it is not one task per call:\n%s", i+1, other, sent)
+		}
+		blocks := stub.calls[i]["messages"].([]any)[0].(map[string]any)["content"].([]any)
+		first := blocks[0].(map[string]any)
+		if !strings.Contains(first["text"].(string), "The page was written by the editor.") {
+			t.Errorf("call %d does not open with the page:\n%v", i+1, first)
+		}
+		if first["cache_control"] == nil {
+			t.Errorf("call %d does not mark the page as the cacheable prefix", i+1)
+		}
+	}
+
+	// Both tasks' findings come back, each under its own task, and the
+	// pane says which way the run was carried out.
+	for _, want := range []string{`data-task="Passive voice"`, `data-task="Long sentences"`, "one call per task"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("suggestion list missing %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestBatchedModeStaysOneCallAndSaysSo(t *testing.T) {
+	srv, _ := configTestServer(t)
+	addPrompt(t, srv, "Passive voice", "Rewrite passive sentences actively.")
+	addPrompt(t, srv, "Long sentences", "Find sentences longer than 25 words.")
+	stub := newStubModel(t, `{"suggestions":[{"task":"t1","original":"was written","suggestion":"wrote"}]}`)
+	addConnection(t, srv, "Stub", "anthropic", stub.URL+"/v1", "stub-model", "k")
+
+	body := post(t, srv, "/copyedit/run", url.Values{
+		"prompt": {"p1", "p2"}, "body": {"It was written badly.\n"},
+	}).Body.String()
+	if len(stub.calls) != 1 {
+		t.Fatalf("%d calls, want one for the lot", len(stub.calls))
+	}
+	if !strings.Contains(body, "one call for all tasks") {
+		t.Errorf("the pane does not say how the run was carried out:\n%s", body)
+	}
+}
+
+func TestOneFailedTaskDoesNotLoseTheOthers(t *testing.T) {
+	srv, _ := configTestServer(t)
+	addPrompt(t, srv, "Passive voice", "Rewrite passive sentences actively.")
+	addPrompt(t, srv, "Long sentences", "Find sentences longer than 25 words.")
+	// The second call fails; the first one's findings must survive it.
+	var calls int
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 2 {
+			http.Error(w, `{"error":{"message":"rate limited"}}`, http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"content": []map[string]string{
+			{"type": "text", "text": `{"suggestions":[{"original":"was written","suggestion":"wrote"}]}`},
+		}})
+	}))
+	defer stub.Close()
+	addConnection(t, srv, "Stub", "anthropic", stub.URL+"/v1", "stub-model", "k")
+	setMode(t, srv, modePerTask)
+
+	body := post(t, srv, "/copyedit/run", url.Values{
+		"prompt": {"p1", "p2"}, "body": {"It was written badly.\n"},
+	}).Body.String()
+	if !strings.Contains(body, "the editor wrote") && !strings.Contains(body, "wrote") {
+		t.Errorf("the task that succeeded lost its findings:\n%s", body)
+	}
+	for _, want := range []string{"Long sentences", "rate limited"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the failed task is not reported (%q missing):\n%s", want, body)
+		}
 	}
 }

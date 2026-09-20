@@ -13,7 +13,7 @@ import (
 func configTestServer(t *testing.T) (*server, string) {
 	t.Helper()
 	root := fixture(t)
-	prefs := filepath.Join(t.TempDir(), "render.json")
+	prefs := filepath.Join(t.TempDir(), configFileName)
 	srv, err := newServer(prefs)
 	if err != nil {
 		t.Fatal(err)
@@ -203,7 +203,7 @@ func TestDefaultCSSIsBakedIn(t *testing.T) {
 // custom.css keeps that choice across restarts.
 func TestDefaultCSSNotRewrittenOnRestart(t *testing.T) {
 	root := fixture(t)
-	prefs := filepath.Join(t.TempDir(), "render.json")
+	prefs := filepath.Join(t.TempDir(), configFileName)
 	srv1, err := newServer(prefs)
 	if err != nil {
 		t.Fatal(err)

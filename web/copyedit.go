@@ -12,12 +12,9 @@ package web
 // they are how this user edits, not what this project contains.
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 )
@@ -37,9 +34,9 @@ type apiConnection struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Kind    string `json:"kind"`
-	BaseURL string `json:"base_url"`
+	BaseURL string `json:"baseURL"`
 	Model   string `json:"model"`
-	Key     string `json:"key,omitempty"`
+	Key     string `json:"key"`
 }
 
 // copyeditConfig is the whole copyediting setup, as it sits on disk.
@@ -47,44 +44,56 @@ type apiConnection struct {
 type copyeditConfig struct {
 	Prompts     []copyeditPrompt `json:"prompts"`
 	Connections []apiConnection  `json:"connections"`
-	Active      string           `json:"active,omitempty"`
+	Active      string           `json:"active"`
+	// Mode is how a run of several tasks is carried out: all of them in
+	// one call, or one call each.
+	Mode string `json:"mode"`
 }
 
-// copyeditFileForPrefs returns the file that holds the copyediting setup,
-// beside the render prefs, or "" when persistence is disabled.
-func copyeditFileForPrefs(prefsFile string) string {
-	if prefsFile == "" {
-		return ""
+// How a run of several tasks reaches the model.
+//
+// Batched is one call carrying every selected task, which sends the page
+// once. Per-task is one call per task, each sending the page again --
+// except that the page is the cached part of the request (see requestFor),
+// so from the second call on the provider may serve it from its cache and
+// the difference in cost is far smaller than the difference in requests.
+// What the two really differ in is the answer: a model given one task at a
+// time attends to it fully, where five tasks in one call are answered in
+// one list that tends to be shorter than five lists would be. Which reads
+// better is a question about a particular model and a particular set of
+// tasks, so it is the user's to answer, not ours to assume.
+const (
+	modeBatched = "batched"
+	modePerTask = "per-task"
+)
+
+// runMode is the configured mode, defaulting to one call for the lot. The
+// caller must hold s.mu.
+func (s *server) runMode() string {
+	if s.cfg.Copyedit.Mode == modePerTask {
+		return modePerTask
 	}
-	return filepath.Join(filepath.Dir(prefsFile), "copyedit.json")
+	return modeBatched
 }
 
-// loadCopyedit reads the copyediting setup. A missing or unreadable file
-// just means nothing has been configured yet.
-func (s *server) loadCopyedit() {
-	s.copyedit = copyeditConfig{}
-	if s.copyeditFile == "" {
-		return
+// setRunMode records how a run of several tasks is to be carried out. The
+// caller must hold s.mu.
+func (s *server) setRunMode(mode string) error {
+	if mode != modeBatched && mode != modePerTask {
+		return errors.New("no such run mode")
 	}
-	if b, err := os.ReadFile(s.copyeditFile); err == nil {
-		json.Unmarshal(b, &s.copyedit)
-	}
+	s.cfg.Copyedit.Mode = mode
+	return s.saveConfig()
 }
 
-// saveCopyedit writes the copyediting setup. The file holds API keys, so
-// it is written for its owner alone. The caller must hold s.mu.
-func (s *server) saveCopyedit() error {
-	if s.copyeditFile == "" {
-		return errors.New("no config directory available")
+// modeLabel says in the pane which way a run was carried out, so that a
+// list of suggestions can be told apart from the same tasks run the other
+// way -- which is the whole point of being able to switch.
+func modeLabel(mode string) string {
+	if mode == modePerTask {
+		return "one call per task"
 	}
-	b, err := json.MarshalIndent(s.copyedit, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(s.copyeditFile), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(s.copyeditFile, b, 0o600)
+	return "one call for all tasks"
 }
 
 // nextID is the first free id of a series ("p1", "p2", ...). The ids are
@@ -111,18 +120,18 @@ func (s *server) savePrompt(id, title, prompt string) error {
 		return errors.New("the editing task needs a prompt")
 	}
 	if i := s.promptIndex(id); i >= 0 {
-		s.copyedit.Prompts[i].Title = title
-		s.copyedit.Prompts[i].Prompt = prompt
-		return s.saveCopyedit()
+		s.cfg.Copyedit.Prompts[i].Title = title
+		s.cfg.Copyedit.Prompts[i].Prompt = prompt
+		return s.saveConfig()
 	}
-	ids := make([]string, 0, len(s.copyedit.Prompts))
-	for _, p := range s.copyedit.Prompts {
+	ids := make([]string, 0, len(s.cfg.Copyedit.Prompts))
+	for _, p := range s.cfg.Copyedit.Prompts {
 		ids = append(ids, p.ID)
 	}
-	s.copyedit.Prompts = append(s.copyedit.Prompts, copyeditPrompt{
+	s.cfg.Copyedit.Prompts = append(s.cfg.Copyedit.Prompts, copyeditPrompt{
 		ID: nextID("p", ids), Title: title, Prompt: prompt,
 	})
-	return s.saveCopyedit()
+	return s.saveConfig()
 }
 
 // deletePrompt drops an editing task. The caller must hold s.mu.
@@ -131,18 +140,18 @@ func (s *server) deletePrompt(id string) error {
 	if i < 0 {
 		return errors.New("no such editing task")
 	}
-	s.copyedit.Prompts = slices.Delete(s.copyedit.Prompts, i, i+1)
-	return s.saveCopyedit()
+	s.cfg.Copyedit.Prompts = slices.Delete(s.cfg.Copyedit.Prompts, i, i+1)
+	return s.saveConfig()
 }
 
 func (s *server) promptIndex(id string) int {
-	return slices.IndexFunc(s.copyedit.Prompts, func(p copyeditPrompt) bool {
+	return slices.IndexFunc(s.cfg.Copyedit.Prompts, func(p copyeditPrompt) bool {
 		return id != "" && p.ID == id
 	})
 }
 
 func (s *server) connIndex(id string) int {
-	return slices.IndexFunc(s.copyedit.Connections, func(c apiConnection) bool {
+	return slices.IndexFunc(s.cfg.Copyedit.Connections, func(c apiConnection) bool {
 		return id != "" && c.ID == id
 	})
 }
@@ -170,18 +179,18 @@ func (s *server) saveConnection(c apiConnection) error {
 	}
 	if i := s.connIndex(c.ID); i >= 0 {
 		if c.Key == "" {
-			c.Key = s.copyedit.Connections[i].Key
+			c.Key = s.cfg.Copyedit.Connections[i].Key
 		}
-		s.copyedit.Connections[i] = c
-		return s.saveCopyedit()
+		s.cfg.Copyedit.Connections[i] = c
+		return s.saveConfig()
 	}
-	ids := make([]string, 0, len(s.copyedit.Connections))
-	for _, e := range s.copyedit.Connections {
+	ids := make([]string, 0, len(s.cfg.Copyedit.Connections))
+	for _, e := range s.cfg.Copyedit.Connections {
 		ids = append(ids, e.ID)
 	}
 	c.ID = nextID("c", ids)
-	s.copyedit.Connections = append(s.copyedit.Connections, c)
-	return s.saveCopyedit()
+	s.cfg.Copyedit.Connections = append(s.cfg.Copyedit.Connections, c)
+	return s.saveConfig()
 }
 
 // deleteConnection drops an API connection, and the active selection with
@@ -191,22 +200,22 @@ func (s *server) deleteConnection(id string) error {
 	if i < 0 {
 		return errors.New("no such connection")
 	}
-	s.copyedit.Connections = slices.Delete(s.copyedit.Connections, i, i+1)
-	if s.copyedit.Active == id {
-		s.copyedit.Active = ""
+	s.cfg.Copyedit.Connections = slices.Delete(s.cfg.Copyedit.Connections, i, i+1)
+	if s.cfg.Copyedit.Active == id {
+		s.cfg.Copyedit.Active = ""
 	}
-	return s.saveCopyedit()
+	return s.saveConfig()
 }
 
 // activeConnection is the connection a run goes to: the one the pane's
 // dropdown last selected, or the first configured one when that selection
 // is gone or was never made. The caller must hold s.mu.
 func (s *server) activeConnection() (apiConnection, bool) {
-	if i := s.connIndex(s.copyedit.Active); i >= 0 {
-		return s.copyedit.Connections[i], true
+	if i := s.connIndex(s.cfg.Copyedit.Active); i >= 0 {
+		return s.cfg.Copyedit.Connections[i], true
 	}
-	if len(s.copyedit.Connections) > 0 {
-		return s.copyedit.Connections[0], true
+	if len(s.cfg.Copyedit.Connections) > 0 {
+		return s.cfg.Copyedit.Connections[0], true
 	}
 	return apiConnection{}, false
 }
@@ -217,8 +226,8 @@ func (s *server) setActiveConnection(id string) error {
 	if s.connIndex(id) < 0 {
 		return errors.New("no such connection")
 	}
-	s.copyedit.Active = id
-	return s.saveCopyedit()
+	s.cfg.Copyedit.Active = id
+	return s.saveConfig()
 }
 
 // connectionView is a connection as the pages show it. The key is not part
@@ -245,8 +254,8 @@ type copyeditPane struct {
 // copyeditPaneView assembles the pane. The caller must hold s.mu.
 func (s *server) copyeditPaneView() copyeditPane {
 	active, _ := s.activeConnection()
-	v := copyeditPane{Prompts: s.copyedit.Prompts, Active: active.ID}
-	for _, c := range s.copyedit.Connections {
+	v := copyeditPane{Prompts: s.cfg.Copyedit.Prompts, Active: active.ID}
+	for _, c := range s.cfg.Copyedit.Connections {
 		v.Connections = append(v.Connections, connectionView{
 			ID: c.ID, Name: c.Name, Kind: c.Kind, BaseURL: c.BaseURL,
 			Model: c.Model, HasKey: c.Key != "", Active: c.ID == active.ID,
@@ -255,11 +264,24 @@ func (s *server) copyeditPaneView() copyeditPane {
 	return v
 }
 
-// copyeditConfigView is the page data for the editing-tasks config page.
+// copyeditConfigView is the page data for the editing-tasks config page:
+// the tasks themselves, and how a run of several of them is carried out.
 type copyeditConfigView struct {
 	Prompts []copyeditPrompt
+	Mode    string
+	PerTask bool
 	Message string
 	Error   string
+}
+
+// copyeditConfigPageView assembles that page. The caller must hold s.mu.
+func (s *server) copyeditConfigPageView() copyeditConfigView {
+	mode := s.runMode()
+	return copyeditConfigView{
+		Prompts: s.cfg.Copyedit.Prompts,
+		Mode:    mode,
+		PerTask: mode == modePerTask,
+	}
 }
 
 // connectionsView is the page data for the API connections config page.
@@ -269,14 +291,59 @@ type connectionsView struct {
 	Error       string
 }
 
-// suggestionsView is what one copyedit run produced: the task that was
-// run, the suggestions it made, and — when the run did not get that far —
-// why not.
+// suggestionsView is what one copyedit run produced: the tasks that were
+// run, their suggestions grouped by task, and — when the run did not get
+// that far — why not.
 type suggestionsView struct {
+	// Tasks are the titles that were run, in the order the config lists
+	// them; the pane names them and, for a run of several, offers one
+	// filter per task.
+	Tasks []string
+	Model string
+	// Mode says which way the run was carried out, so that a list can be
+	// told from the same tasks run the other way.
+	Mode   string
+	Groups []suggestionGroup
+	// Count is how many suggestions came back in all, which is what the
+	// head reports and what tells an empty run from a failed one.
+	Count int
+	Error string
+}
+
+// suggestionGroup is one task's findings. A task that found nothing keeps
+// its group: a run says what every task it was given came back with, and
+// "nothing to change here" is an answer.
+type suggestionGroup struct {
+	// Task is the title, or "" for the suggestions whose tag named no
+	// task that was asked for.
 	Task        string
-	Model       string
 	Suggestions []suggestion
-	Error       string
+}
+
+// groupSuggestions sorts a run's suggestions into the tasks they came
+// from, in the order the tasks were given. Suggestions the model did not
+// attribute come last, in a group of their own.
+func groupSuggestions(tasks []editingTask, sugs []suggestion) []suggestionGroup {
+	groups := make([]suggestionGroup, 0, len(tasks)+1)
+	for _, t := range tasks {
+		g := suggestionGroup{Task: t.Title}
+		for _, s := range sugs {
+			if s.Task == t.Title {
+				g.Suggestions = append(g.Suggestions, s)
+			}
+		}
+		groups = append(groups, g)
+	}
+	var loose []suggestion
+	for _, s := range sugs {
+		if s.Task == "" {
+			loose = append(loose, s)
+		}
+	}
+	if len(loose) > 0 {
+		groups = append(groups, suggestionGroup{Suggestions: loose})
+	}
+	return groups
 }
 
 // Handlers
@@ -284,18 +351,19 @@ type suggestionsView struct {
 func (s *server) copyeditConfigPage(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.render(w, "copyedit-page", copyeditConfigView{Prompts: s.copyedit.Prompts})
+	s.render(w, "copyedit-page", s.copyeditConfigPageView())
 }
 
 func (s *server) savePromptHandler(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	r.ParseForm()
-	view := copyeditConfigView{Message: "Saved."}
+	view := s.copyeditConfigPageView()
+	view.Message = "Saved."
 	if err := s.savePrompt(r.PostFormValue("id"), r.PostFormValue("title"), r.PostFormValue("prompt")); err != nil {
 		view.Message, view.Error = "", err.Error()
 	}
-	view.Prompts = s.copyedit.Prompts
+	view.Prompts = s.cfg.Copyedit.Prompts
 	s.render(w, "copyedit-page", view)
 }
 
@@ -303,11 +371,29 @@ func (s *server) deletePromptHandler(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	r.ParseForm()
-	view := copyeditConfigView{Message: "Deleted."}
+	view := s.copyeditConfigPageView()
+	view.Message = "Deleted."
 	if err := s.deletePrompt(r.PostFormValue("id")); err != nil {
 		view.Message, view.Error = "", err.Error()
 	}
-	view.Prompts = s.copyedit.Prompts
+	view.Prompts = s.cfg.Copyedit.Prompts
+	s.render(w, "copyedit-page", view)
+}
+
+// runModeHandler records whether a run of several tasks goes to the model
+// in one call or in one call per task.
+func (s *server) runModeHandler(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r.ParseForm()
+	view := s.copyeditConfigPageView()
+	if err := s.setRunMode(r.PostFormValue("mode")); err != nil {
+		view.Error = err.Error()
+		s.render(w, "copyedit-page", view)
+		return
+	}
+	view = s.copyeditConfigPageView()
+	view.Message = "Saved."
 	s.render(w, "copyedit-page", view)
 }
 
@@ -379,29 +465,55 @@ func (s *server) copyeditPromptsHandler(w http.ResponseWriter, r *http.Request) 
 // pane waits.
 func (s *server) copyeditRunHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
+	// The form names the tasks; they are collected in the order the config
+	// lists them rather than the order the checkboxes were ticked, so the
+	// groups read the same way the task list does.
+	picked := r.PostForm["prompt"]
 	s.mu.Lock()
-	i := s.promptIndex(r.PostFormValue("prompt"))
-	if i < 0 {
-		s.mu.Unlock()
-		s.render(w, "copyedit-suggestions", suggestionsView{Error: "no such editing task"})
-		return
+	var prompts []copyeditPrompt
+	for _, p := range s.cfg.Copyedit.Prompts {
+		if slices.Contains(picked, p.ID) {
+			prompts = append(prompts, p)
+		}
 	}
-	task := s.copyedit.Prompts[i]
 	conn, ok := s.activeConnection()
+	mode := s.runMode()
 	s.mu.Unlock()
 
-	view := suggestionsView{Task: task.Title, Model: conn.Name}
-	if !ok {
+	tasks := tasksFor(prompts)
+	view := suggestionsView{Model: conn.Name, Mode: modeLabel(mode)}
+	for _, t := range tasks {
+		view.Tasks = append(view.Tasks, t.Title)
+	}
+	switch {
+	case len(tasks) == 0:
+		view.Error = "No editing task was selected."
+	case !ok:
 		view.Error = "No API connection is configured. Add one under Config → Copyedit: API connections."
+	}
+	if view.Error != "" {
 		s.render(w, "copyedit-suggestions", view)
 		return
 	}
-	sugs, err := runCopyedit(conn, task.Prompt, r.PostFormValue("path"), r.PostFormValue("body"))
+	path, body := r.PostFormValue("path"), r.PostFormValue("body")
+	var sugs []suggestion
+	var failed []string
+	var err error
+	if mode == modePerTask {
+		sugs, failed, err = runCopyeditPerTask(conn, tasks, path, body)
+	} else {
+		sugs, err = runCopyedit(conn, tasks, path, body)
+	}
 	if err != nil {
 		view.Error = err.Error()
 		s.render(w, "copyedit-suggestions", view)
 		return
 	}
-	view.Suggestions = sugs
+	// A run of one call per task can lose a task and keep the rest; what
+	// the others found is shown, with the failure beside it.
+	if len(failed) > 0 {
+		view.Error = strings.Join(failed, "; ")
+	}
+	view.Groups, view.Count = groupSuggestions(tasks, sugs), len(sugs)
 	s.render(w, "copyedit-suggestions", view)
 }

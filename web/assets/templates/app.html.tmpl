@@ -439,49 +439,85 @@
      suggestions. */}}
 {{define "copyedit-prompts"}}<div class="copyedit-prompts">
   {{if .Prompts}}<ul class="copyedit-tasks">
-    {{range .Prompts}}<li><button type="button" class="copyedit-task" data-id="{{.ID}}" title="{{.Prompt}}"
-            hx-post="/copyedit/run" hx-vals='{"prompt":"{{.ID}}"}'
-            hx-include="#content-path, #content textarea.file-content"
-            hx-target="#copyedit-body" hx-swap="innerHTML"
-            hx-indicator="#copyedit-running" hx-disabled-elt=".copyedit-task">{{.Title}}</button></li>
+    {{/* Two ways to start a run, because they cost differently. Clicking
+         a task runs that one. Ticking several and pressing Run selected
+         puts them in one call, which sends the page once instead of once
+         per task -- the page is the bulk of what a run costs, and the
+         tasks are what the user picked, so nothing is asked for that was
+         not. */ -}}
+    {{range .Prompts}}<li class="copyedit-task-row">
+      <input type="checkbox" class="copyedit-select" name="prompt" value="{{.ID}}"
+             id="pick-{{.ID}}" title="Run this task together with the others ticked">
+      <button type="button" class="copyedit-task" data-id="{{.ID}}" title="{{.Prompt}}"
+              hx-post="/copyedit/run" hx-vals='{"prompt":"{{.ID}}"}'
+              hx-include="#content-path, #content textarea.file-content"
+              hx-target="#copyedit-body" hx-swap="innerHTML"
+              hx-indicator="#copyedit-running" hx-disabled-elt=".copyedit-task, #copyedit-run-selected">{{.Title}}</button>
+    </li>
     {{end}}
   </ul>
+  <div class="copyedit-run-actions">
+    <button type="button" id="copyedit-run-selected" class="copyedit-run-selected" disabled
+            title="Run every ticked task in one call"
+            hx-post="/copyedit/run"
+            hx-include="#content-path, #content textarea.file-content, #copyedit-body .copyedit-select:checked"
+            hx-target="#copyedit-body" hx-swap="innerHTML"
+            hx-indicator="#copyedit-running" hx-disabled-elt=".copyedit-task, #copyedit-run-selected">Run selected</button>
+  </div>
   {{else}}<p class="empty">No editing tasks yet — write them under <a href="/config/copyedit">Config → Copyedit: Editing tasks</a>.</p>{{end}}
   <p class="copyedit-running" id="copyedit-running">Asking the model…</p>
 </div>{{end}}
 
-{{/* What one run came back with. Each suggestion names the passage it is
-     about; the ones found in the page carry its position, which is what
-     app.js highlights the text by and what a click on the entry scrolls
-     the editor to. A suggestion that says what to put there instead
-     carries that text as well, and offers to write it into the page. */}}
+{{/* What one run came back with, grouped by the task each suggestion
+     answers. The ones found in the page carry the position they were
+     found at, which is what app.js highlights the text by and what a
+     click on the entry scrolls the editor to; the ones that say what to
+     put there instead offer to write it in. Every entry offers Done,
+     which is how a suggestion carried out by hand -- in the editor,
+     rather than by the button -- is taken off the list and out of the
+     text. */}}
 {{define "copyedit-suggestions"}}<div class="copyedit-suggestions">
   <div class="copyedit-suggestions-head">
     <button type="button" class="copyedit-back" id="copyedit-back" title="Back to the editing tasks"
             hx-get="/copyedit/prompts" hx-target="#copyedit-body" hx-swap="innerHTML">◀ Tasks</button>
-    <span class="copyedit-task-name">{{.Task}}</span>
-    {{if .Model}}<span class="copyedit-model">{{.Model}}</span>{{end}}
+    <span class="copyedit-task-name">{{if .Tasks}}{{len .Tasks}} task{{if gt (len .Tasks) 1}}s{{end}}, {{.Count}} suggestion{{if ne .Count 1}}s{{end}}{{end}}</span>
+    {{if .Model}}<span class="copyedit-model" title="The model this run went to, and how it was carried out">{{.Model}}{{if .Mode}} · {{.Mode}}{{end}}</span>{{end}}
   </div>
   {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
-  {{if .Suggestions}}<ol class="copyedit-list">
-    {{range .Suggestions}}<li class="copyedit-suggestion{{if not .Located}} unlocated{{end}}"
-        {{if .Located}}data-start="{{.Start}}" data-end="{{.End}}" title="Scroll the editor to this passage"{{end}}
-        {{if .Applicable}}data-replacement="{{.Replacement}}"{{end}}>
-      <blockquote class="copyedit-original">{{.Original}}</blockquote>
-      {{if .Replacement}}<p class="copyedit-replacement">{{.Replacement}}</p>{{end}}
-      {{if .Comment}}<p class="copyedit-comment">{{.Comment}}</p>{{end}}
-      {{if not .Located}}<p class="copyedit-unlocated">Not found in the page as quoted, so it is not highlighted.</p>{{end}}
-      {{/* Only a suggestion that was found in the page and says what to
-           put there instead can be written in; the others are read and
-           carried out by hand. */ -}}
-      {{if .Applicable}}<div class="copyedit-suggestion-actions">
-        <button type="button" class="copyedit-apply"
-                title="Replace the passage in the editor with this text">Apply</button>
-      </div>{{end}}
-    </li>
+  {{/* One filter per task, for a run of several: the whole run is on
+       screen at once, and a chip narrows it to the task being worked
+       through. */ -}}
+  {{if gt (len .Groups) 1}}<div class="copyedit-filters" id="copyedit-filters">
+    <button type="button" class="copyedit-filter active" data-task="">All</button>
+    {{range .Groups}}<button type="button" class="copyedit-filter" data-task="{{.Task}}">{{if .Task}}{{.Task}}{{else}}Unattributed{{end}} ({{len .Suggestions}})</button>
     {{end}}
-  </ol>
-  {{else if not .Error}}<p class="empty">Nothing to change: the model had no suggestion.</p>{{end}}
+  </div>{{end}}
+  {{range .Groups}}<section class="copyedit-group" data-task="{{.Task}}">
+    {{if gt (len $.Groups) 1}}<h3 class="copyedit-group-name">{{if .Task}}{{.Task}}{{else}}Unattributed{{end}}</h3>{{end}}
+    {{if .Suggestions}}<ol class="copyedit-list">
+      {{range .Suggestions}}<li class="copyedit-suggestion{{if not .Located}} unlocated{{end}}"
+          {{if .Located}}data-start="{{.Start}}" data-end="{{.End}}" title="Scroll the editor to this passage"{{end}}
+          {{if .Applicable}}data-replacement="{{.Replacement}}"{{end}}>
+        <blockquote class="copyedit-original">{{.Original}}</blockquote>
+        {{if .Replacement}}<p class="copyedit-replacement">{{.Replacement}}</p>{{end}}
+        {{if .Comment}}<p class="copyedit-comment">{{.Comment}}</p>{{end}}
+        {{if not .Located}}<p class="copyedit-unlocated">Not found in the page as quoted, so it is not highlighted.</p>{{end}}
+        {{/* Apply writes the suggestion in; Done says it was dealt with
+             by hand. Only a suggestion with a passage and a replacement
+             can be written in, but any of them can be finished with. */ -}}
+        <div class="copyedit-suggestion-actions">
+          {{if .Applicable}}<button type="button" class="copyedit-apply"
+                  title="Replace the passage in the editor with this text">Apply</button>{{end}}
+          <button type="button" class="copyedit-done"
+                  title="Mark as dealt with — takes it off the list and unhighlights the passage">Done</button>
+        </div>
+      </li>
+      {{end}}
+    </ol>
+    {{else if not $.Error}}<p class="empty copyedit-none">Nothing to change.</p>{{end}}
+  </section>
+  {{end}}
+  {{if and (not .Groups) (not .Error)}}<p class="empty">Nothing to change: the model had no suggestion.</p>{{end}}
 </div>{{end}}
 
 {{define "copyedit-page"}}<!doctype html>
@@ -508,6 +544,15 @@
     <p class="config-intro">Write the prompt as an instruction about the page — "Find sentences in the passive voice and rewrite them actively". The answer's shape is asked for by the app, so the prompt only has to say what to look for.</p>
     {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
     {{if .Message}}<div class="notice">{{.Message}}</div>{{end}}
+    <form class="config-form config-setting" method="post" action="/config/copyedit/mode">
+      <h3>Running several tasks</h3>
+      <p class="config-intro">Ticking several tasks in the pane can go to the model either way. One call sends the page once and is cheaper; one call per task lets the model attend to each task on its own, and may read better. The page is the cached part of a request, so from the second call on a provider that caches serves it without charging full price for it again — which is what makes the per-task way affordable enough to be worth comparing.</p>
+      <label>Mode<select name="mode">
+        <option value="batched"{{if not .PerTask}} selected{{end}}>One call for all ticked tasks</option>
+        <option value="per-task"{{if .PerTask}} selected{{end}}>One call per ticked task</option>
+      </select></label>
+      <div class="config-actions"><button type="submit">Save mode</button></div>
+    </form>
     <ul class="config-items">
       {{range .Prompts}}<li class="config-item">
         <form class="config-form" method="post" action="/config/copyedit" autocomplete="off">
@@ -562,6 +607,7 @@
     <h2>Copyedit: API connections</h2>
     <p class="config-intro">A connection is one model the editing tasks can be run on: which API it speaks, where it lives, which model to ask, and the key it takes. Several may be configured; the copyedit tab picks between them.</p>
     <p class="config-intro">"Anthropic" posts to <code>&lt;base URL&gt;/messages</code>, "OpenAI-compatible" to <code>&lt;base URL&gt;/chat/completions</code> — which is what OpenAI, Ollama, LM Studio, and OpenRouter all speak. A local model usually needs no key.</p>
+    <p class="config-intro">Give the base URL — <code>https://api.openai.com/v1</code>, <code>https://openrouter.ai/api/v1</code>, <code>http://localhost:11434/v1</code> — or paste the whole endpoint your provider's documentation prints: the path above is added only when it is not already there.</p>
     <p class="config-intro">The keys are stored in <code>copyedit.json</code> beside the render preferences, readable by you alone, and are never sent back to the browser.</p>
     {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
     {{if .Message}}<div class="notice">{{.Message}}</div>{{end}}

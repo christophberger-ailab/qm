@@ -70,7 +70,7 @@ func cmd(c *start.Command) error {
 // Serve runs the web UI on listenAddr with the project at root open. It
 // blocks until the server stops.
 func Serve(listenAddr, root string) error {
-	srv, err := newServer(defaultPrefsFile())
+	srv, err := newServer(defaultConfigFile())
 	if err != nil {
 		return fmt.Errorf("web: %w", err)
 	}
