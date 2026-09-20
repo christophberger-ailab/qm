@@ -352,7 +352,7 @@ func TestRenderPanelDimsTheAudiencesOfAnUncheckedTopic(t *testing.T) {
 func TestRenderSelectionPersistsPerProject(t *testing.T) {
 	root := fixture(t)
 	writeProfile(t, root, "audience-pol", "_quarto-vars:\n  audience: \"-pol\"\n")
-	prefs := filepath.Join(t.TempDir(), "render.json")
+	prefs := filepath.Join(t.TempDir(), configFileName)
 
 	srv, err := newServer(prefs)
 	if err != nil {
@@ -409,10 +409,14 @@ func TestRenderSelectionPersistsPerProject(t *testing.T) {
 // deleted; it must neither show up nor break the restore.
 func TestSavedSelectionIgnoresRemovedEntries(t *testing.T) {
 	root := fixture(t)
-	prefs := filepath.Join(t.TempDir(), "render.json")
-	saved := `{"` + root + `":{"topics":["chapter2","gone"],` +
-		`"audiences":{"chapter2":["std","gone"]},"formats":["pdf"]}}`
-	if err := os.WriteFile(prefs, []byte(saved), 0o644); err != nil {
+	prefs := filepath.Join(t.TempDir(), configFileName)
+	saved := defaultConfig()
+	saved.Projects[root] = projectPrefs{
+		Topics:    []string{"chapter2", "gone"},
+		Audiences: map[string][]string{"chapter2": {"std", "gone"}},
+		Formats:   []string{"pdf"},
+	}
+	if err := saveConfigFile(prefs, saved); err != nil {
 		t.Fatal(err)
 	}
 

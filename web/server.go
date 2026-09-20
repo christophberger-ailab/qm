@@ -38,27 +38,18 @@ type server struct {
 	// rendered; /watch re-renders only when the disk no longer matches.
 	fp string
 
-	// prefsFile persists the render selection per project root across
-	// restarts; empty disables persistence. prefs holds its content.
-	prefsFile string
-	prefs     map[string]projectPrefs
+	// configFile is the one file the settings live in; empty keeps them
+	// to this run. cfg holds its content: the projects opened before,
+	// what is selected per project, the preview's stylesheet, and the
+	// copyediting setup (see config.go).
+	configFile string
+	cfg        storedConfig
 
-	// recentFile persists the projects opened through the Open field,
-	// most recent first; empty keeps the list to this run. recent holds
-	// its content.
-	recentFile string
-	recent     []string
-
-	// cssDir holds the custom preview stylesheets, next to the render
-	// prefs; empty disables persistence and serves the baked-in default
-	// from memory instead.
+	// cssDir holds the custom preview stylesheets, beside the settings
+	// file; empty disables persistence and serves the baked-in default
+	// from memory instead. The stylesheets stay files of their own —
+	// they are CSS, not settings.
 	cssDir string
-
-	// copyeditFile holds the copyediting setup — the editing tasks and
-	// the API connections they run on — beside the render prefs; empty
-	// disables persistence. copyedit holds its content.
-	copyeditFile string
-	copyedit     copyeditConfig
 
 	// base is the text the open editor started from. A save is replayed
 	// onto the tree's own writes against it (see project.Rebase); it is
@@ -74,7 +65,7 @@ type server struct {
 	index searchIndex
 }
 
-func newServer(prefsFile string) (*server, error) {
+func newServer(configFile string) (*server, error) {
 	funcs := template.FuncMap{
 		"group": func(parent string, pages []*project.Page) any {
 			return struct {
@@ -88,17 +79,21 @@ func newServer(prefsFile string) (*server, error) {
 		return nil, err
 	}
 	s := &server{
-		mux:          http.NewServeMux(),
-		tmpl:         tmpl,
-		prefsFile:    prefsFile,
-		recentFile:   recentFileForPrefs(prefsFile),
-		cssDir:       cssDirForPrefs(prefsFile),
-		copyeditFile: copyeditFileForPrefs(prefsFile),
+		mux:        http.NewServeMux(),
+		tmpl:       tmpl,
+		configFile: configFile,
+		cssDir:     cssDirFor(configFile),
 	}
 	ensureDefaultCSS(s.cssDir)
-	s.loadPrefs()
-	s.loadRecent()
-	s.loadCopyedit()
+	// A settings file that does not check out against its own schema
+	// stops the app here, naming the line that is wrong. Carrying on with
+	// defaults would mean the next write overwrote settings the user
+	// meant to keep — API keys among them.
+	cfg, err := openConfig(configFile)
+	if err != nil {
+		return nil, err
+	}
+	s.cfg = cfg
 	static, err := iofs.Sub(assets, "assets/static")
 	if err != nil {
 		return nil, err
@@ -207,7 +202,7 @@ func pathLabel(p string) string {
 // recently opened ones. The caller must hold s.mu.
 func (s *server) openViewFor() openView {
 	v := openView{Path: s.root, Label: pathLabel(s.root)}
-	for _, p := range s.recent {
+	for _, p := range s.cfg.Recent {
 		v.Recent = append(v.Recent, recentPath{Path: p, Label: pathLabel(p)})
 	}
 	return v
@@ -968,8 +963,8 @@ func (s *server) selectRender(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.ParseForm()
-	s.prefs[s.root] = formValues(s.prefsFor(s.root), r.Form, s.root)
-	s.savePrefs()
+	s.cfg.Projects[s.root] = formValues(s.prefsFor(s.root), r.Form, s.root)
+	s.saveConfig()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -984,8 +979,8 @@ func (s *server) startRender(w http.ResponseWriter, r *http.Request) {
 	}
 	r.ParseForm()
 	prefs := formValues(s.prefsFor(s.root), r.Form, s.root)
-	s.prefs[s.root] = prefs
-	s.savePrefs()
+	s.cfg.Projects[s.root] = prefs
+	s.saveConfig()
 
 	switch {
 	case len(prefs.Topics) == 0:

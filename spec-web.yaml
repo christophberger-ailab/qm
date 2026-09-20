@@ -17,6 +17,26 @@ components:
 constraints:
   STANDARD: See the constraints in spec.yaml.
 
+  SETTINGS:
+    description: >
+      Everything the UI remembers between runs lives in one CUE file, which
+      carries the schema it is checked against.
+    requirements:
+      1: 'The settings are one file: `<user config dir>/qm/config.cue`. Nothing else is written beside it but the preview stylesheets, which are CSS rather than settings'
+      2: The file holds the recently opened projects, the per-project render selection and last open page, the active preview stylesheet, and the copyediting setup
+      3: The file is written for its owner alone, since the copyediting setup holds API keys
+      4: 'The file carries its own schema: the CUE definitions the settings are checked against are written into it above them, so the file says what belongs in it and in what shape'
+      4-1: The schema is written by the app and rewritten with every save, so the schema in the file is always the one the running binary checks against
+      4-2: The definitions are closed, so a field the schema does not name -- a misspelling above all -- is an error rather than a setting that is silently ignored
+      4-3: A field left out is not an error; a list or a map left out is empty, and the scalars carry the defaults the schema names, so a file may be written by hand in part
+      5: Every read checks the settings against the schema, and what fails is reported with the file, line, and column it is at
+      5-1: A settings file that does not check out stops the app instead of being replaced, since the settings are the only copy of the user's connections and selections; the file is left exactly as it stands
+      5-2: What the app is about to write is read back before it replaces the file, so a save that the next start could not read is refused rather than made
+      6: The app writes a settings file with the defaults when there is none
+      6-1: The settings the older JSON files held -- render.json, recent.json, copyedit.json, and the custom-css/.active marker -- are carried over into it the first time the app runs without one
+      6-2: Those files are then kept beside the new one under a `.migrated` name: they are no longer read, and a mistake in carrying them over is recoverable
+      7: Hand-edited values are read back as they stand; comments written among the settings are not kept, the app replacing them whenever a setting changes in the UI
+
   ORIGIN:
     description: The command is the quarto-sorter tool (github.com/christophberger-ailab/quarto-sorter) merged into qm.
     requirements:
@@ -70,12 +90,12 @@ constraints:
       3-7: The page open in the editor is remembered per project and reopened when the app page loads, so a restart, or a visit to the config pages and back, returns to the page the user was working on
       3-7-1: The reopened page is selected in the page tree, and collapsed branches above it are expanded
       3-7-2: A remembered page that is no longer there is forgotten, and the editor starts empty
-      3-7-3: The remembered page is stored with the render selection in `<user config dir>/qm/render.json`
+      3-7-3: The remembered page is stored with the render selection in the settings file (see SETTINGS)
       3-7-4: The reopened page always shows that page's text on disk; the browser's own restore of form state across a reload -- which is where a restart ends -- never puts another page's text into the editor
       3-7-5: The editor opens with the page's text unchanged, a leading newline included, so an autosave writes back what was read
       4: The tree is polled for outside changes and refreshed when the project changed on disk
       5: The render panel selects a point in the project's three-axis matrix: topics, the audiences of each topic, and the output formats
-      5-1: The selection is remembered per project in `<user config dir>/qm/render.json`
+      5-1: The selection is remembered per project in the settings file (see SETTINGS)
       5-2: The topics are the values of the project's `topic-*` profiles, the formats those of its `format-*` profiles
       5-3: For each topic, only the audiences the topic declares under `qm: audiences:` are offered or submitted for it; a topic that declares none offers every audience the project has
       5-4: A topic the user never configured defaults to every audience it takes part in
@@ -89,7 +109,7 @@ constraints:
       7-1: The Config button opens a full config page whose entries are presented as a list that can grow
       7-2: 'The config list contains an entry named "Preview: Custom CSS" that opens the custom preview stylesheet editor'
       7-3: The custom preview stylesheet editor uses the embedded CodeMirror CSS mode, offers Save, and links back to the config page and the app
-      7-4: Custom preview stylesheets are stored beside the render prefs as `<user config dir>/qm/custom-css/*.css`; the app ships a baked-in default that is materialized as `custom.css` the first time the app runs with a config directory that does not exist yet, and is never rewritten afterwards
+      7-4: Custom preview stylesheets are stored beside the settings file as `<user config dir>/qm/custom-css/*.css` -- they are CSS rather than settings, so they stay files of their own; the app ships a baked-in default that is materialized as `custom.css` the first time the app runs with a config directory that does not exist yet, and is never rewritten afterwards
       7-4-1: The editor lets the user add an alternate stylesheet by name and switch which one it is editing once more than one exists
       7-5: The app links the active custom preview stylesheet document-wide after `/static/app.css`, the route serves only the requested stored stylesheet as `text/css`, and an empty or absent stylesheet has no effect
       7-6: The editor tells the user to scope rules with `.markdown-preview` when they should affect only the preview
@@ -112,7 +132,7 @@ constraints:
       9: The Open field in the top bar offers the projects opened before, most recent first
       9-1: The field itself shows only the last element of the open project's path, since the folder name is what tells one project from another; the full path is its tooltip and is what a submit opens
       9-2: A path typed or pasted into the field is opened as written, whatever the field showed before
-      9-3: The dropdown holds the ten most recently opened projects, no project twice, and is remembered across restarts in `<user config dir>/qm/recent.json`
+      9-3: The dropdown holds the ten most recently opened projects, no project twice, and is remembered across restarts in the settings file (see SETTINGS)
       9-4: A project opened from the command line counts as opened, so it is in the dropdown of the next session
       9-5: Opening a project updates the field and its dropdown along with the panes, the render panel, and the Git panel, all of which describe the project just opened
       10: A Git button to the right of the Render button opens a popup, like the render panel, that shows the changes since the last commit
@@ -144,7 +164,7 @@ constraints:
       11-4-1: 'The API kinds are Anthropic (`<base URL>/messages`) and OpenAI-compatible (`<base URL>/chat/completions`), which is what OpenAI, Ollama, LM Studio, and OpenRouter all speak; a local model needs no key'
       11-4-1-1: A base URL that already ends in the API's own path is taken as it stands, since what a provider documents is the whole endpoint and that is what gets pasted in; the path is never appended twice
       11-4-1-2: 'A call the API refused names the URL it was answered for: the key is the user''s, but the address is composed from the connection, and a 404 is about the address'
-      11-4-2: The tasks and the connections are the user's own rather than the project's, so they are stored beside the render prefs in `<user config dir>/qm/copyedit.json`, written for its owner alone because it holds API keys
+      11-4-2: The tasks and the connections are the user's own rather than the project's, so they are stored in the settings file (see SETTINGS) rather than in the project
       11-4-3: A stored key is never sent back to the browser; the form says one is stored, and an empty key field on an edit keeps it
       11-5: A dropdown at the head of the copyedit pane selects which connection a run goes to; the choice is remembered across restarts, and a selection whose connection is gone falls back to the first one
       11-6: Clicking an editing task sends the text the editor holds -- the text, not the file, so unsaved edits are edited too -- to the selected model, together with the task's prompt

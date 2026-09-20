@@ -58,11 +58,11 @@ func TestPromptsAreAddedEditedAndDeleted(t *testing.T) {
 
 	// The setup outlives the run: a second server reading the same config
 	// directory finds the task.
-	again, err := newServer(srv.prefsFile)
+	again, err := newServer(srv.configFile)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := again.copyedit.Prompts; len(got) != 1 || got[0].Title != "Passive voice" {
+	if got := again.cfg.Copyedit.Prompts; len(got) != 1 || got[0].Title != "Passive voice" {
 		t.Fatalf("reloaded prompts = %+v, want the one just added", got)
 	}
 
@@ -72,13 +72,13 @@ func TestPromptsAreAddedEditedAndDeleted(t *testing.T) {
 	if body := rec.Body.String(); !strings.Contains(body, `value="Active voice"`) {
 		t.Errorf("the edited title is not on the page:\n%s", body)
 	}
-	if got := srv.copyedit.Prompts; len(got) != 1 || got[0].Title != "Active voice" || got[0].Prompt != "Rewrite them actively." {
+	if got := srv.cfg.Copyedit.Prompts; len(got) != 1 || got[0].Title != "Active voice" || got[0].Prompt != "Rewrite them actively." {
 		t.Fatalf("prompts after the edit = %+v, want the one task, edited", got)
 	}
 
 	rec = post(t, srv, "/config/copyedit/delete", url.Values{"id": {"p1"}})
-	if len(srv.copyedit.Prompts) != 0 {
-		t.Fatalf("task not deleted: %+v", srv.copyedit.Prompts)
+	if len(srv.cfg.Copyedit.Prompts) != 0 {
+		t.Fatalf("task not deleted: %+v", srv.cfg.Copyedit.Prompts)
 	}
 	if !strings.Contains(rec.Body.String(), "Deleted.") {
 		t.Errorf("delete not reported:\n%s", rec.Body)
@@ -96,8 +96,8 @@ func TestPromptNeedsTitleAndText(t *testing.T) {
 			t.Errorf("%v was accepted:\n%s", form, rec.Body)
 		}
 	}
-	if len(srv.copyedit.Prompts) != 0 {
-		t.Fatalf("an incomplete task was stored: %+v", srv.copyedit.Prompts)
+	if len(srv.cfg.Copyedit.Prompts) != 0 {
+		t.Fatalf("an incomplete task was stored: %+v", srv.cfg.Copyedit.Prompts)
 	}
 }
 
@@ -115,13 +115,13 @@ func TestConnectionsAreSavedWithoutLeakingTheKey(t *testing.T) {
 		t.Fatalf("the API key was sent back to the browser:\n%s", body)
 	}
 
-	// The key file is the user's own.
-	info, err := os.Stat(srv.copyeditFile)
+	// The settings file holds the keys, so it is the user's own.
+	info, err := os.Stat(srv.configFile)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Errorf("copyedit.json mode = %o, want 600", perm)
+		t.Errorf("%s mode = %o, want 600", configFileName, perm)
 	}
 
 	// An edit that leaves the key field empty keeps the stored key.
@@ -129,13 +129,13 @@ func TestConnectionsAreSavedWithoutLeakingTheKey(t *testing.T) {
 		"id": {"c1"}, "name": {"Claude"}, "kind": {"anthropic"},
 		"base_url": {"https://api.anthropic.com/v1"}, "model": {"claude-opus-4-1"}, "key": {""},
 	})
-	if got := srv.copyedit.Connections[0]; got.Key != "sk-secret" || got.Model != "claude-opus-4-1" {
+	if got := srv.cfg.Copyedit.Connections[0]; got.Key != "sk-secret" || got.Model != "claude-opus-4-1" {
 		t.Fatalf("connection after edit = %+v, want the new model and the stored key", got)
 	}
 
 	post(t, srv, "/config/connections/delete", url.Values{"id": {"c1"}})
-	if len(srv.copyedit.Connections) != 0 {
-		t.Fatalf("connection not deleted: %+v", srv.copyedit.Connections)
+	if len(srv.cfg.Copyedit.Connections) != 0 {
+		t.Fatalf("connection not deleted: %+v", srv.cfg.Copyedit.Connections)
 	}
 }
 
@@ -563,7 +563,7 @@ func TestRunModeIsConfiguredAndRemembered(t *testing.T) {
 		t.Fatalf("mode = %q after switching", got)
 	}
 	// It outlives the run, like the rest of the setup.
-	again, err := newServer(srv.prefsFile)
+	again, err := newServer(srv.configFile)
 	if err != nil {
 		t.Fatal(err)
 	}

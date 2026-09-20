@@ -53,7 +53,7 @@ func TestRecentPathsAreOffered(t *testing.T) {
 		t.Fatalf("reopen: status %d: %s", rec.Code, rec.Body)
 	}
 
-	if got := srv.recent; len(got) != 2 || got[0] != first || got[1] != second {
+	if got := srv.cfg.Recent; len(got) != 2 || got[0] != first || got[1] != second {
 		t.Fatalf("recent = %v, want [%s %s]", got, first, second)
 	}
 	body := get(t, srv, "/").Body.String()
@@ -73,8 +73,8 @@ func TestRecentPathsAreCapped(t *testing.T) {
 	for i := 0; i < maxRecent+5; i++ {
 		srv.rememberRoot(filepath.Join(t.TempDir(), "p"))
 	}
-	if len(srv.recent) != maxRecent {
-		t.Errorf("recent holds %d paths, want %d", len(srv.recent), maxRecent)
+	if len(srv.cfg.Recent) != maxRecent {
+		t.Errorf("recent holds %d paths, want %d", len(srv.cfg.Recent), maxRecent)
 	}
 }
 
@@ -82,7 +82,7 @@ func TestRecentPathsAreCapped(t *testing.T) {
 // and read back by the next server.
 func TestRecentPathsPersist(t *testing.T) {
 	dir := t.TempDir()
-	prefs := filepath.Join(dir, "render.json")
+	prefs := filepath.Join(dir, configFileName)
 	root := fixture(t)
 
 	srv, err := newServer(prefs)
@@ -92,16 +92,16 @@ func TestRecentPathsPersist(t *testing.T) {
 	if rec := post(t, srv, "/open", url.Values{"path": {root}}); rec.Code != http.StatusOK {
 		t.Fatalf("open: status %d: %s", rec.Code, rec.Body)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "recent.json")); err != nil {
-		t.Fatalf("recent.json not written: %v", err)
+	if _, err := os.Stat(filepath.Join(dir, configFileName)); err != nil {
+		t.Fatalf("%s not written: %v", configFileName, err)
 	}
 
 	again, err := newServer(prefs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(again.recent) != 1 || again.recent[0] != root {
-		t.Errorf("restored recent = %v, want [%s]", again.recent, root)
+	if len(again.cfg.Recent) != 1 || again.cfg.Recent[0] != root {
+		t.Errorf("restored recent = %v, want [%s]", again.cfg.Recent, root)
 	}
 }
 

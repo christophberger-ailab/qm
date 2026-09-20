@@ -12,12 +12,9 @@ package web
 // they are how this user edits, not what this project contains.
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 )
@@ -37,9 +34,9 @@ type apiConnection struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Kind    string `json:"kind"`
-	BaseURL string `json:"base_url"`
+	BaseURL string `json:"baseURL"`
 	Model   string `json:"model"`
-	Key     string `json:"key,omitempty"`
+	Key     string `json:"key"`
 }
 
 // copyeditConfig is the whole copyediting setup, as it sits on disk.
@@ -47,10 +44,10 @@ type apiConnection struct {
 type copyeditConfig struct {
 	Prompts     []copyeditPrompt `json:"prompts"`
 	Connections []apiConnection  `json:"connections"`
-	Active      string           `json:"active,omitempty"`
+	Active      string           `json:"active"`
 	// Mode is how a run of several tasks is carried out: all of them in
-	// one call, or one call each. Empty means the default.
-	Mode string `json:"mode,omitempty"`
+	// one call, or one call each.
+	Mode string `json:"mode"`
 }
 
 // How a run of several tasks reaches the model.
@@ -73,7 +70,7 @@ const (
 // runMode is the configured mode, defaulting to one call for the lot. The
 // caller must hold s.mu.
 func (s *server) runMode() string {
-	if s.copyedit.Mode == modePerTask {
+	if s.cfg.Copyedit.Mode == modePerTask {
 		return modePerTask
 	}
 	return modeBatched
@@ -85,8 +82,8 @@ func (s *server) setRunMode(mode string) error {
 	if mode != modeBatched && mode != modePerTask {
 		return errors.New("no such run mode")
 	}
-	s.copyedit.Mode = mode
-	return s.saveCopyedit()
+	s.cfg.Copyedit.Mode = mode
+	return s.saveConfig()
 }
 
 // modeLabel says in the pane which way a run was carried out, so that a
@@ -97,43 +94,6 @@ func modeLabel(mode string) string {
 		return "one call per task"
 	}
 	return "one call for all tasks"
-}
-
-// copyeditFileForPrefs returns the file that holds the copyediting setup,
-// beside the render prefs, or "" when persistence is disabled.
-func copyeditFileForPrefs(prefsFile string) string {
-	if prefsFile == "" {
-		return ""
-	}
-	return filepath.Join(filepath.Dir(prefsFile), "copyedit.json")
-}
-
-// loadCopyedit reads the copyediting setup. A missing or unreadable file
-// just means nothing has been configured yet.
-func (s *server) loadCopyedit() {
-	s.copyedit = copyeditConfig{}
-	if s.copyeditFile == "" {
-		return
-	}
-	if b, err := os.ReadFile(s.copyeditFile); err == nil {
-		json.Unmarshal(b, &s.copyedit)
-	}
-}
-
-// saveCopyedit writes the copyediting setup. The file holds API keys, so
-// it is written for its owner alone. The caller must hold s.mu.
-func (s *server) saveCopyedit() error {
-	if s.copyeditFile == "" {
-		return errors.New("no config directory available")
-	}
-	b, err := json.MarshalIndent(s.copyedit, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(s.copyeditFile), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(s.copyeditFile, b, 0o600)
 }
 
 // nextID is the first free id of a series ("p1", "p2", ...). The ids are
@@ -160,18 +120,18 @@ func (s *server) savePrompt(id, title, prompt string) error {
 		return errors.New("the editing task needs a prompt")
 	}
 	if i := s.promptIndex(id); i >= 0 {
-		s.copyedit.Prompts[i].Title = title
-		s.copyedit.Prompts[i].Prompt = prompt
-		return s.saveCopyedit()
+		s.cfg.Copyedit.Prompts[i].Title = title
+		s.cfg.Copyedit.Prompts[i].Prompt = prompt
+		return s.saveConfig()
 	}
-	ids := make([]string, 0, len(s.copyedit.Prompts))
-	for _, p := range s.copyedit.Prompts {
+	ids := make([]string, 0, len(s.cfg.Copyedit.Prompts))
+	for _, p := range s.cfg.Copyedit.Prompts {
 		ids = append(ids, p.ID)
 	}
-	s.copyedit.Prompts = append(s.copyedit.Prompts, copyeditPrompt{
+	s.cfg.Copyedit.Prompts = append(s.cfg.Copyedit.Prompts, copyeditPrompt{
 		ID: nextID("p", ids), Title: title, Prompt: prompt,
 	})
-	return s.saveCopyedit()
+	return s.saveConfig()
 }
 
 // deletePrompt drops an editing task. The caller must hold s.mu.
@@ -180,18 +140,18 @@ func (s *server) deletePrompt(id string) error {
 	if i < 0 {
 		return errors.New("no such editing task")
 	}
-	s.copyedit.Prompts = slices.Delete(s.copyedit.Prompts, i, i+1)
-	return s.saveCopyedit()
+	s.cfg.Copyedit.Prompts = slices.Delete(s.cfg.Copyedit.Prompts, i, i+1)
+	return s.saveConfig()
 }
 
 func (s *server) promptIndex(id string) int {
-	return slices.IndexFunc(s.copyedit.Prompts, func(p copyeditPrompt) bool {
+	return slices.IndexFunc(s.cfg.Copyedit.Prompts, func(p copyeditPrompt) bool {
 		return id != "" && p.ID == id
 	})
 }
 
 func (s *server) connIndex(id string) int {
-	return slices.IndexFunc(s.copyedit.Connections, func(c apiConnection) bool {
+	return slices.IndexFunc(s.cfg.Copyedit.Connections, func(c apiConnection) bool {
 		return id != "" && c.ID == id
 	})
 }
@@ -219,18 +179,18 @@ func (s *server) saveConnection(c apiConnection) error {
 	}
 	if i := s.connIndex(c.ID); i >= 0 {
 		if c.Key == "" {
-			c.Key = s.copyedit.Connections[i].Key
+			c.Key = s.cfg.Copyedit.Connections[i].Key
 		}
-		s.copyedit.Connections[i] = c
-		return s.saveCopyedit()
+		s.cfg.Copyedit.Connections[i] = c
+		return s.saveConfig()
 	}
-	ids := make([]string, 0, len(s.copyedit.Connections))
-	for _, e := range s.copyedit.Connections {
+	ids := make([]string, 0, len(s.cfg.Copyedit.Connections))
+	for _, e := range s.cfg.Copyedit.Connections {
 		ids = append(ids, e.ID)
 	}
 	c.ID = nextID("c", ids)
-	s.copyedit.Connections = append(s.copyedit.Connections, c)
-	return s.saveCopyedit()
+	s.cfg.Copyedit.Connections = append(s.cfg.Copyedit.Connections, c)
+	return s.saveConfig()
 }
 
 // deleteConnection drops an API connection, and the active selection with
@@ -240,22 +200,22 @@ func (s *server) deleteConnection(id string) error {
 	if i < 0 {
 		return errors.New("no such connection")
 	}
-	s.copyedit.Connections = slices.Delete(s.copyedit.Connections, i, i+1)
-	if s.copyedit.Active == id {
-		s.copyedit.Active = ""
+	s.cfg.Copyedit.Connections = slices.Delete(s.cfg.Copyedit.Connections, i, i+1)
+	if s.cfg.Copyedit.Active == id {
+		s.cfg.Copyedit.Active = ""
 	}
-	return s.saveCopyedit()
+	return s.saveConfig()
 }
 
 // activeConnection is the connection a run goes to: the one the pane's
 // dropdown last selected, or the first configured one when that selection
 // is gone or was never made. The caller must hold s.mu.
 func (s *server) activeConnection() (apiConnection, bool) {
-	if i := s.connIndex(s.copyedit.Active); i >= 0 {
-		return s.copyedit.Connections[i], true
+	if i := s.connIndex(s.cfg.Copyedit.Active); i >= 0 {
+		return s.cfg.Copyedit.Connections[i], true
 	}
-	if len(s.copyedit.Connections) > 0 {
-		return s.copyedit.Connections[0], true
+	if len(s.cfg.Copyedit.Connections) > 0 {
+		return s.cfg.Copyedit.Connections[0], true
 	}
 	return apiConnection{}, false
 }
@@ -266,8 +226,8 @@ func (s *server) setActiveConnection(id string) error {
 	if s.connIndex(id) < 0 {
 		return errors.New("no such connection")
 	}
-	s.copyedit.Active = id
-	return s.saveCopyedit()
+	s.cfg.Copyedit.Active = id
+	return s.saveConfig()
 }
 
 // connectionView is a connection as the pages show it. The key is not part
@@ -294,8 +254,8 @@ type copyeditPane struct {
 // copyeditPaneView assembles the pane. The caller must hold s.mu.
 func (s *server) copyeditPaneView() copyeditPane {
 	active, _ := s.activeConnection()
-	v := copyeditPane{Prompts: s.copyedit.Prompts, Active: active.ID}
-	for _, c := range s.copyedit.Connections {
+	v := copyeditPane{Prompts: s.cfg.Copyedit.Prompts, Active: active.ID}
+	for _, c := range s.cfg.Copyedit.Connections {
 		v.Connections = append(v.Connections, connectionView{
 			ID: c.ID, Name: c.Name, Kind: c.Kind, BaseURL: c.BaseURL,
 			Model: c.Model, HasKey: c.Key != "", Active: c.ID == active.ID,
@@ -318,7 +278,7 @@ type copyeditConfigView struct {
 func (s *server) copyeditConfigPageView() copyeditConfigView {
 	mode := s.runMode()
 	return copyeditConfigView{
-		Prompts: s.copyedit.Prompts,
+		Prompts: s.cfg.Copyedit.Prompts,
 		Mode:    mode,
 		PerTask: mode == modePerTask,
 	}
@@ -403,7 +363,7 @@ func (s *server) savePromptHandler(w http.ResponseWriter, r *http.Request) {
 	if err := s.savePrompt(r.PostFormValue("id"), r.PostFormValue("title"), r.PostFormValue("prompt")); err != nil {
 		view.Message, view.Error = "", err.Error()
 	}
-	view.Prompts = s.copyedit.Prompts
+	view.Prompts = s.cfg.Copyedit.Prompts
 	s.render(w, "copyedit-page", view)
 }
 
@@ -416,7 +376,7 @@ func (s *server) deletePromptHandler(w http.ResponseWriter, r *http.Request) {
 	if err := s.deletePrompt(r.PostFormValue("id")); err != nil {
 		view.Message, view.Error = "", err.Error()
 	}
-	view.Prompts = s.copyedit.Prompts
+	view.Prompts = s.cfg.Copyedit.Prompts
 	s.render(w, "copyedit-page", view)
 }
 
@@ -511,7 +471,7 @@ func (s *server) copyeditRunHandler(w http.ResponseWriter, r *http.Request) {
 	picked := r.PostForm["prompt"]
 	s.mu.Lock()
 	var prompts []copyeditPrompt
-	for _, p := range s.copyedit.Prompts {
+	for _, p := range s.cfg.Copyedit.Prompts {
 		if slices.Contains(picked, p.ID) {
 			prompts = append(prompts, p)
 		}

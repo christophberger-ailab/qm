@@ -657,29 +657,56 @@ whitespace is a word character, emoji included. `parseQuery`
 `TestParseQueryReadsQuotesAndWords` is where the two readings are kept
 honest.
 
-### 9.5 Preferences — `web/prefs.go`
+### 9.5 Settings — `web/settings.go`, `web/migrate.go`, `web/prefs.go`
 
-`projectPrefs` (`prefs.go:20`) is what the UI remembers per project: the render
-selection (topics, formats, per-topic audiences) and the page last open in the
-editor. It is stored as JSON in `<user config dir>/qm/render.json` — still
-called that because it began as the render selection alone, and renaming it
-would drop every selection users have already made.
+Everything the UI remembers between runs is one value, `storedConfig`
+(`settings.go`), in one file: `<user config dir>/qm/config.cue`. It holds the
+recently opened projects, the per-project render selection and last open page
+(`projectPrefs`, `prefs.go`), which preview stylesheet is active, and the
+copyediting setup. It is written with mode 600, because the connections in it
+hold API keys.
 
-The rest of the file manages the custom preview stylesheets in
-`<user config dir>/qm/custom-css/`: `ensureDefaultCSS` (`prefs.go:233`)
-materialises the baked-in default once and never rewrites it,
-`sanitizeCSSName` (`prefs.go:211`) keeps user-supplied names to a safe shape,
-and `activeCSS`/`setActiveCSS` remember which stylesheet the live preview
-uses.
+The file is CUE for one reason: **it carries its own schema.** `configSchema`
+is a Go constant written into every file above the settings, and every read
+unifies the settings with it and calls `Validate(cue.Concrete(true))`. So the
+file tells the user what belongs in it, and a mistake in it is reported with
+the file, line and column — a misspelled field included, since CUE definitions
+are closed. Keeping the schema in a Go constant and rewriting it on every save
+is what stops the file and the binary drifting apart.
+
+Two rules protect the only copy of the user's connections and selections. A
+file that does not check out **stops the app** (`newServer` returns the error,
+`cli.Guard` makes the exit status non-zero) and is left exactly as it stands,
+rather than being replaced by defaults. And `saveConfigFile` reads back what
+it is about to write before it replaces the file: it is our own schema on both
+sides, so it should never fail, which is precisely why it is worth finding out
+before the file is overwritten rather than at the next start.
+
+Lists and maps in the schema carry no `| *[]` default and scalars do. That is
+not a style choice: an omitted list is already the empty list under
+`cue.Concrete`, while the disjunction would turn one bad element into "N errors
+in empty disjunction" and bury the real one.
+
+`migrate.go` reads the JSON files qm used to keep — `render.json`,
+`recent.json`, `copyedit.json`, and the `custom-css/.active` marker — into the
+new file the first time it runs without one, then renames them `*.migrated`:
+no longer read, not thrown away either. `legacyConnection` exists only because
+the old file spelled the base URL `base_url` where the schema spells it
+`baseURL`.
+
+What is left in `prefs.go` is the custom preview stylesheets in
+`<user config dir>/qm/custom-css/`, which stay files of their own because they
+are CSS: `ensureDefaultCSS` materialises the baked-in default once and never
+rewrites it, and `sanitizeCSSName` keeps user-supplied names to a safe shape.
+*Which* of them is active is a setting, so it moved into the settings file.
 
 ### 9.5.2 Copyediting — `web/copyedit.go`, `web/llm.go`
 
 The copyedit tab beside the editor runs an *editing task* — a prompt with a
 title — over the page the editor holds. `copyedit.go` keeps both halves of the
-setup: the tasks, and the API connections they run on, stored together as
-`<user config dir>/qm/copyedit.json` with mode 600, because the connections
-hold API keys. They are the user's own rather than the project's, which is why
-they sit beside the render prefs and not in the tree. `connectionView`
+setup: the tasks, and the API connections they run on. Both are the user's own
+rather than the project's, which is why they live in the settings file
+(§ 9.5) and not in the tree. `connectionView`
 (`copyedit.go:227`) is what the pages and the pane are rendered from, and it
 has no key field at all: the key travels to the API and nowhere else.
 
