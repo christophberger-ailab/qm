@@ -160,9 +160,26 @@ func askModel(conn apiConnection, system, user string) (string, error) {
 		return "", err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("%s answered %s: %s", conn.Name, resp.Status, snippet(string(raw)))
+		// The URL is part of the report: a refusal is about the key, but a
+		// 404 is about the address, and the address is composed here from
+		// what the connection carries.
+		return "", fmt.Errorf("%s answered %s for %s: %s", conn.Name, resp.Status, url, snippet(string(raw)))
 	}
 	return answerText(conn.Kind, raw)
+}
+
+// endpointURL puts the API's own path onto a connection's base URL. A base
+// URL that already ends in that path is left as it is: what a provider's
+// documentation prints is the whole endpoint
+// (`https://openrouter.ai/api/v1/chat/completions`), so that is what gets
+// pasted into the field at least as often as the base it asks for, and
+// appending the path a second time only produces a 404.
+func endpointURL(base, path string) string {
+	base = strings.TrimRight(strings.TrimSpace(base), "/")
+	if strings.HasSuffix(strings.ToLower(base), path) {
+		return base
+	}
+	return base + path
 }
 
 // requestFor composes the endpoint and the request body for the
@@ -176,7 +193,7 @@ func requestFor(conn apiConnection, system, user string) (string, []byte, error)
 	var url string
 	switch conn.Kind {
 	case kindAnthropic:
-		url = base + "/messages"
+		url = endpointURL(base, "/messages")
 		payload = map[string]any{
 			"model":      conn.Model,
 			"max_tokens": maxTokens,
@@ -186,7 +203,7 @@ func requestFor(conn apiConnection, system, user string) (string, []byte, error)
 			},
 		}
 	default: // OpenAI-style, which is what every other provider speaks
-		url = base + "/chat/completions"
+		url = endpointURL(base, "/chat/completions")
 		payload = map[string]any{
 			"model":       conn.Model,
 			"max_tokens":  maxTokens,

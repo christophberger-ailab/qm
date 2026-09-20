@@ -562,6 +562,7 @@
     <h2>Copyedit: API connections</h2>
     <p class="config-intro">A connection is one model the editing tasks can be run on: which API it speaks, where it lives, which model to ask, and the key it takes. Several may be configured; the copyedit tab picks between them.</p>
     <p class="config-intro">"Anthropic" posts to <code>&lt;base URL&gt;/messages</code>, "OpenAI-compatible" to <code>&lt;base URL&gt;/chat/completions</code> — which is what OpenAI, Ollama, LM Studio, and OpenRouter all speak. A local model usually needs no key.</p>
+    <p class="config-intro">Give the base URL — <code>https://api.openai.com/v1</code>, <code>https://openrouter.ai/api/v1</code>, <code>http://localhost:11434/v1</code> — or paste the whole endpoint your provider's documentation prints: the path above is added only when it is not already there.</p>
     <p class="config-intro">The keys are stored in <code>copyedit.json</code> beside the render preferences, readable by you alone, and are never sent back to the browser.</p>
     {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
     {{if .Message}}<div class="notice">{{.Message}}</div>{{end}}

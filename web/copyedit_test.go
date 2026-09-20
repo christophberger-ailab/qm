@@ -311,8 +311,14 @@ func TestCopyeditRunReportsWhatWentWrong(t *testing.T) {
 	addConnection(t, srv, "Stub", "anthropic", refusing.URL+"/v1", "stub-model", "bad")
 
 	rec = post(t, srv, "/copyedit/run", url.Values{"prompt": {"p1"}, "body": {"# Page\n"}})
-	if body := rec.Body.String(); !strings.Contains(body, "invalid api key") {
+	body := rec.Body.String()
+	if !strings.Contains(body, "invalid api key") {
 		t.Errorf("the API's refusal was not shown:\n%s", body)
+	}
+	// The address is composed from the connection, so a refusal says which
+	// one was called: that is what tells a wrong key from a wrong URL.
+	if !strings.Contains(body, refusing.URL+"/v1/messages") {
+		t.Errorf("the refusal does not name the URL it was answered for:\n%s", body)
 	}
 
 	rec = post(t, srv, "/copyedit/run", url.Values{"prompt": {"nope"}, "body": {"# Page\n"}})

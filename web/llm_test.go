@@ -143,6 +143,30 @@ func TestRequestForAddressesEachAPIItsOwnWay(t *testing.T) {
 	}
 }
 
+func TestTheWholeEndpointIsAcceptedWhereTheBaseURLIsAskedFor(t *testing.T) {
+	// A provider's documentation prints the endpoint, not the base it is
+	// composed from, so that is what gets pasted into the field; the path
+	// must not be appended to it a second time.
+	cases := []struct {
+		kind, base, want string
+	}{
+		{kindOpenAI, "https://openrouter.ai/api/v1", "https://openrouter.ai/api/v1/chat/completions"},
+		{kindOpenAI, "https://openrouter.ai/api/v1/chat/completions", "https://openrouter.ai/api/v1/chat/completions"},
+		{kindOpenAI, "https://openrouter.ai/api/v1/chat/completions/", "https://openrouter.ai/api/v1/chat/completions"},
+		{kindAnthropic, "https://api.anthropic.com/v1", "https://api.anthropic.com/v1/messages"},
+		{kindAnthropic, "https://api.anthropic.com/v1/messages", "https://api.anthropic.com/v1/messages"},
+	}
+	for _, c := range cases {
+		got, _, err := requestFor(apiConnection{Kind: c.kind, BaseURL: c.base, Model: "m"}, "s", "u")
+		if err != nil {
+			t.Fatalf("%s: %v", c.base, err)
+		}
+		if got != c.want {
+			t.Errorf("base %q -> %q, want %q", c.base, got, c.want)
+		}
+	}
+}
+
 func TestAnswerTextDigsOutBothShapes(t *testing.T) {
 	got, err := answerText(kindAnthropic, []byte(`{"content":[{"type":"text","text":"one"},{"type":"text","text":" two"}]}`))
 	if err != nil || got != "one two" {
