@@ -766,7 +766,18 @@ the `cache_control` breakpoint on the page block. `answerBudget` grows
 the whole run rather than one task of it. `suggestionFormat` is the part of the instruction that is ours rather
 than the user's — it asks for JSON, and for each suggestion to quote the
 passage it applies to, verbatim and short, because a passage that cannot be
-found again cannot be highlighted. `decodeSuggestions` reads the answer
+found again cannot be highlighted. `answerText` is deliberately forgiving about what comes back, because
+"the model answered with no text" was true of four quite different
+situations and helped with none of them: an error the gateway put in a 200
+body (reported as that error), a reasoning model that spent the whole token
+ceiling thinking (said as that, which is also why `maxTokens` leaves room to
+think rather than being sized for the suggestion list alone), one that
+answered in its reasoning and never wrote a final message (read from the
+reasoning), and content sent as parts rather than a string (`messageText`
+takes either). Anything still textless reports the stop reason and the body,
+since no guess beats showing what the provider sent.
+
+`decodeSuggestions` reads the answer
 leniently (a code fence, a line of prose above the JSON, "suggestion" spelled
 "replacement"), and `locateAll` finds each quoted passage in the page: as it
 stands, else with any run of whitespace where the quote has one, since a model

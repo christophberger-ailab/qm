@@ -34,9 +34,13 @@ import (
 // forever on a connection that will never answer.
 var llmTimeout = 3 * time.Minute
 
-// maxTokens is the answer's budget. It is the whole suggestion list, not
-// the page, so it can be far smaller than the input.
-const maxTokens = 4096
+// maxTokens is the answer's budget. The suggestion list itself is short
+// next to the page, but the budget is not only spent on it: a reasoning
+// model counts what it thinks against the same ceiling, and one that
+// reaches it while still thinking answers with nothing at all. The
+// ceiling is a limit rather than a bill -- only what is generated is
+// paid for -- so it is set well above what the list needs.
+const maxTokens = 16384
 
 // The kinds of API a connection can address. The kind decides the request
 // shape, the auth header, and where the answer's text sits in the reply.
@@ -244,9 +248,9 @@ func answerBudget(tasks int) int {
 	if tasks < 1 {
 		tasks = 1
 	}
-	budget := maxTokens + (tasks-1)*2048
-	if budget > 16384 {
-		return 16384
+	budget := maxTokens + (tasks-1)*4096
+	if budget > 65536 {
+		return 65536
 	}
 	return budget
 }
@@ -377,44 +381,140 @@ func setAuth(req *http.Request, conn apiConnection) {
 	}
 }
 
-// answerText digs the model's text out of the reply. The two shapes differ
-// only in where the text sits.
+// messageText is a chat message's content. Providers send it either as a
+// string or as the list of parts the newer shape uses, and a connection
+// may be pointed at either, so both are read.
+type messageText string
+
+func (m *messageText) UnmarshalJSON(b []byte) error {
+	var text string
+	if err := json.Unmarshal(b, &text); err == nil {
+		*m = messageText(text)
+		return nil
+	}
+	var parts []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(b, &parts); err != nil {
+		*m = "" // null, a number, something else: no text, which the caller reports
+		return nil
+	}
+	var out strings.Builder
+	for _, p := range parts {
+		if p.Type == "text" || p.Type == "" {
+			out.WriteString(p.Text)
+		}
+	}
+	*m = messageText(out.String())
+	return nil
+}
+
+// apiError is the error object an API may put in a body it answers 200
+// with. A gateway that could not reach the model behind it reports the
+// reason this way rather than in the status, and that reason is the only
+// thing worth showing.
+type apiError struct {
+	Message string `json:"message"`
+	Code    any    `json:"code"`
+}
+
+// answerText digs the model's text out of the reply.
+//
+// Where the text sits differs by API, and what comes back when there is
+// no text differs by provider, so this is more forgiving than the shapes
+// suggest: an error in a 200 body is reported as the error it is, a
+// reasoning model that put everything in its reasoning and never wrote a
+// final answer is taken at its reasoning, and anything else says what
+// actually came back (see noTextError) rather than "no text".
 func answerText(kind string, raw []byte) (string, error) {
 	if kind == kindAnthropic {
 		var reply struct {
+			Error   *apiError `json:"error"`
 			Content []struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
+				Type     string `json:"type"`
+				Text     string `json:"text"`
+				Thinking string `json:"thinking"`
 			} `json:"content"`
+			StopReason string `json:"stop_reason"`
 		}
 		if err := json.Unmarshal(raw, &reply); err != nil {
 			return "", fmt.Errorf("unreadable answer: %w", err)
 		}
-		var text strings.Builder
+		if reply.Error != nil && reply.Error.Message != "" {
+			return "", fmt.Errorf("the API refused the call: %s", reply.Error.Message)
+		}
+		var text, thinking strings.Builder
 		for _, part := range reply.Content {
-			if part.Type == "text" || part.Type == "" {
+			switch part.Type {
+			case "text", "":
 				text.WriteString(part.Text)
+			case "thinking":
+				thinking.WriteString(part.Thinking)
 			}
 		}
-		if text.Len() == 0 {
-			return "", errors.New("the model answered with no text")
+		if text.Len() > 0 {
+			return text.String(), nil
 		}
-		return text.String(), nil
+		if thinking.Len() > 0 {
+			return thinking.String(), nil
+		}
+		return "", noTextError(reply.StopReason, raw)
 	}
+
 	var reply struct {
+		Error   *apiError `json:"error"`
 		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
+			FinishReason string `json:"finish_reason"`
+			Message      struct {
+				Content messageText `json:"content"`
+				// What a reasoning model thought before answering.
+				// Providers spell it both ways.
+				Reasoning        string `json:"reasoning"`
+				ReasoningContent string `json:"reasoning_content"`
 			} `json:"message"`
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal(raw, &reply); err != nil {
 		return "", fmt.Errorf("unreadable answer: %w", err)
 	}
-	if len(reply.Choices) == 0 || reply.Choices[0].Message.Content == "" {
-		return "", errors.New("the model answered with no text")
+	if reply.Error != nil && reply.Error.Message != "" {
+		return "", fmt.Errorf("the API refused the call: %s", reply.Error.Message)
 	}
-	return reply.Choices[0].Message.Content, nil
+	if len(reply.Choices) == 0 {
+		return "", noTextError("", raw)
+	}
+	choice := reply.Choices[0]
+	if text := string(choice.Message.Content); text != "" {
+		return text, nil
+	}
+	// A reasoning model that spent its budget thinking answers with empty
+	// content and its reasoning beside it. The JSON we asked for is often
+	// in there, and reading it beats refusing an answer the model did
+	// give.
+	if thought := firstNonEmpty(choice.Message.Reasoning, choice.Message.ReasoningContent); thought != "" {
+		return thought, nil
+	}
+	return "", noTextError(choice.FinishReason, raw)
+}
+
+// noTextError says what came back when none of it was text. The reason
+// the model stopped is the useful half -- "length" means the answer hit
+// the token ceiling, which on a reasoning model it can reach while still
+// thinking -- and the body is the other, since no amount of guessing
+// beats showing what the provider actually sent.
+func noTextError(stopReason string, raw []byte) error {
+	switch stopReason {
+	case "length", "max_tokens":
+		return fmt.Errorf("the model used its whole answer budget (%d tokens) before writing an answer, "+
+			"which a reasoning model can do while still thinking; the answer was: %s",
+			maxTokens, snippet(string(raw)))
+	case "content_filter":
+		return fmt.Errorf("the provider's content filter stopped the answer: %s", snippet(string(raw)))
+	case "":
+		return fmt.Errorf("the model answered with no text: %s", snippet(string(raw)))
+	}
+	return fmt.Errorf("the model answered with no text (it stopped on %q): %s", stopReason, snippet(string(raw)))
 }
 
 // decodeSuggestions reads the model's text as the JSON it was asked for. A
