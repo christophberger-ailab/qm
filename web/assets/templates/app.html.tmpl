@@ -379,7 +379,19 @@
   </form>
   <div id="preview-divider" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
   <div class="preview-column" id="preview-column">
-    <article class="markdown-preview" id="preview"></article>
+    {{/* The column beside the editor is tabbed: the Markdown preview of
+         the page, and the copyediting tool that works on the same text.
+         Both read what the editor holds, so they are two views of one
+         thing rather than two places; app.js remembers which of them was
+         last looked at. */ -}}
+    <div class="pane-tabs" role="tablist">
+      <button type="button" class="pane-tab" data-tab="preview" role="tab" aria-selected="true"
+              aria-controls="preview" title="The page as Quarto would roughly render it">Preview</button>
+      <button type="button" class="pane-tab" data-tab="copyedit" role="tab" aria-selected="false"
+              aria-controls="copyedit" title="Run an editing task over this page">Copyedit</button>
+    </div>
+    <article class="markdown-preview pane-panel" id="preview" role="tabpanel"></article>
+    {{template "copyedit" .Copyedit}}
     {{/* Below the preview: the two buttons that page through the book, and
          the stylesheet the preview is shown in. Both describe the preview
          rather than the text, so they sit under the preview's own column.
@@ -402,3 +414,195 @@
     </div>
   </div>
 </div>{{end}}
+
+{{/* The copyedit tab. Its head carries the model the tasks are run on --
+     the connections are configured once, and which of them answers is a
+     choice made here, beside the work. Its body holds either the list of
+     editing tasks or the suggestions the last run came back with; one
+     replaces the other, and the Back button brings the list again. */}}
+{{define "copyedit"}}<section class="copyedit pane-panel" id="copyedit" role="tabpanel" hidden>
+  <div class="copyedit-head">
+    {{if .Connections}}<label for="copyedit-connection">Model</label>
+    <select id="copyedit-connection" class="copyedit-connection" title="The API connection the editing tasks are run on">
+      {{range .Connections}}<option value="{{.ID}}"{{if .Active}} selected{{end}} title="{{.Kind}} · {{.BaseURL}}">{{.Name}} ({{.Model}})</option>
+      {{end}}
+    </select>
+    {{else}}<span class="empty">No model configured — <a href="/config/connections">add an API connection</a>.</span>{{end}}
+  </div>
+  <div id="copyedit-body">{{template "copyedit-prompts" .}}</div>
+</section>{{end}}
+
+{{/* The editing tasks, by title alone: the prompt itself is what the task
+     is made of, not what it is picked by, so it rides along as the
+     tooltip. A click sends the page the editor holds -- its text, not the
+     file, so unsaved edits are edited too -- and swaps this list for the
+     suggestions. */}}
+{{define "copyedit-prompts"}}<div class="copyedit-prompts">
+  {{if .Prompts}}<ul class="copyedit-tasks">
+    {{range .Prompts}}<li><button type="button" class="copyedit-task" data-id="{{.ID}}" title="{{.Prompt}}"
+            hx-post="/copyedit/run" hx-vals='{"prompt":"{{.ID}}"}'
+            hx-include="#content-path, #content textarea.file-content"
+            hx-target="#copyedit-body" hx-swap="innerHTML"
+            hx-indicator="#copyedit-running" hx-disabled-elt=".copyedit-task">{{.Title}}</button></li>
+    {{end}}
+  </ul>
+  {{else}}<p class="empty">No editing tasks yet — write them under <a href="/config/copyedit">Config → Copyedit: Editing tasks</a>.</p>{{end}}
+  <p class="copyedit-running" id="copyedit-running">Asking the model…</p>
+</div>{{end}}
+
+{{/* What one run came back with. Each suggestion names the passage it is
+     about; the ones found in the page carry its position, which is what
+     app.js highlights the text by and what a click on the entry scrolls
+     the editor to. A suggestion that says what to put there instead
+     carries that text as well, and offers to write it into the page. */}}
+{{define "copyedit-suggestions"}}<div class="copyedit-suggestions">
+  <div class="copyedit-suggestions-head">
+    <button type="button" class="copyedit-back" id="copyedit-back" title="Back to the editing tasks"
+            hx-get="/copyedit/prompts" hx-target="#copyedit-body" hx-swap="innerHTML">◀ Tasks</button>
+    <span class="copyedit-task-name">{{.Task}}</span>
+    {{if .Model}}<span class="copyedit-model">{{.Model}}</span>{{end}}
+  </div>
+  {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
+  {{if .Suggestions}}<ol class="copyedit-list">
+    {{range .Suggestions}}<li class="copyedit-suggestion{{if not .Located}} unlocated{{end}}"
+        {{if .Located}}data-start="{{.Start}}" data-end="{{.End}}" title="Scroll the editor to this passage"{{end}}
+        {{if .Applicable}}data-replacement="{{.Replacement}}"{{end}}>
+      <blockquote class="copyedit-original">{{.Original}}</blockquote>
+      {{if .Replacement}}<p class="copyedit-replacement">{{.Replacement}}</p>{{end}}
+      {{if .Comment}}<p class="copyedit-comment">{{.Comment}}</p>{{end}}
+      {{if not .Located}}<p class="copyedit-unlocated">Not found in the page as quoted, so it is not highlighted.</p>{{end}}
+      {{/* Only a suggestion that was found in the page and says what to
+           put there instead can be written in; the others are read and
+           carried out by hand. */ -}}
+      {{if .Applicable}}<div class="copyedit-suggestion-actions">
+        <button type="button" class="copyedit-apply"
+                title="Replace the passage in the editor with this text">Apply</button>
+      </div>{{end}}
+    </li>
+    {{end}}
+  </ol>
+  {{else if not .Error}}<p class="empty">Nothing to change: the model had no suggestion.</p>{{end}}
+</div>{{end}}
+
+{{define "copyedit-page"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Copyedit: Editing tasks</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/config.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>Quarto Manager</h1>
+    <nav class="topbar-nav">
+      <a class="button" href="/config">Config</a>
+      <a class="button" href="/">App</a>
+    </nav>
+  </header>
+  <main class="config-main">
+    <h2>Copyedit: Editing tasks</h2>
+    <p class="config-intro">An editing task is a prompt with a title. The copyedit tab beside the editor lists the titles; picking one sends the open page to the selected model and shows what it suggests.</p>
+    <p class="config-intro">Write the prompt as an instruction about the page — "Find sentences in the passive voice and rewrite them actively". The answer's shape is asked for by the app, so the prompt only has to say what to look for.</p>
+    {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
+    {{if .Message}}<div class="notice">{{.Message}}</div>{{end}}
+    <ul class="config-items">
+      {{range .Prompts}}<li class="config-item">
+        <form class="config-form" method="post" action="/config/copyedit" autocomplete="off">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <label>Title<input type="text" name="title" value="{{.Title}}" required></label>
+          {{/* No newline between tag and value: the parser drops the first
+               one, and a prompt would lose its leading blank line. */ -}}
+          <label>Prompt<textarea name="prompt" rows="5" spellcheck="false" required>{{.Prompt}}</textarea></label>
+          <div class="config-actions">
+            <button type="submit">Save</button>
+            <button type="submit" class="danger" formaction="/config/copyedit/delete"
+                    formnovalidate title="Remove this editing task">Delete</button>
+          </div>
+        </form>
+      </li>
+      {{end}}
+    </ul>
+    <form class="config-form config-new" method="post" action="/config/copyedit" autocomplete="off">
+      <h3>Add an editing task</h3>
+      <label>Title<input type="text" name="title" placeholder="Passive voice" required></label>
+      <label>Prompt<textarea name="prompt" rows="5" spellcheck="false"
+              placeholder="Find sentences in the passive voice and rewrite them in the active voice." required></textarea></label>
+      <div class="config-actions"><button type="submit">Add task</button></div>
+    </form>
+    <div class="config-actions">
+      <a class="button" href="/config">Back to Config</a>
+      <a class="button" href="/">Back to App</a>
+    </div>
+  </main>
+</body>
+</html>{{end}}
+
+{{define "connections-page"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Copyedit: API connections</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/config.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>Quarto Manager</h1>
+    <nav class="topbar-nav">
+      <a class="button" href="/config">Config</a>
+      <a class="button" href="/">App</a>
+    </nav>
+  </header>
+  <main class="config-main">
+    <h2>Copyedit: API connections</h2>
+    <p class="config-intro">A connection is one model the editing tasks can be run on: which API it speaks, where it lives, which model to ask, and the key it takes. Several may be configured; the copyedit tab picks between them.</p>
+    <p class="config-intro">"Anthropic" posts to <code>&lt;base URL&gt;/messages</code>, "OpenAI-compatible" to <code>&lt;base URL&gt;/chat/completions</code> — which is what OpenAI, Ollama, LM Studio, and OpenRouter all speak. A local model usually needs no key.</p>
+    <p class="config-intro">The keys are stored in <code>copyedit.json</code> beside the render preferences, readable by you alone, and are never sent back to the browser.</p>
+    {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
+    {{if .Message}}<div class="notice">{{.Message}}</div>{{end}}
+    <ul class="config-items">
+      {{range .Connections}}<li class="config-item">
+        <form class="config-form" method="post" action="/config/connections" autocomplete="off">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <label>Name<input type="text" name="name" value="{{.Name}}" required></label>
+          <label>API<select name="kind">
+            <option value="anthropic"{{if eq .Kind "anthropic"}} selected{{end}}>Anthropic</option>
+            <option value="openai"{{if ne .Kind "anthropic"}} selected{{end}}>OpenAI-compatible</option>
+          </select></label>
+          <label>Base URL<input type="text" name="base_url" value="{{.BaseURL}}" spellcheck="false" required></label>
+          <label>Model<input type="text" name="model" value="{{.Model}}" spellcheck="false" required></label>
+          <label>API key<input type="password" name="key" autocomplete="new-password"
+                  placeholder="{{if .HasKey}}stored — leave empty to keep it{{else}}none stored{{end}}"></label>
+          <div class="config-actions">
+            <button type="submit">Save</button>
+            <button type="submit" class="danger" formaction="/config/connections/delete"
+                    formnovalidate title="Remove this connection">Delete</button>
+          </div>
+        </form>
+      </li>
+      {{end}}
+    </ul>
+    <form class="config-form config-new" method="post" action="/config/connections" autocomplete="off">
+      <h3>Add a connection</h3>
+      <label>Name<input type="text" name="name" placeholder="Claude" required></label>
+      <label>API<select name="kind">
+        <option value="anthropic">Anthropic</option>
+        <option value="openai">OpenAI-compatible</option>
+      </select></label>
+      <label>Base URL<input type="text" name="base_url" placeholder="https://api.anthropic.com/v1" spellcheck="false" required></label>
+      <label>Model<input type="text" name="model" placeholder="claude-sonnet-4-5" spellcheck="false" required></label>
+      <label>API key<input type="password" name="key" autocomplete="new-password" placeholder="sk-..."></label>
+      <div class="config-actions"><button type="submit">Add connection</button></div>
+    </form>
+    <div class="config-actions">
+      <a class="button" href="/config">Back to Config</a>
+      <a class="button" href="/">Back to App</a>
+    </div>
+  </main>
+</body>
+</html>{{end}}

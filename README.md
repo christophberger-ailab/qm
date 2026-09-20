@@ -21,7 +21,8 @@ things the `quarto` command itself does not do:
   line.
 - **Editing helpers.** Chapter insert/move/remove that keep the `order:` front
   matter consistent, a linter for unclosed Quarto block fences, and a local web
-  UI for reordering pages by drag and drop, editing them, and rendering.
+  UI for reordering pages by drag and drop, editing them, copyediting them with
+  an LLM, and rendering.
 
 ## Install
 
@@ -113,6 +114,31 @@ one audience — an `_FW` or `_POL` suffix on its name or on a folder above it �
 is previewed inside that audience's `::: fw` / `::: pol` div, the way the
 flattener wraps it, so the custom preview stylesheet tints and marks the whole
 page just as it marks such a block written into the page by hand.
+
+Beside the editor sits a tabbed column: the Markdown preview, and a copyedit
+pane. The pane lists the editing tasks configured under *Config → Copyedit:
+Editing tasks* — each one a prompt with a title, "Passive voice", "Shorten
+sentences". Picking one sends the text the editor holds, unsaved edits and
+all, to the model selected in the pane's dropdown, and answers with a list of
+suggestions: what to change, what to put there instead, and why. Each
+suggestion's passage is highlighted in the editor, and clicking the suggestion
+scrolls to it; a Back button returns to the task list and takes the highlights
+off the text.
+
+A suggestion that says what to put in the passage's place carries an **Apply**
+button that writes it into the page. It is written at the highlight, so a
+passage that moved under an edit made since the run is still the one replaced,
+and it is written through the editor like a typed change — the autosave takes
+it to disk, the preview follows, and the editor's own undo takes it back.
+
+The models are configured under *Config → Copyedit: API connections*: any
+number of them, each naming the API it speaks — Anthropic
+(`<base URL>/messages`) or OpenAI-compatible (`<base URL>/chat/completions`,
+which is what OpenAI, Ollama, LM Studio and OpenRouter all speak) — its base
+URL, the model, and the key it takes. A local model usually needs no key. The
+tasks and the connections are stored in `<user config dir>/qm/copyedit.json`,
+readable by its owner alone since it holds the keys, and a stored key is never
+sent back to the browser.
 
 The Open field shows the last element of the project's path and offers the ten
 projects opened before, remembered in `<user config dir>/qm/recent.json`; a

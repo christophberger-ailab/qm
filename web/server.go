@@ -54,6 +54,12 @@ type server struct {
 	// from memory instead.
 	cssDir string
 
+	// copyeditFile holds the copyediting setup — the editing tasks and
+	// the API connections they run on — beside the render prefs; empty
+	// disables persistence. copyedit holds its content.
+	copyeditFile string
+	copyedit     copyeditConfig
+
 	// base is the text the open editor started from. A save is replayed
 	// onto the tree's own writes against it (see project.Rebase); it is
 	// what makes an autosave posted after a move keep the move.
@@ -82,15 +88,17 @@ func newServer(prefsFile string) (*server, error) {
 		return nil, err
 	}
 	s := &server{
-		mux:        http.NewServeMux(),
-		tmpl:       tmpl,
-		prefsFile:  prefsFile,
-		recentFile: recentFileForPrefs(prefsFile),
-		cssDir:     cssDirForPrefs(prefsFile),
+		mux:          http.NewServeMux(),
+		tmpl:         tmpl,
+		prefsFile:    prefsFile,
+		recentFile:   recentFileForPrefs(prefsFile),
+		cssDir:       cssDirForPrefs(prefsFile),
+		copyeditFile: copyeditFileForPrefs(prefsFile),
 	}
 	ensureDefaultCSS(s.cssDir)
 	s.loadPrefs()
 	s.loadRecent()
+	s.loadCopyedit()
 	static, err := iofs.Sub(assets, "assets/static")
 	if err != nil {
 		return nil, err
@@ -103,6 +111,15 @@ func newServer(prefsFile string) (*server, error) {
 	s.mux.HandleFunc("POST /config/preview-css/new", s.newPreviewCSSHandler)
 	s.mux.HandleFunc("GET /config/preview.css", s.previewStylesheet)
 	s.mux.HandleFunc("POST /config/active-css", s.setActiveCSSHandler)
+	s.mux.HandleFunc("GET /config/copyedit", s.copyeditConfigPage)
+	s.mux.HandleFunc("POST /config/copyedit", s.savePromptHandler)
+	s.mux.HandleFunc("POST /config/copyedit/delete", s.deletePromptHandler)
+	s.mux.HandleFunc("GET /config/connections", s.connectionsPage)
+	s.mux.HandleFunc("POST /config/connections", s.saveConnectionHandler)
+	s.mux.HandleFunc("POST /config/connections/delete", s.deleteConnectionHandler)
+	s.mux.HandleFunc("POST /copyedit/active", s.activeConnectionHandler)
+	s.mux.HandleFunc("GET /copyedit/prompts", s.copyeditPromptsHandler)
+	s.mux.HandleFunc("POST /copyedit/run", s.copyeditRunHandler)
 	s.mux.HandleFunc("POST /open", s.open)
 	s.mux.HandleFunc("GET /tree", s.treeHandler)
 	s.mux.HandleFunc("GET /watch", s.watch)
@@ -204,6 +221,9 @@ type contentView struct {
 	Body      string
 	CSSFiles  []string
 	ActiveCSS string
+	// Copyedit is the second tab of the preview column: the editing
+	// tasks it lists and the models they can be run on.
+	Copyedit copyeditPane
 }
 
 // editorBase is the text the browser's editor is working from: the page it
@@ -331,6 +351,7 @@ func (s *server) lastPage() *contentView {
 		Body:      string(body),
 		CSSFiles:  s.cssFiles(),
 		ActiveCSS: s.activeCSS(),
+		Copyedit:  s.copyeditPaneView(),
 	}
 }
 
@@ -440,6 +461,14 @@ func (s *server) config(w http.ResponseWriter, r *http.Request) {
 		Title:       "Preview: Custom CSS",
 		Description: "Override the built-in Markdown preview styles.",
 		Href:        "/config/preview-css",
+	}, {
+		Title:       "Copyedit: Editing tasks",
+		Description: "Write the prompts the copyedit tab offers.",
+		Href:        "/config/copyedit",
+	}, {
+		Title:       "Copyedit: API connections",
+		Description: "Name the models the editing tasks are run on.",
+		Href:        "/config/connections",
 	}}})
 }
 
@@ -813,6 +842,7 @@ func (s *server) content(w http.ResponseWriter, r *http.Request) {
 		Body:      string(body),
 		CSSFiles:  s.cssFiles(),
 		ActiveCSS: s.activeCSS(),
+		Copyedit:  s.copyeditPaneView(),
 	})
 	// The reload button also refreshes the tree: outside edits may have
 	// changed titles or the chapter order.

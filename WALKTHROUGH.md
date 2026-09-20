@@ -672,6 +672,38 @@ materialises the baked-in default once and never rewrites it,
 and `activeCSS`/`setActiveCSS` remember which stylesheet the live preview
 uses.
 
+### 9.5.2 Copyediting — `web/copyedit.go`, `web/llm.go`
+
+The copyedit tab beside the editor runs an *editing task* — a prompt with a
+title — over the page the editor holds. `copyedit.go` keeps both halves of the
+setup: the tasks, and the API connections they run on, stored together as
+`<user config dir>/qm/copyedit.json` with mode 600, because the connections
+hold API keys. They are the user's own rather than the project's, which is why
+they sit beside the render prefs and not in the tree. `connectionView`
+(`copyedit.go:227`) is what the pages and the pane are rendered from, and it
+has no key field at all: the key travels to the API and nowhere else.
+
+`copyeditRunHandler` (`copyedit.go:380`) reads the task and the connection
+under the lock, then drops it before calling the model — a run takes as long
+as the model takes, and the tree, the editor and the autosave must stay
+answerable meanwhile. The text it edits comes from the request, not from disk:
+htmx sends the editor's own textarea, so unsaved edits are edited too.
+
+`llm.go` is the call itself, in net/http and encoding/json alone. Two request
+shapes cover what a connection can point at (`requestFor`): Anthropic's
+`/messages` and the OpenAI-style `/chat/completions` every other provider
+speaks. `suggestionFormat` is the part of the instruction that is ours rather
+than the user's — it asks for JSON, and for each suggestion to quote the
+passage it applies to, verbatim and short, because a passage that cannot be
+found again cannot be highlighted. `decodeSuggestions` reads the answer
+leniently (a code fence, a line of prose above the JSON, "suggestion" spelled
+"replacement"), and `locateAll` finds each quoted passage in the page: as it
+stands, else with any run of whitespace where the quote has one, since a model
+rarely reproduces a line break. Positions come out in UTF-16 code units
+(`utf16Len`), which is what a browser counts string positions in — the editor
+marks by them, and an emoji ahead of a passage would otherwise shift the mark
+off it.
+
 ### 9.5.1 Tree titles — `web/spans.go`
 
 The preview marks a Quarto span by its class, with the symbol the stylesheet
@@ -696,6 +728,29 @@ the interactions, Sortable for the drag and drop, marked for the live Markdown
 preview, and CodeMirror 5 for the editor (with a Vim keymap behind a toggle).
 `assets/static/codemirror/README.md` documents exactly which files were taken
 from which tarball paths and why CodeMirror 5 rather than 6.
+
+The column beside the editor is tabbed: `app.js` holds which tab is up
+(`applyTabs`) next to whether the column is open at all, both in
+localStorage, since the pane is re-rendered on every page switch. The copyedit
+tab's suggestions carry the position of the passage each is about;
+`readSuggestions` (`app.js`) hands those to `setCopyeditMarks`
+(`editor.js`), which paints them with CodeMirror's `markText` — a mark is not
+an edit, and CodeMirror moves it along as the text around it is typed. A
+suggestion the server could not locate is passed as a gap, so the nth entry
+and the nth mark stay the same suggestion.
+
+`Apply` writes a suggestion into the page, and it writes it *at the mark*
+(`applyCopyeditMark`, `editor.js`), not at the offsets the suggestion arrived
+with: the user may have typed since, and a mark moves with the text while an
+offset does not. The replacement goes in through `cm.replaceRange`, which
+makes it an ordinary edit — the textarea follows, the autosave posts it, the
+preview catches up, and Ctrl-Z takes it back — and the mark is dropped
+afterwards, the passage it stood for being gone. A passage deleted since the
+run has no mark left to find, and the entry says "Gone" rather than offering a
+button that does nothing. Which suggestions offer the button at all is decided
+on the Go side: `suggestion.Applicable` (`llm.go`) wants a located passage and
+a replacement to put there, so comment-only advice is read and carried out by
+hand.
 
 `preview.js` approximates a Quarto render rather than performing one, and two
 of its rules come from elsewhere in the codebase: `convertDivs` mirrors

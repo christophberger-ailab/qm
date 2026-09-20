@@ -21,4 +21,21 @@ function initPreviewCSSEditor() {
   }
 }
 
+// A Delete button on a config page removes something the user wrote --
+// an editing task, an API connection with its key -- and a form posts the
+// moment it is clicked. The confirmation is what the page tree's own
+// delete asks for through hx-confirm; these pages carry no htmx, so they
+// ask for it here.
+document.addEventListener('click', function (evt) {
+  var button = evt.target.closest('button.danger');
+  if (!button) {
+    return;
+  }
+  var item = button.closest('.config-item');
+  var name = item ? (item.querySelector('input[name="title"], input[name="name"]') || {}).value : '';
+  if (!window.confirm('Delete ' + (name ? '"' + name + '"' : 'this entry') + '?')) {
+    evt.preventDefault();
+  }
+});
+
 document.addEventListener('DOMContentLoaded', initPreviewCSSEditor);
