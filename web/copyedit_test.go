@@ -672,3 +672,78 @@ func TestOneFailedTaskDoesNotLoseTheOthers(t *testing.T) {
 		}
 	}
 }
+
+func TestTheTickedTasksAreASettingOfTheirOwn(t *testing.T) {
+	srv, _ := configTestServer(t)
+	addPrompt(t, srv, "Passive voice", "Rewrite passive sentences actively.")
+	addPrompt(t, srv, "Long sentences", "Find sentences longer than 25 words.")
+	addPrompt(t, srv, "Spelling", "Find misspellings.")
+
+	// Nothing ticked: the box that ticks them all starts clear.
+	body := get(t, srv, "/copyedit/prompts").Body.String()
+	if !strings.Contains(body, `id="copyedit-select-all"`) {
+		t.Errorf("no Select all box:\n%s", body)
+	}
+	if strings.Contains(body, `id="copyedit-select-all" class="copyedit-select-all"
+           checked`) {
+		t.Errorf("Select all starts ticked with nothing selected:\n%s", body)
+	}
+
+	rec := post(t, srv, "/copyedit/selection", url.Values{"selected": {"p1", "p3"}})
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("select: status %d: %s", rec.Code, rec.Body)
+	}
+
+	// The pane comes back with those two ticked -- which is what carries
+	// the selection across a page switch, since the pane is re-rendered
+	// with every page.
+	body = get(t, srv, "/copyedit/prompts").Body.String()
+	for _, want := range []string{
+		`value="p1"
+             id="pick-p1" checked`,
+		`value="p3"
+             id="pick-p3" checked`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("a ticked task came back unticked:\n%s", body)
+		}
+	}
+	if strings.Contains(body, `id="pick-p2" checked`) {
+		t.Errorf("an unticked task came back ticked:\n%s", body)
+	}
+
+	// And across a restart.
+	again, err := newServer(srv.configFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := again.selectedTasks(); len(got) != 2 || got[0] != "p1" || got[1] != "p3" {
+		t.Errorf("restored selection = %v, want [p1 p3]", got)
+	}
+
+	// Ticking every task is what makes the Select all box itself ticked.
+	post(t, srv, "/copyedit/selection", url.Values{"selected": {"p1", "p2", "p3"}})
+	if !strings.Contains(get(t, srv, "/copyedit/prompts").Body.String(), "checked title=\"Tick every task") {
+		t.Errorf("Select all is not ticked with everything selected")
+	}
+}
+
+func TestASelectionNamingNothingIsIgnored(t *testing.T) {
+	srv, _ := configTestServer(t)
+	addPrompt(t, srv, "Passive voice", "Rewrite passive sentences actively.")
+	addPrompt(t, srv, "Long sentences", "Find sentences longer than 25 words.")
+	post(t, srv, "/copyedit/selection", url.Values{"selected": {"p1", "p2", "nope"}})
+	if got := srv.cfg.Copyedit.Selected; len(got) != 2 {
+		t.Errorf("selection = %v, want the two ids that name a task", got)
+	}
+
+	// Deleting a task unticks it: a run must not carry an id that names
+	// nothing, and the box that ticks them all must not wait for one.
+	post(t, srv, "/config/copyedit/delete", url.Values{"id": {"p1"}})
+	if got := srv.cfg.Copyedit.Selected; len(got) != 1 || got[0] != "p2" {
+		t.Errorf("selection after deleting a ticked task = %v, want [p2]", got)
+	}
+	if !srv.copyeditPaneView().AllSelected {
+		t.Errorf("the one remaining task is ticked, so Select all should be too")
+	}
+}

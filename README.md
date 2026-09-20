@@ -125,8 +125,11 @@ suggestion's passage is highlighted in the editor, and clicking the suggestion
 scrolls to it; a Back button returns to the task list and takes the highlights
 off the text.
 
-Several tasks can be ticked and run together. By default they go to the model
-in one call, which sends the page once instead of once per task — the page is
+Several tasks can be ticked and run together, with a *Select all* box above
+the list for the whole set or none of it. The ticks are a setting, not
+something the browser holds, so a selection stays as you move from page to
+page and across restarts. By default the ticked tasks go to the model in one
+call, which sends the page once instead of once per task — the page is
 the bulk of what a run costs — and the findings come back grouped by task,
 with a chip per task to narrow the list. Only the tasks you tick are ever sent.
 

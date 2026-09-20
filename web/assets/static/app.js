@@ -269,6 +269,7 @@ function applyPreview() {
     button.setAttribute('aria-pressed', previewOpen ? 'true' : 'false');
   }
   applyTabs();
+  applyTaskSelection(); // the pane comes with the editor, ticks and all
   if (previewOpen && activeTab === 'preview') {
     updatePreview();
   }
@@ -344,6 +345,11 @@ document.body.addEventListener('change', function (evt) {
 document.body.addEventListener('change', function (evt) {
   if (evt.target.classList.contains('copyedit-select')) {
     applyTaskSelection();
+    saveTaskSelection();
+    return;
+  }
+  if (evt.target.id === 'copyedit-select-all') {
+    toggleAllTasks(evt.target.checked);
     return;
   }
   if (evt.target.id !== 'copyedit-connection') {
@@ -360,16 +366,62 @@ function suggestionEntries() {
   return Array.prototype.slice.call(document.querySelectorAll('#copyedit-body .copyedit-suggestion'));
 }
 
-// The Run selected button is only worth pressing with something ticked,
-// and it says how many so a run's size is known before it is paid for.
+function taskCheckboxes() {
+  return Array.prototype.slice.call(document.querySelectorAll('#copyedit-body .copyedit-select'));
+}
+
+// applyTaskSelection brings the two things that describe the selection in
+// line with the ticks: the Run button, which is only worth pressing with
+// something ticked and says how many so a run's size is known before it
+// is paid for, and the Select all box, which is ticked for all, clear for
+// none, and in between for some -- the state a checkbox can only be put
+// into from script.
 function applyTaskSelection() {
+  var boxes = taskCheckboxes();
+  var picked = boxes.filter(function (box) {
+    return box.checked;
+  }).length;
+
   var button = document.getElementById('copyedit-run-selected');
-  if (!button) {
-    return;
+  if (button) {
+    button.disabled = picked === 0;
+    button.textContent = picked > 1 ? 'Run ' + picked + ' tasks together' : 'Run selected';
   }
-  var picked = document.querySelectorAll('#copyedit-body .copyedit-select:checked').length;
-  button.disabled = picked === 0;
-  button.textContent = picked > 1 ? 'Run ' + picked + ' tasks together' : 'Run selected';
+  var all = document.getElementById('copyedit-select-all');
+  if (all) {
+    all.checked = picked > 0 && picked === boxes.length;
+    all.indeterminate = picked > 0 && picked < boxes.length;
+  }
+}
+
+// saveTaskSelection tells the server which tasks are ticked. It is a
+// setting like the model beside it, so it outlives the page switch that
+// re-renders the pane and the restart that ends the session.
+function saveTaskSelection() {
+  var picked = taskCheckboxes().filter(function (box) {
+    return box.checked;
+  });
+  var body = new URLSearchParams();
+  picked.forEach(function (box) {
+    body.append('selected', box.value);
+  });
+  fetch('/copyedit/selection', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString()
+  });
+}
+
+// toggleAllTasks ticks every task, or clears them: whichever the box is
+// not already showing. Partly ticked counts as not all, so the first
+// click from there selects the rest rather than throwing away what is
+// ticked.
+function toggleAllTasks(on) {
+  taskCheckboxes().forEach(function (box) {
+    box.checked = on;
+  });
+  applyTaskSelection();
+  saveTaskSelection();
 }
 
 // filterSuggestions shows one task's group, or all of them. It hides list

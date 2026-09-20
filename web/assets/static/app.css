@@ -1375,6 +1375,22 @@ li.CodeMirror-hint-active {
   gap: 0.35rem;
 }
 
+/* Above the tasks: the box that ticks them all, or none. */
+.copyedit-list-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.copyedit-list-head label {
+  cursor: pointer;
+}
+
 /* A task's row: the tick that puts it in a batch, and the title that runs
    it on its own. */
 .copyedit-task-row {

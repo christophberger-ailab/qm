@@ -438,6 +438,15 @@
      file, so unsaved edits are edited too -- and swaps this list for the
      suggestions. */}}
 {{define "copyedit-prompts"}}<div class="copyedit-prompts">
+  {{/* The ticks are a setting rather than something the browser holds, so
+       they survive the page switch that re-renders this pane and the
+       restart that forgets everything else: the same handful of tasks
+       tends to be run over page after page. */ -}}
+  {{if gt (len .Prompts) 1}}<div class="copyedit-list-head">
+    <input type="checkbox" id="copyedit-select-all" class="copyedit-select-all"
+           {{if .AllSelected}}checked{{end}} title="Tick every task; tick again for none">
+    <label for="copyedit-select-all">Select all</label>
+  </div>{{end}}
   {{if .Prompts}}<ul class="copyedit-tasks">
     {{/* Two ways to start a run, because they cost differently. Clicking
          a task runs that one. Ticking several and pressing Run selected
@@ -447,7 +456,8 @@
          not. */ -}}
     {{range .Prompts}}<li class="copyedit-task-row">
       <input type="checkbox" class="copyedit-select" name="prompt" value="{{.ID}}"
-             id="pick-{{.ID}}" title="Run this task together with the others ticked">
+             id="pick-{{.ID}}"{{if .Selected}} checked{{end}}
+             title="Run this task together with the others ticked">
       <button type="button" class="copyedit-task" data-id="{{.ID}}" title="{{.Prompt}}"
               hx-post="/copyedit/run" hx-vals='{"prompt":"{{.ID}}"}'
               hx-include="#content-path, #content textarea.file-content"
