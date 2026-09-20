@@ -321,9 +321,15 @@ func TestCopyeditRunReportsWhatWentWrong(t *testing.T) {
 		t.Errorf("the refusal does not name the URL it was answered for:\n%s", body)
 	}
 
+	// An id that names no task leaves the run with nothing to do, which
+	// is the same case as a run with nothing ticked.
 	rec = post(t, srv, "/copyedit/run", url.Values{"prompt": {"nope"}, "body": {"# Page\n"}})
-	if !strings.Contains(rec.Body.String(), "no such editing task") {
+	if !strings.Contains(rec.Body.String(), "No editing task was selected") {
 		t.Errorf("an unknown task was not reported:\n%s", rec.Body)
+	}
+	rec = post(t, srv, "/copyedit/run", url.Values{"body": {"# Page\n"}})
+	if !strings.Contains(rec.Body.String(), "No editing task was selected") {
+		t.Errorf("a run with nothing ticked was not reported:\n%s", rec.Body)
 	}
 }
 
@@ -409,5 +415,114 @@ func TestReplacementTextSurvivesAsAnAttribute(t *testing.T) {
 	want := "data-replacement=\"said &#34;hi&#34; &amp; &lt;waved&gt;\nwarmly\""
 	if !strings.Contains(body, want) {
 		t.Errorf("the replacement did not reach the attribute intact:\n%s", body)
+	}
+}
+
+func TestARunOfSeveralTasksIsOneCallGroupedByTask(t *testing.T) {
+	srv, _ := configTestServer(t)
+	addPrompt(t, srv, "Passive voice", "Rewrite passive sentences actively.")
+	addPrompt(t, srv, "Long sentences", "Find sentences longer than 25 words.")
+	addPrompt(t, srv, "Spelling", "Find misspellings.")
+	stub := newStubModel(t, `{"suggestions":[
+		{"task":"t1","original":"was written by the editor","suggestion":"the editor wrote","comment":"Passive."},
+		{"task":"t2","original":"The page was written by the editor.","suggestion":"Shorter.","comment":"Long."},
+		{"task":"t9","original":"Title","suggestion":"A title","comment":"Stray tag."}]}`)
+	addConnection(t, srv, "Stub", "anthropic", stub.URL+"/v1", "stub-model", "k")
+
+	// Two of the three tasks, the way ticking two boxes posts them.
+	rec := post(t, srv, "/copyedit/run", url.Values{
+		"prompt": {"p1", "p2"}, "path": {"index.qmd"},
+		"body": {"# Title\n\nThe page was written by the editor.\n"},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("run: status %d: %s", rec.Code, rec.Body)
+	}
+	body := rec.Body.String()
+
+	// One call, carrying both prompts and the page once.
+	sent, _ := json.Marshal(stub.body)
+	for _, want := range []string{"[t1] Passive voice", "[t2] Long sentences"} {
+		if !strings.Contains(string(sent), want) {
+			t.Errorf("the call does not carry %q:\n%s", want, sent)
+		}
+	}
+	if strings.Contains(string(sent), "Find misspellings") {
+		t.Errorf("a task nobody ticked was sent:\n%s", sent)
+	}
+	if n := strings.Count(string(sent), "The page was written by the editor."); n != 1 {
+		t.Errorf("the page was sent %d times, want once for the whole run", n)
+	}
+
+	// Grouped, with the stray tag kept rather than dropped.
+	for _, want := range []string{
+		`data-task="Passive voice"`,
+		`data-task="Long sentences"`,
+		"Unattributed",
+		`class="copyedit-filter`, // a chip per group
+		"2 tasks, 3 suggestions",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("suggestion list missing %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestATaskThatFoundNothingStillSaysSo(t *testing.T) {
+	srv, _ := configTestServer(t)
+	addPrompt(t, srv, "Passive voice", "Rewrite passive sentences actively.")
+	addPrompt(t, srv, "Spelling", "Find misspellings.")
+	stub := newStubModel(t, `{"suggestions":[{"task":"t1","original":"was written","suggestion":"wrote"}]}`)
+	addConnection(t, srv, "Stub", "anthropic", stub.URL+"/v1", "stub-model", "k")
+
+	body := post(t, srv, "/copyedit/run", url.Values{
+		"prompt": {"p1", "p2"}, "body": {"It was written badly.\n"},
+	}).Body.String()
+	if !strings.Contains(body, `data-task="Spelling"`) {
+		t.Errorf("the task that found nothing is not listed:\n%s", body)
+	}
+	if !strings.Contains(body, "Nothing to change.") {
+		t.Errorf("the empty group says nothing:\n%s", body)
+	}
+}
+
+func TestEverySuggestionCanBeMarkedDone(t *testing.T) {
+	srv, _ := configTestServer(t)
+	addPrompt(t, srv, "Passive voice", "Rewrite passive sentences actively.")
+	stub := newStubModel(t, `{"suggestions":[
+		{"original":"was written by the editor","suggestion":"the editor wrote"},
+		{"original":"The page","comment":"Vague, but I have no better word."},
+		{"original":"nowhere in the page","suggestion":"—"}]}`)
+	addConnection(t, srv, "Stub", "anthropic", stub.URL+"/v1", "stub-model", "k")
+
+	body := post(t, srv, "/copyedit/run", url.Values{
+		"prompt": {"p1"}, "body": {"# Title\n\nThe page was written by the editor.\n"},
+	}).Body.String()
+
+	// Done is on all three: a suggestion with no replacement, and one
+	// whose passage was never found, are exactly the ones that can only
+	// be carried out by hand.
+	if n := strings.Count(body, `class="copyedit-done"`); n != 3 {
+		t.Errorf("%d Done buttons, want one per suggestion:\n%s", n, body)
+	}
+	if n := strings.Count(body, `class="copyedit-apply"`); n != 1 {
+		t.Errorf("%d Apply buttons, want only the one that can be written in:\n%s", n, body)
+	}
+}
+
+func TestTheTaskListOffersBothWaysToRun(t *testing.T) {
+	srv, _ := configTestServer(t)
+	addPrompt(t, srv, "Passive voice", "Rewrite passive sentences actively.")
+	addPrompt(t, srv, "Long sentences", "Find sentences longer than 25 words.")
+	body := get(t, srv, "/copyedit/prompts").Body.String()
+	for _, want := range []string{
+		`class="copyedit-select" name="prompt" value="p1"`,
+		`class="copyedit-select" name="prompt" value="p2"`,
+		`id="copyedit-run-selected"`,
+		`#copyedit-body .copyedit-select:checked`, // what the batch run posts
+		`class="copyedit-task" data-id="p1"`,      // and the single-task path, still there
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("task list missing %q:\n%s", want, body)
+		}
 	}
 }

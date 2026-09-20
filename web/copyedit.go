@@ -269,14 +269,56 @@ type connectionsView struct {
 	Error       string
 }
 
-// suggestionsView is what one copyedit run produced: the task that was
-// run, the suggestions it made, and — when the run did not get that far —
-// why not.
+// suggestionsView is what one copyedit run produced: the tasks that were
+// run, their suggestions grouped by task, and — when the run did not get
+// that far — why not.
 type suggestionsView struct {
+	// Tasks are the titles that were run, in the order the config lists
+	// them; the pane names them and, for a run of several, offers one
+	// filter per task.
+	Tasks  []string
+	Model  string
+	Groups []suggestionGroup
+	// Count is how many suggestions came back in all, which is what the
+	// head reports and what tells an empty run from a failed one.
+	Count int
+	Error string
+}
+
+// suggestionGroup is one task's findings. A task that found nothing keeps
+// its group: a run says what every task it was given came back with, and
+// "nothing to change here" is an answer.
+type suggestionGroup struct {
+	// Task is the title, or "" for the suggestions whose tag named no
+	// task that was asked for.
 	Task        string
-	Model       string
 	Suggestions []suggestion
-	Error       string
+}
+
+// groupSuggestions sorts a run's suggestions into the tasks they came
+// from, in the order the tasks were given. Suggestions the model did not
+// attribute come last, in a group of their own.
+func groupSuggestions(tasks []editingTask, sugs []suggestion) []suggestionGroup {
+	groups := make([]suggestionGroup, 0, len(tasks)+1)
+	for _, t := range tasks {
+		g := suggestionGroup{Task: t.Title}
+		for _, s := range sugs {
+			if s.Task == t.Title {
+				g.Suggestions = append(g.Suggestions, s)
+			}
+		}
+		groups = append(groups, g)
+	}
+	var loose []suggestion
+	for _, s := range sugs {
+		if s.Task == "" {
+			loose = append(loose, s)
+		}
+	}
+	if len(loose) > 0 {
+		groups = append(groups, suggestionGroup{Suggestions: loose})
+	}
+	return groups
 }
 
 // Handlers
@@ -379,29 +421,41 @@ func (s *server) copyeditPromptsHandler(w http.ResponseWriter, r *http.Request) 
 // pane waits.
 func (s *server) copyeditRunHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
+	// The form names the tasks; they are collected in the order the config
+	// lists them rather than the order the checkboxes were ticked, so the
+	// groups read the same way the task list does.
+	picked := r.PostForm["prompt"]
 	s.mu.Lock()
-	i := s.promptIndex(r.PostFormValue("prompt"))
-	if i < 0 {
-		s.mu.Unlock()
-		s.render(w, "copyedit-suggestions", suggestionsView{Error: "no such editing task"})
-		return
+	var prompts []copyeditPrompt
+	for _, p := range s.copyedit.Prompts {
+		if slices.Contains(picked, p.ID) {
+			prompts = append(prompts, p)
+		}
 	}
-	task := s.copyedit.Prompts[i]
 	conn, ok := s.activeConnection()
 	s.mu.Unlock()
 
-	view := suggestionsView{Task: task.Title, Model: conn.Name}
-	if !ok {
+	tasks := tasksFor(prompts)
+	view := suggestionsView{Model: conn.Name}
+	for _, t := range tasks {
+		view.Tasks = append(view.Tasks, t.Title)
+	}
+	switch {
+	case len(tasks) == 0:
+		view.Error = "No editing task was selected."
+	case !ok:
 		view.Error = "No API connection is configured. Add one under Config → Copyedit: API connections."
+	}
+	if view.Error != "" {
 		s.render(w, "copyedit-suggestions", view)
 		return
 	}
-	sugs, err := runCopyedit(conn, task.Prompt, r.PostFormValue("path"), r.PostFormValue("body"))
+	sugs, err := runCopyedit(conn, tasks, r.PostFormValue("path"), r.PostFormValue("body"))
 	if err != nil {
 		view.Error = err.Error()
 		s.render(w, "copyedit-suggestions", view)
 		return
 	}
-	view.Suggestions = sugs
+	view.Groups, view.Count = groupSuggestions(tasks, sugs), len(sugs)
 	s.render(w, "copyedit-suggestions", view)
 }

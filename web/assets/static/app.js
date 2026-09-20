@@ -342,6 +342,10 @@ document.body.addEventListener('change', function (evt) {
 // to. The choice is remembered server-side, beside the connections
 // themselves, so it survives a restart and a fresh /open.
 document.body.addEventListener('change', function (evt) {
+  if (evt.target.classList.contains('copyedit-select')) {
+    applyTaskSelection();
+    return;
+  }
   if (evt.target.id !== 'copyedit-connection') {
     return;
   }
@@ -354,6 +358,32 @@ document.body.addEventListener('change', function (evt) {
 
 function suggestionEntries() {
   return Array.prototype.slice.call(document.querySelectorAll('#copyedit-body .copyedit-suggestion'));
+}
+
+// The Run selected button is only worth pressing with something ticked,
+// and it says how many so a run's size is known before it is paid for.
+function applyTaskSelection() {
+  var button = document.getElementById('copyedit-run-selected');
+  if (!button) {
+    return;
+  }
+  var picked = document.querySelectorAll('#copyedit-body .copyedit-select:checked').length;
+  button.disabled = picked === 0;
+  button.textContent = picked > 1 ? 'Run ' + picked + ' tasks together' : 'Run selected';
+}
+
+// filterSuggestions shows one task's group, or all of them. It hides list
+// entries only: the marks in the text stay where the run put them, and
+// CodeMirror keeps them on their passages while the user edits. Clearing
+// and re-laying them per filter would mean re-deriving positions that the
+// edits have since moved.
+function filterSuggestions(task) {
+  document.querySelectorAll('#copyedit-body .copyedit-filter').forEach(function (chip) {
+    chip.classList.toggle('active', chip.dataset.task === task);
+  });
+  document.querySelectorAll('#copyedit-body .copyedit-group').forEach(function (group) {
+    group.hidden = task !== '' && group.dataset.task !== task;
+  });
 }
 
 // readSuggestions hands the editor the passages the suggestions now on
@@ -390,26 +420,50 @@ function selectSuggestion(entry) {
 // changed, and it is no longer something to click.
 function applySuggestion(entry) {
   var index = suggestionEntries().indexOf(entry);
-  var done = applyCopyeditMark(index, entry.dataset.replacement || '');
-  var button = entry.querySelector('.copyedit-apply');
-  if (!done) {
+  var written = applyCopyeditMark(index, entry.dataset.replacement || '');
+  if (!written) {
     // The passage is gone from the page -- deleted or rewritten since the
     // run -- so there is nothing to replace, and saying so beats leaving
     // a button that does nothing.
-    entry.classList.add('stale');
-    if (button) {
-      button.disabled = true;
-      button.textContent = 'Gone';
-      button.title = 'This passage is no longer in the page';
-    }
+    settleSuggestion(entry, 'stale', 'Gone', 'This passage is no longer in the page');
     return;
   }
-  entry.classList.add('applied');
+  settleSuggestion(entry, 'applied', 'Applied', 'Written into the page — undo it in the editor');
+}
+
+// finishSuggestion is the Done button: the user dealt with this one
+// themselves, in the editor rather than by the Apply button, so the
+// suggestion is finished with. Its mark comes off the text -- the passage
+// is not waiting for anything any more -- and the entry stays in the list
+// as a record of what was seen to.
+//
+// Done is offered on every suggestion, the ones with no replacement and
+// the ones whose passage was never found included: those are exactly the
+// ones that can only be carried out by hand.
+function finishSuggestion(entry) {
+  clearCopyeditMark(suggestionEntries().indexOf(entry));
+  settleSuggestion(entry, 'done', 'Done', 'Dealt with by hand');
+}
+
+// settleSuggestion takes an entry out of use, however it was dealt with:
+// the state goes on the entry, and both buttons stop offering what has
+// already happened.
+function settleSuggestion(entry, state, label, why) {
+  entry.classList.add(state);
   entry.classList.remove('selected');
-  if (button) {
-    button.disabled = true;
-    button.textContent = 'Applied';
-    button.title = 'Written into the page — undo it in the editor';
+  var apply = entry.querySelector('.copyedit-apply');
+  var done = entry.querySelector('.copyedit-done');
+  if (apply) {
+    apply.disabled = true;
+    if (state !== 'done') {
+      apply.textContent = label;
+      apply.title = why;
+    }
+  }
+  if (done) {
+    done.disabled = true;
+    done.textContent = state === 'done' ? label : '✓';
+    done.title = why;
   }
 }
 
@@ -829,6 +883,7 @@ document.body.addEventListener('htmx:afterSwap', function (evt) {
     // Either the suggestions of a run just arrived, or the task list came
     // back; both are answered by marking exactly what is listed now.
     readSuggestions();
+    applyTaskSelection();
   }
   if (id === 'render-log') {
     var out = renderLogOutput();
@@ -941,11 +996,24 @@ document.body.addEventListener('click', function (evt) {
     return;
   }
 
-  // Apply: write the suggestion into the page. It is inside the entry, so
-  // it is asked about before the entry's own click.
+  // Apply and Done sit inside the entry, so they are asked about before
+  // the entry's own click.
   var apply = evt.target.closest('.copyedit-apply');
   if (apply) {
     applySuggestion(apply.closest('.copyedit-suggestion'));
+    return;
+  }
+
+  var finish = evt.target.closest('.copyedit-done');
+  if (finish) {
+    finishSuggestion(finish.closest('.copyedit-suggestion'));
+    return;
+  }
+
+  // A filter chip: narrow the run to one task's findings.
+  var chip = evt.target.closest('.copyedit-filter');
+  if (chip) {
+    filterSuggestions(chip.dataset.task);
     return;
   }
 

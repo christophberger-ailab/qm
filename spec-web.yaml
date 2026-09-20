@@ -150,7 +150,15 @@ constraints:
       11-6: Clicking an editing task sends the text the editor holds -- the text, not the file, so unsaved edits are edited too -- to the selected model, together with the task's prompt
       11-6-1: 'The answer is asked for as JSON: a list of suggestions, each quoting the passage of the page it applies to, what to put in its place, and why'
       11-6-2: A model that wrapped the JSON in a code fence, or wrote a line above it, is still understood; prose where JSON was asked for is reported as such
+      11-6-3: Tasks can be ticked and run together, and every ticked task goes in one call rather than one call each; the page is the bulk of what a run sends, and sending it once for five tasks costs a fraction of sending it five times
+      11-6-4: Only the tasks the user picked are sent, never all of them; output is the dearer half of a call, so a run of every task would pay for findings nobody asked for
+      11-6-5: 'The request is ordered instruction, page, tasks: everything up to the tasks is then the same from run to run, which is what a provider''s prompt cache can serve, where the task first would leave the page behind something that changes every run'
+      11-6-6: On the Anthropic kind the page carries the cache breakpoint that marks that prefix; the OpenAI-style providers that cache do it by themselves
+      11-6-7: The answer's token ceiling grows with the number of tasks in the run, an answer cut off mid-JSON losing the whole run rather than one task of it
+      11-6-8: Each suggestion names the task it answers by the id the run gave that task; a tag naming no task of the run leaves the suggestion unattributed rather than dropped, and a run of a single task needs no tag to be understood
       11-7: The pane switches from the task list to the suggestions the run came back with; a Back button brings the task list again
+      11-7-1: A run of several tasks is grouped by task, in the order the task list has them, with the unattributed suggestions last; a task that found nothing keeps its group and says so, since a run answers for every task it was given
+      11-7-2: A chip per task narrows the list to one task's findings; it hides list entries only, the marks staying where the run put them rather than being laid again from positions the edits since have moved
       11-8: Each suggestion's passage is located in the page and highlighted in the editor, so the advice is read on the text it is about
       11-8-1: 'A passage the model re-wrapped is still found: any run of whitespace in the page answers a whitespace in the quote'
       11-8-2: A passage that occurs twice is given two places, so two suggestions about the same wording do not mark the same one
@@ -163,6 +171,9 @@ constraints:
       11-10-3: The change is made through the editor like a typed one, so the autosave writes it through, the preview follows it, and the editor's own undo takes it back
       11-10-4: An applied suggestion is kept in the list, saying it was applied and no longer offering to be; its mark goes, the passage it stood for being gone
       11-10-5: A passage the user has deleted since the run cannot be applied, and the entry says so instead of offering a button that does nothing
-      11-11: 'The marks go with the suggestions: the Back button, a page switch, and a run that found nothing all take them off the text'
-      11-12: The model call runs without the server's lock, because it takes as long as it takes and the tree, the editor, and the autosave must stay answerable while the pane waits
-      11-13: 'What went wrong is shown in the pane where the suggestions would be: no connection configured, the API''s own refusal, an unreadable answer'
+      11-11: Every suggestion offers Done, for one carried out by hand in the editor rather than by the Apply button
+      11-11-1: Done is offered on every suggestion, the ones naming no replacement and the ones whose passage was never found included, those being exactly the ones that can only be carried out by hand
+      11-11-2: A suggestion marked Done keeps its place in the list as a record of what was seen to, and its mark comes off the text, the passage no longer waiting for anything
+      11-12: 'The marks go with the suggestions: the Back button, a page switch, and a run that found nothing all take them off the text'
+      11-13: The model call runs without the server's lock, because it takes as long as it takes and the tree, the editor, and the autosave must stay answerable while the pane waits
+      11-14: 'What went wrong is shown in the pane where the suggestions would be: no connection configured, the API''s own refusal, an unreadable answer'

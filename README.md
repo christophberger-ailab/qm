@@ -118,18 +118,25 @@ page just as it marks such a block written into the page by hand.
 Beside the editor sits a tabbed column: the Markdown preview, and a copyedit
 pane. The pane lists the editing tasks configured under *Config → Copyedit:
 Editing tasks* — each one a prompt with a title, "Passive voice", "Shorten
-sentences". Picking one sends the text the editor holds, unsaved edits and
+sentences". Clicking one sends the text the editor holds, unsaved edits and
 all, to the model selected in the pane's dropdown, and answers with a list of
 suggestions: what to change, what to put there instead, and why. Each
 suggestion's passage is highlighted in the editor, and clicking the suggestion
 scrolls to it; a Back button returns to the task list and takes the highlights
 off the text.
 
-A suggestion that says what to put in the passage's place carries an **Apply**
-button that writes it into the page. It is written at the highlight, so a
-passage that moved under an edit made since the run is still the one replaced,
-and it is written through the editor like a typed change — the autosave takes
-it to disk, the preview follows, and the editor's own undo takes it back.
+Several tasks can be ticked and run together. They go to the model in one
+call, which sends the page once instead of once per task — the page is the
+bulk of what a run costs — and the findings come back grouped by task, with a
+chip per task to narrow the list. Only the tasks you tick are ever sent.
+
+Each suggestion carries two buttons. **Apply** writes the replacement into the
+page at the highlight, so a passage that moved under an edit made since the run
+is still the one replaced; it is written through the editor like a typed
+change, so the autosave takes it to disk, the preview follows, and the editor's
+own undo takes it back. **Done** is for a suggestion carried out by hand: it
+takes the entry out of use and the highlight off the text. Suggestions with no
+replacement, and those whose passage could not be found, offer Done alone.
 
 The models are configured under *Config → Copyedit: API connections*: any
 number of them, each naming the API it speaks — Anthropic

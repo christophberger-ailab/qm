@@ -683,16 +683,37 @@ they sit beside the render prefs and not in the tree. `connectionView`
 (`copyedit.go:227`) is what the pages and the pane are rendered from, and it
 has no key field at all: the key travels to the API and nowhere else.
 
-`copyeditRunHandler` (`copyedit.go:380`) reads the task and the connection
-under the lock, then drops it before calling the model — a run takes as long
-as the model takes, and the tree, the editor and the autosave must stay
-answerable meanwhile. The text it edits comes from the request, not from disk:
-htmx sends the editor's own textarea, so unsaved edits are edited too.
+`copyeditRunHandler` reads the selected tasks and the connection under the
+lock, then drops it before calling the model — a run takes as long as the
+model takes, and the tree, the editor and the autosave must stay answerable
+meanwhile. The text it edits comes from the request, not from disk: htmx sends
+the editor's own textarea, so unsaved edits are edited too. The form may name
+several tasks (the checkboxes in the pane), and they are collected in the
+order the config lists them, so the groups read the way the task list does.
+
+Several tasks go in **one** call rather than one call each, which is where the
+cost of a run actually sits. The page is the bulk of what a request carries:
+sending it once for five tasks instead of five times cuts a run's input by
+roughly three quarters. What that saving must not buy is output nobody asked
+for — output is priced several times higher than input per token — so only the
+ticked tasks are ever sent; running all of them by default would cost *more*
+than running the two the user wanted. `groupSuggestions` sorts the answer back
+into the tasks it came from, and `taskOf` (`llm.go`) does the attributing: a
+tag naming no task of the run leaves its suggestion unattributed rather than
+dropped, and a run of one task needs no tag at all.
 
 `llm.go` is the call itself, in net/http and encoding/json alone. Two request
 shapes cover what a connection can point at (`requestFor`): Anthropic's
 `/messages` and the OpenAI-style `/chat/completions` every other provider
-speaks. `suggestionFormat` is the part of the instruction that is ours rather
+speaks. Both are ordered instruction, page, tasks, and the order is the point:
+a prompt cache matches on a request's prefix, so everything up to the tasks is
+identical from one run to the next on the same page and can be served from the
+run before it. The other way round — the task first, as the first version had
+it — the page would sit behind the one part that changes every run and could
+never be cached at all. On Anthropic the prefix must also be marked, which is
+the `cache_control` breakpoint on the page block. `answerBudget` grows
+`max_tokens` with the number of tasks, since an answer cut off mid-JSON loses
+the whole run rather than one task of it. `suggestionFormat` is the part of the instruction that is ours rather
 than the user's — it asks for JSON, and for each suggestion to quote the
 passage it applies to, verbatim and short, because a passage that cannot be
 found again cannot be highlighted. `decodeSuggestions` reads the answer
@@ -738,6 +759,12 @@ tab's suggestions carry the position of the passage each is about;
 an edit, and CodeMirror moves it along as the text around it is typed. A
 suggestion the server could not locate is passed as a gap, so the nth entry
 and the nth mark stay the same suggestion.
+
+`Done` is the other way a suggestion leaves the list: the user carried it out
+by hand in the editor, so `clearCopyeditMark` takes that one mark off the text
+and the entry stays as a record of what was seen to. It is offered on every
+suggestion — the ones with no replacement and the ones whose passage was never
+found included, those being exactly the ones only a human can carry out.
 
 `Apply` writes a suggestion into the page, and it writes it *at the mark*
 (`applyCopyeditMark`, `editor.js`), not at the offsets the suggestion arrived

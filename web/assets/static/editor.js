@@ -307,6 +307,22 @@ function applyCopyeditMark(index, text) {
   return true;
 }
 
+// clearCopyeditMark takes one suggestion's mark off the text, leaving the
+// others where they are. It is what Done does: the passage has been seen
+// to, so it is no longer one of the places the run is pointing at. The
+// entry keeps its place in the list, so the gap is kept here too.
+function clearCopyeditMark(index) {
+  var mark = copyeditMarks[index];
+  if (!mark) {
+    return;
+  }
+  mark.clear();
+  copyeditMarks[index] = null;
+  if (index === copyeditActive) {
+    copyeditActive = -1;
+  }
+}
+
 // refreshEditor makes CodeMirror remeasure, which it needs whenever the
 // pane it sits in changes width.
 function refreshEditor() {
