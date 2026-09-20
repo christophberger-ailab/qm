@@ -48,6 +48,12 @@ type copyeditConfig struct {
 	// Mode is how a run of several tasks is carried out: all of them in
 	// one call, or one call each.
 	Mode string `json:"mode"`
+	// Selected are the ids of the tasks ticked in the pane. It is kept
+	// because the pane is re-rendered on every page switch, and a
+	// selection that had to be made again for each page would not be
+	// worth making: the same handful of tasks is run over page after
+	// page.
+	Selected []string `json:"selected"`
 }
 
 // How a run of several tasks reaches the model.
@@ -141,6 +147,9 @@ func (s *server) deletePrompt(id string) error {
 		return errors.New("no such editing task")
 	}
 	s.cfg.Copyedit.Prompts = slices.Delete(s.cfg.Copyedit.Prompts, i, i+1)
+	s.cfg.Copyedit.Selected = slices.DeleteFunc(s.cfg.Copyedit.Selected, func(sel string) bool {
+		return sel == id
+	})
 	return s.saveConfig()
 }
 
@@ -207,6 +216,33 @@ func (s *server) deleteConnection(id string) error {
 	return s.saveConfig()
 }
 
+// selectedTasks are the ticked tasks that still exist, in the order the
+// task list has them. A saved id naming a task that has since been
+// deleted -- or a hand-written one naming nothing -- drops out here
+// rather than being offered or run. The caller must hold s.mu.
+func (s *server) selectedTasks() []string {
+	var out []string
+	for _, p := range s.cfg.Copyedit.Prompts {
+		if slices.Contains(s.cfg.Copyedit.Selected, p.ID) {
+			out = append(out, p.ID)
+		}
+	}
+	return out
+}
+
+// setSelectedTasks records which tasks are ticked, keeping only the ids
+// that name a task. The caller must hold s.mu.
+func (s *server) setSelectedTasks(ids []string) error {
+	var keep []string
+	for _, p := range s.cfg.Copyedit.Prompts {
+		if slices.Contains(ids, p.ID) {
+			keep = append(keep, p.ID)
+		}
+	}
+	s.cfg.Copyedit.Selected = keep
+	return s.saveConfig()
+}
+
 // activeConnection is the connection a run goes to: the one the pane's
 // dropdown last selected, or the first configured one when that selection
 // is gone or was never made. The caller must hold s.mu.
@@ -246,15 +282,35 @@ type connectionView struct {
 // copyeditPane is what the copyedit tab is built from: the editing tasks
 // it lists, the connections its dropdown offers, and the one selected.
 type copyeditPane struct {
-	Prompts     []copyeditPrompt
+	Prompts     []paneTask
 	Connections []connectionView
 	Active      string
+	// AllSelected says the "Select all" box starts ticked: every task is,
+	// and clicking it clears them. Any says at least one is, which is
+	// what the box shows as its in-between state.
+	AllSelected bool
+	AnySelected bool
+}
+
+// paneTask is an editing task as the pane lists it: the task, and whether
+// it is ticked for the next run of several.
+type paneTask struct {
+	copyeditPrompt
+	Selected bool
 }
 
 // copyeditPaneView assembles the pane. The caller must hold s.mu.
 func (s *server) copyeditPaneView() copyeditPane {
 	active, _ := s.activeConnection()
-	v := copyeditPane{Prompts: s.cfg.Copyedit.Prompts, Active: active.ID}
+	selected := s.selectedTasks()
+	v := copyeditPane{
+		Active:      active.ID,
+		AllSelected: len(s.cfg.Copyedit.Prompts) > 0 && len(selected) == len(s.cfg.Copyedit.Prompts),
+		AnySelected: len(selected) > 0,
+	}
+	for _, p := range s.cfg.Copyedit.Prompts {
+		v.Prompts = append(v.Prompts, paneTask{copyeditPrompt: p, Selected: slices.Contains(selected, p.ID)})
+	}
 	for _, c := range s.cfg.Copyedit.Connections {
 		v.Connections = append(v.Connections, connectionView{
 			ID: c.ID, Name: c.Name, Kind: c.Kind, BaseURL: c.BaseURL,
@@ -442,6 +498,21 @@ func (s *server) activeConnectionHandler(w http.ResponseWriter, r *http.Request)
 	r.ParseForm()
 	if err := s.setActiveConnection(r.PostFormValue("connection")); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// selectedTasksHandler records which tasks are ticked. The pane posts it
+// whenever a box changes, so the selection outlives the page switch that
+// re-renders the pane, and the restart that forgets everything the
+// browser held.
+func (s *server) selectedTasksHandler(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r.ParseForm()
+	if err := s.setSelectedTasks(r.PostForm["selected"]); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

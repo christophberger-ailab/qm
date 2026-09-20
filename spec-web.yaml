@@ -171,6 +171,9 @@ constraints:
       11-6-1: 'The answer is asked for as JSON: a list of suggestions, each quoting the passage of the page it applies to, what to put in its place, and why'
       11-6-2: A model that wrapped the JSON in a code fence, or wrote a line above it, is still understood; prose where JSON was asked for is reported as such
       11-6-3: Tasks can be ticked and run together, and every ticked task goes in one call rather than one call each; the page is the bulk of what a run sends, and sending it once for five tasks costs a fraction of sending it five times
+      11-6-3-0: A box above the task list ticks every task, or none; with some ticked it shows the in-between state, and ticking it from there selects the rest rather than clearing what is ticked
+      11-6-3-0-1: The ticks are a setting rather than something the browser holds, so a selection outlives the page switch that re-renders the pane and the restart that ends the session
+      11-6-3-0-2: A ticked id that names no task -- one deleted since, or one written into the settings by hand -- is ignored, and deleting a task unticks it
       11-6-3-1: 'A config setting decides which way a run of several tasks is carried out: all of them in one call, or one call per task. One call for the lot is the default'
       11-6-3-2: The per-task way is affordable because the page is the cached part of a request, so from the second call on a provider that caches serves it rather than charging for it again; what the two ways really differ in is the answer, a model given one task at a time attending to it fully where several in one call are answered in one list that tends to be shorter
       11-6-3-3: The per-task calls are made one after another, not at once, because a cache is written by the call that misses it -- in parallel every call would miss -- and because a burst of calls is what a provider's rate limit answers with refusals

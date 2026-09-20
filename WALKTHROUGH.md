@@ -729,6 +729,15 @@ into the tasks it came from, and `taskOf` (`llm.go`) does the attributing: a
 tag naming no task of the run leaves its suggestion unattributed rather than
 dropped, and a run of one task needs no tag at all.
 
+Which tasks are ticked is a setting too (`copyeditConfig.Selected`), not
+something the browser holds: the pane is re-rendered with every page switch,
+so ticks kept in the DOM would be lost on each one, and the same handful of
+tasks tends to be run over page after page. `selectedTasks` filters the saved
+ids against the tasks that exist, so a task deleted since — or an id written
+into the settings by hand — is neither offered nor run. In the browser,
+`applyTaskSelection` (`app.js`) puts the Select all box into the in-between
+state when only some are ticked, which is a state only script can set.
+
 Which way a run is carried out is a setting (`copyeditConfig.Mode`, the two
 `mode*` constants), because the cost argument above is only half the story:
 one call for five tasks is cheaper, but a model given five instructions

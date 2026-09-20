@@ -111,6 +111,11 @@ const configSchema = `// -------------------------------------------------------
 	// Whether a run of several tasks is one call carrying all of them,
 	// or one call per task.
 	mode: *"batched" | "per-task"
+
+	// The tasks ticked in the pane, by id. Kept so that a selection
+	// outlives a page switch and a restart; an id naming no task is
+	// ignored.
+	selected: [...string]
 }
 
 #Prompt: {
@@ -192,6 +197,7 @@ func defaultConfig() storedConfig {
 			Prompts:     []copyeditPrompt{},
 			Connections: []apiConnection{},
 			Mode:        modeBatched,
+			Selected:    []string{},
 		},
 	}
 }
@@ -216,6 +222,9 @@ func (c *storedConfig) normalize() {
 	}
 	if c.Copyedit.Mode != modePerTask {
 		c.Copyedit.Mode = modeBatched
+	}
+	if c.Copyedit.Selected == nil {
+		c.Copyedit.Selected = []string{}
 	}
 	for name, p := range c.Projects {
 		if p.Topics == nil {
