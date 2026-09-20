@@ -256,7 +256,7 @@ func TestTheAnswerBudgetGrowsWithTheNumberOfTasks(t *testing.T) {
 	if five <= one {
 		t.Errorf("five tasks budget %d, no more than one task's %d", five, one)
 	}
-	if answerBudget(100) > 16384 {
+	if answerBudget(100) > 65536 {
 		t.Errorf("the budget is unbounded: %d", answerBudget(100))
 	}
 	_, body, err := requestFor(apiConnection{Kind: kindOpenAI, BaseURL: "https://x/v1", Model: "m"}, "s", "p", "t", 5)
@@ -324,5 +324,104 @@ func TestRunCopyeditRefusesARunWithNoTask(t *testing.T) {
 	conn := apiConnection{Kind: kindAnthropic, BaseURL: "https://example.invalid/v1", Model: "m"}
 	if _, err := runCopyedit(conn, nil, "index.qmd", "Some text.\n"); err == nil {
 		t.Fatal("a run with no task was sent to the model")
+	}
+}
+
+// What comes back when there is no text differs by provider, and "the
+// model answered with no text" told the user none of it. Each of these
+// is a shape a run has actually met.
+func TestAnAnswerWithoutTextSaysWhatCameBack(t *testing.T) {
+	cases := []struct {
+		name, kind, body string
+		want             []string
+	}{{
+		name: "a reasoning model that spent the budget thinking",
+		kind: kindOpenAI,
+		body: `{"choices":[{"finish_reason":"length","message":{"role":"assistant","content":""}}],
+			"usage":{"completion_tokens":4096}}`,
+		want: []string{"whole answer budget", "reasoning model"},
+	}, {
+		name: "an error the gateway put in a 200 body",
+		kind: kindOpenAI,
+		body: `{"error":{"message":"No endpoints found for z-ai/glm-5.3.","code":404}}`,
+		want: []string{"the API refused the call", "No endpoints found"},
+	}, {
+		name: "no choices at all",
+		kind: kindOpenAI,
+		body: `{"id":"gen-1","choices":[]}`,
+		want: []string{"no text", "gen-1"},
+	}, {
+		name: "a stop reason of its own",
+		kind: kindOpenAI,
+		body: `{"choices":[{"finish_reason":"content_filter","message":{"content":""}}]}`,
+		want: []string{"content filter"},
+	}, {
+		name: "an anthropic answer with no text block",
+		kind: kindAnthropic,
+		body: `{"content":[],"stop_reason":"max_tokens"}`,
+		want: []string{"whole answer budget"},
+	}, {
+		name: "an anthropic error in a 200 body",
+		kind: kindAnthropic,
+		body: `{"error":{"message":"overloaded"}}`,
+		want: []string{"the API refused the call", "overloaded"},
+	}}
+	for _, c := range cases {
+		_, err := answerText(c.kind, []byte(c.body))
+		if err == nil {
+			t.Errorf("%s: no error", c.name)
+			continue
+		}
+		for _, want := range c.want {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("%s: error does not mention %q:\n%v", c.name, want, err)
+			}
+		}
+	}
+}
+
+// A model that thought its way to the answer and never wrote a final
+// message still answered: the JSON is in the reasoning, and reading it
+// beats refusing.
+func TestReasoningStandsInForAnEmptyAnswer(t *testing.T) {
+	for _, field := range []string{"reasoning", "reasoning_content"} {
+		body := `{"choices":[{"finish_reason":"stop","message":{"content":"",` +
+			`"` + field + `":"{\"suggestions\":[{\"original\":\"a\",\"suggestion\":\"b\"}]}"}}]}`
+		got, err := answerText(kindOpenAI, []byte(body))
+		if err != nil {
+			t.Fatalf("%s: %v", field, err)
+		}
+		sugs, err := decodeSuggestions(got, oneTask)
+		if err != nil || len(sugs) != 1 || sugs[0].Original != "a" {
+			t.Errorf("%s: suggestions = %+v, %v", field, sugs, err)
+		}
+	}
+	// Anthropic's own spelling of the same thing.
+	got, err := answerText(kindAnthropic, []byte(`{"content":[{"type":"thinking","thinking":"{\"suggestions\":[]}"}]}`))
+	if err != nil || got != `{"suggestions":[]}` {
+		t.Errorf("thinking block not used: %q, %v", got, err)
+	}
+}
+
+// Providers send a message's content either as a string or as the list of
+// parts the newer shape uses.
+func TestContentComesAsAStringOrAsParts(t *testing.T) {
+	for _, body := range []string{
+		`{"choices":[{"message":{"content":"plain"}}]}`,
+		`{"choices":[{"message":{"content":[{"type":"text","text":"pl"},{"type":"text","text":"ain"}]}}]}`,
+	} {
+		got, err := answerText(kindOpenAI, []byte(body))
+		if err != nil || got != "plain" {
+			t.Errorf("answer = %q, %v; want \"plain\" from %s", got, err, body)
+		}
+	}
+}
+
+func TestTheAnswerBudgetLeavesRoomToThink(t *testing.T) {
+	// A reasoning model counts what it thinks against this ceiling, so a
+	// budget sized for the suggestion list alone is what produced an
+	// empty answer.
+	if answerBudget(1) < 16384 {
+		t.Errorf("one task budgets %d, too little for a model that thinks first", answerBudget(1))
 	}
 }

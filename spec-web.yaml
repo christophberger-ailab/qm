@@ -204,4 +204,9 @@ constraints:
       11-11-2: A suggestion marked Done keeps its place in the list as a record of what was seen to, and its mark comes off the text, the passage no longer waiting for anything
       11-12: 'The marks go with the suggestions: the Back button, a page switch, and a run that found nothing all take them off the text'
       11-13: The model call runs without the server's lock, because it takes as long as it takes and the tree, the editor, and the autosave must stay answerable while the pane waits
+      11-13-1: 'An answer carrying no text says what came back instead of saying only that: the reason the model stopped, and the body the provider sent'
+      11-13-2: An error the API puts in a body it answers 200 with is reported as that error, a gateway that could not reach the model behind it saying so this way rather than in the status
+      11-13-3: A reasoning model counts what it thinks against the answer's token ceiling, so the ceiling leaves room to think; reaching it anyway is reported as what it is rather than as an empty answer
+      11-13-4: A model that thought its way to the answer and never wrote a final message is taken at its reasoning, the answer asked for often being in there
+      11-13-5: A message's content is read whether it comes as a string or as the list of parts the newer shape uses
       11-14: 'What went wrong is shown in the pane where the suggestions would be: no connection configured, the API''s own refusal, an unreadable answer'
