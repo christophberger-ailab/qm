@@ -15,9 +15,9 @@ package web
 // schema. The definitions are written into the file above the settings,
 // so the file says what belongs in it and in what shape, and every read
 // checks the settings against them. A typo'd field name, a `kind` that is
-// neither of the two APIs, a base URL that is not a URL — each is
-// reported with the line it is on instead of being silently dropped, the
-// way an unknown JSON field would be.
+// none of the three, a base URL that is not a URL — each is reported with
+// the line it is on instead of being silently dropped, the way an unknown
+// JSON field would be.
 //
 // qm rewrites the file whenever something changes in the UI, and it
 // rewrites the schema with it, so the schema in the file is always the one
@@ -134,18 +134,23 @@ const configSchema = `// -------------------------------------------------------
 	id:   string & !=""
 	name: string & !=""
 
-	// Which API the endpoint speaks. "anthropic" posts to
-	// <baseURL>/messages, "openai" to <baseURL>/chat/completions.
-	kind: "anthropic" | "openai"
+	// How the model is reached. "anthropic" posts to <baseURL>/messages
+	// and "openai" to <baseURL>/chat/completions; "copilot" is not an
+	// endpoint at all but the GitHub Copilot CLI, run as a child
+	// process, which must be installed and signed in.
+	kind: "anthropic" | "openai" | "copilot"
 
 	// The base URL, or the whole endpoint: qm appends the path above
-	// only when it is not already there.
-	baseURL: string & =~"^https?://"
+	// only when it is not already there. Empty on the "copilot" kind,
+	// which is reached through the CLI rather than at an address.
+	baseURL: (string & =~"^https?://") | *""
 
 	// The model to ask for, as the provider names it.
 	model: string & !=""
 
-	// The API key. A local model usually needs none.
+	// The API key. A local model usually needs none, and neither does
+	// the "copilot" kind, which authenticates as whoever the CLI is
+	// signed in as; a GitHub token here is used in that user's place.
 	key: string | *""
 }
 `

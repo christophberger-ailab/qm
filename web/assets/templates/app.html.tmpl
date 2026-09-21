@@ -617,8 +617,9 @@
     <h2>Copyedit: API connections</h2>
     <p class="config-intro">A connection is one model the editing tasks can be run on: which API it speaks, where it lives, which model to ask, and the key it takes. Several may be configured; the copyedit tab picks between them.</p>
     <p class="config-intro">"Anthropic" posts to <code>&lt;base URL&gt;/messages</code>, "OpenAI-compatible" to <code>&lt;base URL&gt;/chat/completions</code> — which is what OpenAI, Ollama, LM Studio, and OpenRouter all speak. A local model usually needs no key.</p>
-    <p class="config-intro">Give the base URL — <code>https://api.openai.com/v1</code>, <code>https://openrouter.ai/api/v1</code>, <code>http://localhost:11434/v1</code> — or paste the whole endpoint your provider's documentation prints: the path above is added only when it is not already there.</p>
-    <p class="config-intro">The keys are stored in <code>copyedit.json</code> beside the render preferences, readable by you alone, and are never sent back to the browser.</p>
+    <p class="config-intro">For those two, give the base URL — <code>https://api.openai.com/v1</code>, <code>https://openrouter.ai/api/v1</code>, <code>http://localhost:11434/v1</code> — or paste the whole endpoint your provider's documentation prints: the path above is added only when it is not already there.</p>
+    <p class="config-intro">"GitHub Copilot" is not an endpoint: it runs the GitHub Copilot CLI, which must be installed and on your <code>PATH</code> (or named by <code>COPILOT_CLI_PATH</code>) and signed in — run <code>copilot</code> once to check. It therefore takes no base URL, and no key either: a run is made as whoever the CLI is signed in as. A GitHub token in the key field is used in that user's place. Name a model the CLI offers, such as <code>gpt-5</code> or <code>claude-sonnet-4.5</code>. The session is given no tools and a scratch directory of its own, so it can read the page you send it and nothing else on the machine.</p>
+    <p class="config-intro">The keys are stored in <code>config.cue</code> with the rest of the settings, readable by you alone, and are never sent back to the browser.</p>
     {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
     {{if .Message}}<div class="notice">{{.Message}}</div>{{end}}
     <ul class="config-items">
@@ -626,11 +627,12 @@
         <form class="config-form" method="post" action="/config/connections" autocomplete="off">
           <input type="hidden" name="id" value="{{.ID}}">
           <label>Name<input type="text" name="name" value="{{.Name}}" required></label>
-          <label>API<select name="kind">
+          <label>API<select name="kind" class="connection-kind">
             <option value="anthropic"{{if eq .Kind "anthropic"}} selected{{end}}>Anthropic</option>
-            <option value="openai"{{if ne .Kind "anthropic"}} selected{{end}}>OpenAI-compatible</option>
+            <option value="openai"{{if eq .Kind "openai"}} selected{{end}}>OpenAI-compatible</option>
+            <option value="copilot"{{if eq .Kind "copilot"}} selected{{end}}>GitHub Copilot</option>
           </select></label>
-          <label>Base URL<input type="text" name="base_url" value="{{.BaseURL}}" spellcheck="false" required></label>
+          <label class="connection-base-url"{{if not .NeedsEndpoint}} hidden{{end}}>Base URL<input type="text" name="base_url" value="{{.BaseURL}}" spellcheck="false"></label>
           <label>Model<input type="text" name="model" value="{{.Model}}" spellcheck="false" required></label>
           <label>API key<input type="password" name="key" autocomplete="new-password"
                   placeholder="{{if .HasKey}}stored — leave empty to keep it{{else}}none stored{{end}}"></label>
@@ -646,11 +648,12 @@
     <form class="config-form config-new" method="post" action="/config/connections" autocomplete="off">
       <h3>Add a connection</h3>
       <label>Name<input type="text" name="name" placeholder="Claude" required></label>
-      <label>API<select name="kind">
+      <label>API<select name="kind" class="connection-kind">
         <option value="anthropic">Anthropic</option>
         <option value="openai">OpenAI-compatible</option>
+        <option value="copilot">GitHub Copilot</option>
       </select></label>
-      <label>Base URL<input type="text" name="base_url" placeholder="https://api.anthropic.com/v1" spellcheck="false" required></label>
+      <label class="connection-base-url">Base URL<input type="text" name="base_url" placeholder="https://api.anthropic.com/v1" spellcheck="false"></label>
       <label>Model<input type="text" name="model" placeholder="claude-sonnet-4-5" spellcheck="false" required></label>
       <label>API key<input type="password" name="key" autocomplete="new-password" placeholder="sk-..."></label>
       <div class="config-actions"><button type="submit">Add connection</button></div>

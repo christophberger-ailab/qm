@@ -174,14 +174,22 @@ func (s *server) saveConnection(c apiConnection) error {
 	c.BaseURL = strings.TrimSpace(c.BaseURL)
 	c.Model = strings.TrimSpace(c.Model)
 	c.Key = strings.TrimSpace(c.Key)
-	if c.Kind != kindAnthropic {
+	if !slices.Contains(kinds, c.Kind) {
 		c.Kind = kindOpenAI
 	}
 	if c.Name == "" {
 		return errors.New("the connection needs a name")
 	}
-	if c.BaseURL == "" {
-		return errors.New("the connection needs a base URL")
+	// Copilot is reached through the CLI rather than at an address, so
+	// it has no base URL to give -- and a URL entered against it would
+	// be a setting that does nothing, which is worse than a field that
+	// is not there.
+	if needsEndpoint(c.Kind) {
+		if c.BaseURL == "" {
+			return errors.New("the connection needs a base URL")
+		}
+	} else {
+		c.BaseURL = ""
 	}
 	if c.Model == "" {
 		return errors.New("the connection needs a model")
@@ -277,6 +285,10 @@ type connectionView struct {
 	Model   string
 	HasKey  bool
 	Active  bool
+	// NeedsEndpoint says the form is to ask for a base URL. The Copilot
+	// kind is reached through the CLI rather than at an address, so its
+	// form leaves the field out instead of showing one that is ignored.
+	NeedsEndpoint bool
 }
 
 // copyeditPane is what the copyedit tab is built from: the editing tasks
@@ -315,6 +327,7 @@ func (s *server) copyeditPaneView() copyeditPane {
 		v.Connections = append(v.Connections, connectionView{
 			ID: c.ID, Name: c.Name, Kind: c.Kind, BaseURL: c.BaseURL,
 			Model: c.Model, HasKey: c.Key != "", Active: c.ID == active.ID,
+			NeedsEndpoint: needsEndpoint(c.Kind),
 		})
 	}
 	return v

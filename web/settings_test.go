@@ -54,6 +54,12 @@ func TestSettingsSurviveARoundTrip(t *testing.T) {
 	want.Copyedit.Connections = []apiConnection{{
 		ID: "c1", Name: "Claude", Kind: kindAnthropic,
 		BaseURL: "https://api.anthropic.com/v1", Model: "m", Key: "sk-secret",
+	}, {
+		// The Copilot kind is reached through the CLI, so it is stored
+		// with no base URL at all -- which the schema has to allow,
+		// since a "" that is not a URL would otherwise stop the app on
+		// a file it wrote itself.
+		ID: "c2", Name: "Copilot", Kind: kindCopilot, Model: "gpt-5",
 	}}
 	want.Copyedit.Active = "c1"
 	want.Copyedit.Mode = modePerTask
@@ -77,6 +83,9 @@ func TestSettingsSurviveARoundTrip(t *testing.T) {
 	}
 	if c := got.Copyedit.Connections[0]; c.BaseURL != "https://api.anthropic.com/v1" || c.Key != "sk-secret" {
 		t.Errorf("connection = %+v", c)
+	}
+	if c := got.Copyedit.Connections[1]; c.Kind != kindCopilot || c.BaseURL != "" || c.Model != "gpt-5" {
+		t.Errorf("copilot connection = %+v", c)
 	}
 	if got.Copyedit.Mode != modePerTask || got.Copyedit.Active != "c1" {
 		t.Errorf("copyedit = %+v", got.Copyedit)

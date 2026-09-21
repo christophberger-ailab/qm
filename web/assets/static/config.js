@@ -38,4 +38,26 @@ document.addEventListener('click', function (evt) {
   }
 });
 
+// The base URL belongs to the two HTTP kinds and to neither the GitHub
+// Copilot kind nor the user: Copilot is reached through the CLI, which
+// knows where GitHub is. So the field follows the API dropdown rather
+// than standing there taking a value that would be ignored. The server
+// clears it either way; this only saves the user from filling it in.
+function showBaseURLFor(select) {
+  var form = select.closest('form');
+  var field = form ? form.querySelector('.connection-base-url') : null;
+  if (field) {
+    field.hidden = select.value === 'copilot';
+  }
+}
+
+document.addEventListener('change', function (evt) {
+  if (evt.target.classList && evt.target.classList.contains('connection-kind')) {
+    showBaseURLFor(evt.target);
+  }
+});
+
 document.addEventListener('DOMContentLoaded', initPreviewCSSEditor);
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('select.connection-kind').forEach(showBaseURLFor);
+});

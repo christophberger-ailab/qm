@@ -9,10 +9,17 @@ package web
 // pane highlights in the text, so the suggestion is read where it belongs
 // rather than in a list beside the page.
 //
-// Two request shapes cover what a connection can point at: Anthropic's
-// Messages API and the OpenAI-style chat completions every other provider
-// (OpenAI, Ollama, LM Studio, OpenRouter, ...) speaks. Both are plain JSON
-// over net/http; no client library is vendored for either.
+// Two request shapes cover what a connection can point at over HTTP:
+// Anthropic's Messages API and the OpenAI-style chat completions every
+// other provider (OpenAI, Ollama, LM Studio, OpenRouter, ...) speaks. Both
+// are plain JSON over net/http; no client library is vendored for either.
+//
+// The third kind is not an HTTP API at all: GitHub Copilot is reached
+// through the Copilot CLI running as a child process, and the SDK that
+// speaks to it is vendored because there is no wire format to write by
+// hand. It lives in copilot.go; everything from the answer on -- reading
+// the JSON, locating the passages, attributing the suggestions -- is the
+// same for all three.
 
 import (
 	"bytes"
@@ -42,12 +49,27 @@ var llmTimeout = 3 * time.Minute
 // paid for -- so it is set well above what the list needs.
 const maxTokens = 16384
 
-// The kinds of API a connection can address. The kind decides the request
-// shape, the auth header, and where the answer's text sits in the reply.
+// The kinds of API a connection can address. For the two HTTP kinds the
+// kind decides the request shape, the auth header, and where the answer's
+// text sits in the reply; the Copilot kind is reached through the Copilot
+// CLI instead and is handled apart, in copilot.go.
 const (
 	kindAnthropic = "anthropic"
 	kindOpenAI    = "openai"
+	kindCopilot   = "copilot"
 )
+
+// kinds are the connection kinds that may be configured, which is what
+// tells a saved kind from a typo'd one.
+var kinds = []string{kindAnthropic, kindOpenAI, kindCopilot}
+
+// needsEndpoint says whether a kind is reached at an address the user
+// gives. The two HTTP kinds are; Copilot is reached through the CLI,
+// which knows where GitHub is, so a base URL would be a field with
+// nothing to put in it.
+func needsEndpoint(kind string) bool {
+	return kind != kindCopilot
+}
 
 // suggestionFormat is the part of the instruction that is ours rather than
 // the user's: the editing tasks come from the prompts the user wrote, the
@@ -261,6 +283,12 @@ func answerBudget(tasks int) int {
 func askModel(conn apiConnection, system, page, tasks string, count int) (string, error) {
 	if conn.Model == "" {
 		return "", errors.New("the connection names no model")
+	}
+	// Copilot is not an endpoint to post to: it is the CLI, spoken to
+	// over its own protocol, so the whole of the HTTP path below --
+	// endpoint, auth header, reply shape -- has nothing to say about it.
+	if conn.Kind == kindCopilot {
+		return askCopilot(conn, system, page, tasks)
 	}
 	url, body, err := requestFor(conn, system, page, tasks, count)
 	if err != nil {

@@ -1,0 +1,79 @@
+package web
+
+import (
+	"context"
+	"os"
+	"testing"
+	"time"
+
+	copilot "github.com/github/copilot-sdk/go"
+)
+
+func try(t *testing.T, label string, mode copilot.ClientMode, models []string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	home, _ := copilotHome()
+	scratch, _ := os.MkdirTemp("", "probe-")
+	defer os.RemoveAll(scratch)
+	cli, err := copilotCLI()
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := &copilot.ClientOptions{
+		Connection:       copilot.StdioConnection{Path: cli},
+		Mode:             mode,
+		WorkingDirectory: scratch,
+		LogLevel:         "error",
+	}
+	if mode == copilot.ModeEmpty {
+		opts.BaseDirectory = home
+	}
+	c := copilot.NewClient(opts)
+	if err := c.Start(ctx); err != nil {
+		t.Fatalf("%s start: %v", label, err)
+	}
+	defer c.Stop()
+
+	ms, err := c.ListModels(ctx)
+	if err != nil {
+		t.Logf("%s ListModels err: %v", label, err)
+	} else {
+		ids := []string{}
+		for _, m := range ms {
+			ids = append(ids, m.ID)
+		}
+		t.Logf("%s ListModels (%d): %v", label, len(ids), ids)
+	}
+
+	for _, model := range models {
+		cfg := &copilot.SessionConfig{
+			ClientName:          "qm",
+			Model:               model,
+			WorkingDirectory:    scratch,
+			OnPermissionRequest: refuseEverything,
+			SystemMessage:       &copilot.SystemMessageConfig{Mode: "replace", Content: "Answer with one word."},
+			InfiniteSessions:    &copilot.InfiniteSessionConfig{Enabled: copilot.Bool(false)},
+			Streaming:           copilot.Bool(false),
+		}
+		if mode == copilot.ModeEmpty {
+			cfg.AvailableTools = []string{}
+		}
+		s, err := c.CreateSession(ctx, cfg)
+		if err != nil {
+			t.Logf("%s create %-22s ERR %v", label, model, err)
+			continue
+		}
+		ev, err := s.SendAndWait(ctx, copilot.MessageOptions{Prompt: "Say OK."})
+		txt, aerr := copilotAnswer(ev)
+		t.Logf("%s create %-22s ok; send err=%v answer=%q (%v)", label, model, err, txt, aerr)
+		s.Disconnect()
+	}
+}
+
+func TestProbeEmpty(t *testing.T) {
+	try(t, "EMPTY", copilot.ModeEmpty, []string{"claude-sonnet-5", "claude-haiku-4.5", "gpt-5.4"})
+}
+
+func TestProbeCli(t *testing.T) {
+	try(t, "CLI  ", copilot.ModeCopilotCli, []string{"claude-sonnet-5", "claude-haiku-4.5", "gpt-5.4"})
+}

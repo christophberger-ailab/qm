@@ -151,13 +151,31 @@ takes the entry out of use and the highlight off the text. Suggestions with no
 replacement, and those whose passage could not be found, offer Done alone.
 
 The models are configured under *Config → Copyedit: API connections*: any
-number of them, each naming the API it speaks — Anthropic
-(`<base URL>/messages`) or OpenAI-compatible (`<base URL>/chat/completions`,
-which is what OpenAI, Ollama, LM Studio and OpenRouter all speak) — its base
-URL, the model, and the key it takes. A local model usually needs no key. The
-tasks and the connections are stored in the settings file (below), readable by
-its owner alone since it holds the keys, and a stored key is never sent back to
-the browser.
+number of them, each naming how the model is reached. Two of the three kinds
+are endpoints — Anthropic (`<base URL>/messages`) or OpenAI-compatible
+(`<base URL>/chat/completions`, which is what OpenAI, Ollama, LM Studio and
+OpenRouter all speak) — and take a base URL, the model, and the key. A local
+model usually needs no key.
+
+The third is **GitHub Copilot**, which is not an endpoint at all: qm runs the
+GitHub Copilot CLI as a child process and talks to it over its own protocol.
+It must be installed and on your `PATH` (or named by `COPILOT_CLI_PATH`) and
+signed in — running `copilot` once is enough to check. A connection of this
+kind is therefore a name and a model and nothing else: no base URL, since the
+CLI knows where GitHub is, and no key, since a run is made as whoever the CLI
+is signed in as. A GitHub token in the key field is used in that user's place.
+The model is one the CLI offers, `gpt-5.4` or `claude-sonnet-5`; `copilot
+--help` lists them. Copilot is an agent that reads files and edits
+repositories, and a copyedit run wants none of that, so the session qm opens
+has no tools at all, a system message that replaces the CLI's coding persona
+with the copyediting instruction, and an empty scratch directory to sit in: it
+can read the page it is sent and nothing else on the machine. The price is the
+process — a second or so of startup per call, which in per-task mode is per
+task.
+
+The tasks and the connections are stored in the settings file (below),
+readable by its owner alone since it holds the keys, and a stored key is never
+sent back to the browser.
 
 The Open field shows the last element of the project's path and offers the ten
 projects opened before, remembered in the settings file; a
@@ -187,15 +205,17 @@ shape, and every read is checked against them:
     id:   string & !=""
     name: string & !=""
 
-    // Which API the endpoint speaks. "anthropic" posts to
-    // <baseURL>/messages, "openai" to <baseURL>/chat/completions.
-    kind: "anthropic" | "openai"
+    // How the model is reached. "anthropic" posts to <baseURL>/messages
+    // and "openai" to <baseURL>/chat/completions; "copilot" is not an
+    // endpoint at all but the GitHub Copilot CLI, run as a child
+    // process, which must be installed and signed in.
+    kind: "anthropic" | "openai" | "copilot"
     ...
 }
 ```
 
-A misspelled field, a `kind` that is neither API, a base URL that is not a URL
-— each is reported with the line it is on, and the app stops rather than
+A misspelled field, a `kind` that is none of the three, a base URL that is not
+a URL — each is reported with the line it is on, and the app stops rather than
 starting on settings it cannot make sense of. A field left out is not an
 error: lists and maps left out are empty, scalars carry the defaults the
 schema names, so a file can be written by hand in part. The file is rewritten
