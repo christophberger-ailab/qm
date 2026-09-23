@@ -1572,15 +1572,18 @@ li.CodeMirror-hint-active {
   font-size: 0.85rem;
 }
 
-/* The passages the suggestions are about, marked in the editor's text. */
+/* The passages the suggestions are about, marked in the editor's text.
+   The backgrounds are translucent: CodeMirror draws Vim's block cursor and
+   the selection underneath the text layer, so an opaque mark would hide
+   them both. */
 .CodeMirror .copyedit-mark {
-  background: var(--accent-bg);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
   border-bottom: 2px solid var(--accent);
 }
 
 .CodeMirror .copyedit-mark-active {
-  background: var(--warn);
-  color: var(--bg);
+  background: color-mix(in srgb, var(--warn) 35%, transparent);
+  border-bottom-color: var(--warn);
 }
 
 /* Closing the preview leaves the editor the whole pane. */

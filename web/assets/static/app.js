@@ -748,7 +748,9 @@ function bumpMediaVersion() {
 }
 
 // revealSelection expands the collapsed branches above the selected page,
-// so a restored page is not hidden inside one.
+// so a restored page is not hidden inside one, and scrolls the tree pane
+// to its row: flipping through a long book walks the selection off the
+// visible part of the tree, where it would look as if it had been lost.
 function revealSelection() {
   var li = currentPath && document.querySelector('#tree li.page.selected');
   if (!li) {
@@ -763,6 +765,12 @@ function revealSelection() {
       collapsed.delete(node.dataset.key);
       saveCollapsed();
     }
+  }
+  // The row, not the whole entry: an entry holds its subtree, which can be
+  // taller than the pane.
+  var row = li.querySelector(':scope > .row');
+  if (row && row.scrollIntoView) {
+    row.scrollIntoView({ block: 'nearest' });
   }
 }
 
