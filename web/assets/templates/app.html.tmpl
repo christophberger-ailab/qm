@@ -361,10 +361,13 @@
        keeps refusing from being a dead end. */ -}}
   <button type="button" class="save-overwrite" id="save-overwrite" hidden
           title="Write the editor's text over the file on disk, discarding the change made outside">Overwrite</button>
-  <button type="button" class="preview-toggle" id="preview-toggle" aria-pressed="true" title="Show or hide the sidebar: the Markdown preview and the copyedit tool">◧ Toggle Sidebar</button>
+  {{/* The two panes beside the editor are shown and hidden one by one;
+       app.js remembers each choice and sets aria-pressed to match. */ -}}
+  <button type="button" class="pane-toggle" id="preview-toggle" data-pane="preview" aria-pressed="true" title="Show or hide the Markdown preview">Preview</button>
+  <button type="button" class="pane-toggle" id="copyedit-toggle" data-pane="copyedit" aria-pressed="false" title="Show or hide the copyedit tool">Copyedit</button>
   <button class="reload" id="content-reload" title="Reload from disk" hx-get="/content?path={{.Path}}&reload=1" hx-target="#content" hx-swap="innerHTML">↻ Reload</button>
 </div>
-<div class="editor-split">
+<div class="editor-split" id="editor-split">
   {{/* autocomplete="off" keeps the browser from putting the text a
        previous page left in this textarea back into it on a reload. The
        hidden path is not restored -- browsers skip hidden inputs -- so a
@@ -388,21 +391,16 @@
       <button type="button" class="vim-toggle" id="vim-toggle" aria-pressed="false" title="Vim keybindings in the editor">⌨ Vim Mode</button>
     </div>
   </form>
-  <div id="preview-divider" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
-  <div class="preview-column" id="preview-column">
-    {{/* The column beside the editor is tabbed: the Markdown preview of
-         the page, and the copyediting tool that works on the same text.
-         Both read what the editor holds, so they are two views of one
-         thing rather than two places; app.js remembers which of them was
-         last looked at. */ -}}
-    <div class="pane-tabs" role="tablist">
-      <button type="button" class="pane-tab" data-tab="preview" role="tab" aria-selected="true"
-              aria-controls="preview" title="The page as Quarto would roughly render it">Preview</button>
-      <button type="button" class="pane-tab" data-tab="copyedit" role="tab" aria-selected="false"
-              aria-controls="copyedit" title="Run an editing task over this page">Copyedit</button>
-    </div>
-    <article class="markdown-preview pane-panel" id="preview" role="tabpanel"></article>
-    {{template "copyedit" .Copyedit}}
+  {{/* Beside the editor: the Markdown preview of the page, and the
+       copyediting tool that works on the same text. Each can be shown or
+       hidden on its own; when both are, they stand side by side, and
+       dragging one's head onto the other swaps them. Every pane has a
+       divider on its left that resizes it. app.js sets which are shown, in
+       which order (CSS order, so the DOM stays put), and how wide. */ -}}
+  <div class="split-divider" id="preview-divider" data-pane="preview" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
+  <section class="side-pane preview-pane" id="preview-pane" data-pane="preview">
+    <div class="side-pane-head" draggable="true" title="Drag onto the copyedit pane to swap the two">Preview</div>
+    <article class="markdown-preview" id="preview"></article>
     {{/* Below the preview: the two buttons that page through the book, and
          the stylesheet the preview is shown in. Both describe the preview
          rather than the text, so they sit under the preview's own column.
@@ -423,15 +421,18 @@
       </select>
       {{end}}
     </div>
-  </div>
+  </section>
+  <div class="split-divider" id="copyedit-divider" data-pane="copyedit" role="separator" aria-orientation="vertical" title="Drag to resize" hidden></div>
+  {{template "copyedit" .Copyedit}}
 </div>{{end}}
 
-{{/* The copyedit tab. Its head carries the model the tasks are run on --
+{{/* The copyedit pane. Its head carries the model the tasks are run on --
      the connections are configured once, and which of them answers is a
      choice made here, beside the work. Its body holds either the list of
      editing tasks or the suggestions the last run came back with; one
      replaces the other, and the Back button brings the list again. */}}
-{{define "copyedit"}}<section class="copyedit pane-panel" id="copyedit" role="tabpanel" hidden>
+{{define "copyedit"}}<section class="copyedit side-pane" id="copyedit" data-pane="copyedit" hidden>
+  <div class="side-pane-head" draggable="true" title="Drag onto the preview to swap the two">Copyedit</div>
   <div class="copyedit-head">
     {{if .Connections}}<label for="copyedit-connection">Model</label>
     <select id="copyedit-connection" class="copyedit-connection" title="The API connection the editing tasks are run on">

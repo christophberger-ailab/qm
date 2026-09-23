@@ -702,7 +702,7 @@ rewrites it, and `sanitizeCSSName` keeps user-supplied names to a safe shape.
 
 ### 9.5.2 Copyediting — `web/copyedit.go`, `web/llm.go`
 
-The copyedit tab beside the editor runs an *editing task* — a prompt with a
+The copyedit pane beside the editor runs an *editing task* — a prompt with a
 title — over the page the editor holds. `copyedit.go` keeps both halves of the
 setup: the tasks, and the API connections they run on. Both are the user's own
 rather than the project's, which is why they live in the settings file
@@ -811,10 +811,11 @@ preview, and CodeMirror 5 for the editor (with a Vim keymap behind a toggle).
 `assets/static/codemirror/README.md` documents exactly which files were taken
 from which tarball paths and why CodeMirror 5 rather than 6.
 
-The column beside the editor is tabbed: `app.js` holds which tab is up
-(`applyTabs`) next to whether the column is open at all, both in
-localStorage, since the pane is re-rendered on every page switch. The copyedit
-tab's suggestions carry the position of the passage each is about;
+The preview and the copyedit pane beside the editor are laid out by
+`applyLayout` (`app.js`): which of them are shown, in which order, and how
+wide, all kept in localStorage, since the editor pane is re-rendered on every
+page switch. The panes never move in the DOM; CSS `order` places them and the
+divider on each one's left. The copyedit pane's suggestions carry the position of the passage each is about;
 `readSuggestions` (`app.js`) hands those to `setCopyeditMarks`
 (`editor.js`), which paints them with CodeMirror's `markText` — a mark is not
 an edit, and CodeMirror moves it along as the text around it is typed. A

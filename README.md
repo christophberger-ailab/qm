@@ -116,8 +116,10 @@ is previewed inside that audience's `::: fw` / `::: pol` div, the way the
 flattener wraps it, so the custom preview stylesheet tints and marks the whole
 page just as it marks such a block written into the page by hand.
 
-Beside the editor sits a tabbed column: the Markdown preview, and a copyedit
-pane. The pane lists the editing tasks configured under *Config → Copyedit:
+Beside the editor sit the Markdown preview and a copyedit pane. The *Preview*
+and *Copyedit* buttons show and hide each on its own; with both shown they
+stand side by side, a pane's head dragged onto the other swaps them, and every
+divider can be dragged to resize. The copyedit pane lists the editing tasks configured under *Config → Copyedit:
 Editing tasks* — each one a prompt with a title, "Passive voice", "Shorten
 sentences". Clicking one sends the text the editor holds, unsaved edits and
 all, to the model selected in the pane's dropdown, and answers with a list of
