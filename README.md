@@ -96,7 +96,8 @@ would delete what the run before it produced.
 #### `qm web`
 
 ```sh
-qm web                    # serve the project at --project on localhost:8199
+qm web                    # serve the project at --project on localhost:8199,
+                          # or the next free port up if that one is taken
 qm web ../handbook        # serve that project instead
 qm web --addr :9000       # listen elsewhere
 ```

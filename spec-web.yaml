@@ -11,6 +11,7 @@ components:
       3: Parameters
       3-1: Flag --project sets the path to the document tree. Defaults to the current directory
       3-2: Flag --addr sets the listen address. Defaults to "localhost:8199"
+      3-2-1: When the default port is taken -- by another qm web, most likely -- the next port up is tried, and so on, until a free one is found; the address actually served is printed. An address given with --addr is used as given, and a taken one is an error
       3-3: A positional path names the project to open and takes precedence over --project
       4: The command serves until it is interrupted, printing the URL it listens on to stderr
 
