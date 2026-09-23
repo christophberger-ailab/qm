@@ -178,8 +178,8 @@ readable by its owner alone since it holds the keys, and a stored key is never
 sent back to the browser.
 
 The Open field shows the last element of the project's path and offers the ten
-projects opened before, remembered in the settings file; a
-full path can still be typed or pasted into it. The Git button beside Render
+projects opened before, listed by their full paths and remembered in the
+settings file; a full path can still be typed or pasted into it. The Git button beside Render
 opens a panel that lists the changes since the last commit, stages and unstages
 them file by file or all at once, commits them, and pushes the branch. Clicking
 a path shows that file's diff, coloured line by line, with a button that opens
@@ -188,12 +188,20 @@ kept in a subdirectory of a larger one is managed just the same. It runs the
 `git` command, so the repository's hooks, credential helpers and config apply
 as they do in a terminal.
 
+The Editor button opens the project, and the page open in the app, in an
+external editor — for `_quarto.yml`, filters, stylesheets, and whatever else
+the app does not edit. *Config → External editor* sets the command line it
+runs, with `{root}` for the project directory and `{file}` for the page;
+the default is VS Code's `code {root} --goto {file}`, and the page offers
+ready-made lines for VSCodium and a few others. With no page open, the
+`{file}` argument and an option right before it are left out.
+
 ### Settings
 
 Everything the UI remembers between runs lives in one file,
 `<user config dir>/qm/config.cue`: the projects opened before, the render
 selection and last open page per project, which preview stylesheet is active,
-and the copyediting setup. The stylesheets themselves stay beside it in
+the copyediting setup, and the external editor's command line. The stylesheets themselves stay beside it in
 `custom-css/`, being CSS rather than settings.
 
 The file is CUE because it carries its own schema. The definitions are written

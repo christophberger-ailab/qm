@@ -62,9 +62,6 @@ body {
 /* Topbar */
 
 .topbar {
-  /* The Git popup hangs from the bar's own right edge rather than from its
-     button; see .git-body. */
-  position: relative;
   display: flex;
   align-items: center;
   gap: 1.5rem;
@@ -123,7 +120,7 @@ body {
   padding: 0.2rem;
   list-style: none;
   min-width: 100%;
-  max-width: min(30rem, 80vw);
+  max-width: min(44rem, 90vw);
   max-height: 60vh;
   overflow: auto;
   background: var(--bg);
@@ -183,10 +180,19 @@ body {
   background: var(--hover);
 }
 
-/* The panels hang below the top bar rather than widening it. */
+/* The panels hang below their own buttons rather than widening the bar.
+   app.js pulls one back to the left when it would reach past the window's
+   right edge. */
+.render,
+.git {
+  position: relative;
+}
+
 .render-body,
 .git-body {
   position: absolute;
+  top: 100%;
+  left: 0;
   z-index: 10;
   margin-top: 0.4rem;
   max-width: min(38rem, 90vw);
@@ -269,18 +275,10 @@ body {
 /* One width, with a diff open and without: a diff needs more room than the
    file lists do, so the popup is given that room from the start rather than
    growing into it -- a popup that changes width moves the paths out from
-   under the pointer that just clicked one.
-
-   A popup that wide does not fit below its own button, which sits near the
-   right of the bar, so it hangs from the bar's right edge instead: it stays
-   inside the window rather than pushing the page sideways, and it stays put
-   while the bar's other panels change what they show. */
+   under the pointer that just clicked one. */
 .git-body {
   width: min(54rem, 92vw);
   max-width: none;
-  top: 100%;
-  right: 1rem;
-  left: auto;
   font-size: 0.85rem;
 }
 
@@ -1118,9 +1116,14 @@ textarea.preview-css-content {
 }
 
 /* The config editor is not inside the split pane, so it needs its own
-   height while reusing the themed CodeMirror frame. */
+   height while reusing the themed CodeMirror frame. The height is only
+   where it starts: the frame's corner drags it taller or shorter, and
+   config.js keeps CodeMirror measuring along and remembers the height. */
 .config-editor .CodeMirror {
   height: 24rem;
+  min-height: 8rem;
+  resize: vertical;
+  overflow: hidden;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.85rem;
   line-height: 1.5;
@@ -1734,4 +1737,34 @@ li.CodeMirror-hint-active {
   border-left-color: var(--danger);
   margin: 0.8em 0;
   padding: 0.1rem 0.7rem;
+}
+/* The external editor button, and what it has to say when the editor did
+   not start. */
+.external-editor {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.external-editor button {
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.error-inline {
+  color: var(--danger);
+  font-size: 0.8rem;
+  max-width: 20rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The ready-made commands on the External editor config page. */
+.editor-presets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
 }

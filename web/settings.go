@@ -47,6 +47,7 @@ type storedConfig struct {
 	Projects map[string]projectPrefs `json:"projects"`
 	Preview  previewConfig           `json:"preview"`
 	Copyedit copyeditConfig          `json:"copyedit"`
+	Editor   editorConfig            `json:"editor"`
 }
 
 // previewConfig is the Markdown preview's own settings. The stylesheets
@@ -78,6 +79,7 @@ const configSchema = `// -------------------------------------------------------
 
 	preview:  #Preview
 	copyedit: #Copyedit
+	editor:   #Editor
 }
 
 #Project: {
@@ -95,6 +97,14 @@ const configSchema = `// -------------------------------------------------------
 	// The stylesheet the live preview is shown in: a file name in the
 	// custom-css directory beside this file.
 	css: string | *"custom.css"
+}
+
+#Editor: {
+	// The command line the top bar's Editor button runs. {root} is the
+	// project's directory, {file} the page open in the app; an argument
+	// naming {file} (with an option right before it) is left out when no
+	// page is open. Quotes keep an argument with spaces together.
+	command: string | *"code {root} --goto {file}"
 }
 
 #Copyedit: {
@@ -204,6 +214,7 @@ func defaultConfig() storedConfig {
 			Mode:        modeBatched,
 			Selected:    []string{},
 		},
+		Editor: editorConfig{Command: defaultEditorCommand},
 	}
 }
 
@@ -227,6 +238,9 @@ func (c *storedConfig) normalize() {
 	}
 	if c.Copyedit.Mode != modePerTask {
 		c.Copyedit.Mode = modeBatched
+	}
+	if c.Editor.Command == "" {
+		c.Editor.Command = defaultEditorCommand
 	}
 	if c.Copyedit.Selected == nil {
 		c.Copyedit.Selected = []string{}

@@ -50,6 +50,7 @@
     </div>
     <div id="render-panel">{{template "render" .}}</div>
     <div id="git-panel">{{template "git" .}}</div>
+    <div class="external-editor" id="editor-panel">{{template "external-editor" .}}</div>
     <a class="button topbar-config" href="/config">Config</a>
   </header>
   <main class="panes" id="main">
@@ -60,7 +61,9 @@
 
 {{/* The Open field shows the last element of the project's path -- the
      folder name is what tells one project from another -- while the full
-     path rides along in data-full and is what a submit sends. Typing or
+     path rides along in data-full and is what a submit sends. The dropdown
+     lists the full paths: two projects may share a folder name, and the
+     list has the room the field does not. Typing or
      pasting into the field drops the full path (app.js), so a pasted path
      is opened as written. */}}
 {{define "open-form"}}<form class="open-form" hx-post="/open" hx-target="#main" hx-swap="innerHTML">
@@ -71,7 +74,7 @@
     {{if .Open.Recent}}<button type="button" class="path-menu-toggle" id="open-recent-toggle"
             aria-haspopup="listbox" aria-expanded="false" title="Recently opened projects">▾</button>
     <ul class="path-menu" id="open-recent" role="listbox" hidden>
-      {{range .Open.Recent}}<li><button type="button" class="path-recent" role="option" data-path="{{.Path}}" title="{{.Path}}">{{.Label}}</button></li>
+      {{range .Open.Recent}}<li><button type="button" class="path-recent" role="option" data-path="{{.Path}}" data-label="{{.Label}}" title="{{.Path}}">{{.Path}}</button></li>
       {{end}}
     </ul>{{end}}
   </div>
@@ -88,6 +91,14 @@
   <div class="git-body" id="git-body" hx-get="/git" hx-target="#git-body" hx-swap="innerHTML"
        hx-trigger="toggle[document.getElementById('git-details').open] from:#git-details"></div>
 </details>{{end}}{{end}}
+
+{{/* Hands the project to the editor configured under Config, with the
+     page open here if there is one. The answer lands beside the button:
+     nothing when the editor started, the reason when it did not. */}}
+{{define "external-editor"}}{{if .Root}}<button type="button" id="open-external" hx-post="/editor/open" hx-include="#content-path"
+        hx-target="#external-editor-status" hx-swap="innerHTML"
+        title="Open the project, and the page open here, in the external editor set under Config">Editor ↗</button>
+<span id="external-editor-status"></span>{{end}}{{end}}
 
 {{define "git-status"}}{{if .Error}}<div class="error">{{.Error}}</div>{{end}}
 {{if .Message}}<div class="notice">{{.Message}}</div>{{end}}
@@ -350,7 +361,7 @@
        keeps refusing from being a dead end. */ -}}
   <button type="button" class="save-overwrite" id="save-overwrite" hidden
           title="Write the editor's text over the file on disk, discarding the change made outside">Overwrite</button>
-  <button type="button" class="preview-toggle" id="preview-toggle" aria-pressed="true" title="Show or hide the Markdown preview">👁 Preview</button>
+  <button type="button" class="preview-toggle" id="preview-toggle" aria-pressed="true" title="Show or hide the sidebar: the Markdown preview and the copyedit tool">◧ Toggle Sidebar</button>
   <button class="reload" id="content-reload" title="Reload from disk" hx-get="/content?path={{.Path}}&reload=1" hx-target="#content" hx-swap="innerHTML">↻ Reload</button>
 </div>
 <div class="editor-split">
@@ -529,6 +540,47 @@
   {{end}}
   {{if and (not .Groups) (not .Error)}}<p class="empty">Nothing to change: the model had no suggestion.</p>{{end}}
 </div>{{end}}
+
+{{define "editor-page"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>External editor</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/config.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>Quarto Manager</h1>
+    <nav class="topbar-nav">
+      <a class="button" href="/config">Config</a>
+      <a class="button" href="/">App</a>
+    </nav>
+  </header>
+  <main class="config-main">
+    <h2>External editor</h2>
+    <p class="config-intro">The <strong>Editor ↗</strong> button in the top bar runs this command to open the project in another editor — for the files the app does not edit, like <code>_quarto.yml</code>, filters, and stylesheets.</p>
+    <p class="config-intro"><code>{root}</code> stands for the project's directory and <code>{file}</code> for the page open in the app. When no page is open, the argument naming <code>{file}</code> is left out, together with an option right before it (<code>--goto {file}</code> goes as a whole). Leave <code>{file}</code> out if your editor cannot be told to open a file inside a folder. Quote an argument that contains spaces. The command is run directly, not through a shell, so it has to be on your <code>PATH</code> or named by its full path.</p>
+    {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
+    {{if .Message}}<div class="notice">{{.Message}}</div>{{end}}
+    <form class="config-form config-setting" method="post" action="/config/editor" autocomplete="off">
+      <label>Command<input type="text" name="command" id="editor-command" value="{{.Command}}" spellcheck="false" required></label>
+      <div class="editor-presets">
+        <span>Presets:</span>
+        {{range .Presets}}<button type="button" class="editor-preset" data-command="{{.Command}}" title="{{.Command}}">{{.Name}}</button>
+        {{end}}
+      </div>
+      <div class="config-actions"><button type="submit">Save</button></div>
+    </form>
+    <div class="config-actions">
+      <a class="button" href="/config">Back to Config</a>
+      <a class="button" href="/">Back to App</a>
+    </div>
+  </main>
+</body>
+</html>{{end}}
 
 {{define "copyedit-page"}}<!doctype html>
 <html lang="en">

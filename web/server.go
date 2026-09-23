@@ -113,6 +113,9 @@ func newServer(configFile string) (*server, error) {
 	s.mux.HandleFunc("GET /config/connections", s.connectionsPage)
 	s.mux.HandleFunc("POST /config/connections", s.saveConnectionHandler)
 	s.mux.HandleFunc("POST /config/connections/delete", s.deleteConnectionHandler)
+	s.mux.HandleFunc("GET /config/editor", s.editorConfigPage)
+	s.mux.HandleFunc("POST /config/editor", s.saveEditorHandler)
+	s.mux.HandleFunc("POST /editor/open", s.openEditorHandler)
 	s.mux.HandleFunc("POST /copyedit/active", s.activeConnectionHandler)
 	s.mux.HandleFunc("POST /copyedit/selection", s.selectedTasksHandler)
 	s.mux.HandleFunc("GET /copyedit/prompts", s.copyeditPromptsHandler)
@@ -466,6 +469,10 @@ func (s *server) config(w http.ResponseWriter, r *http.Request) {
 		Title:       "Copyedit: API connections",
 		Description: "Name the models the editing tasks are run on.",
 		Href:        "/config/connections",
+	}, {
+		Title:       "External editor",
+		Description: "Choose the editor the top bar's Editor button opens the project in.",
+		Href:        "/config/editor",
 	}}})
 }
 
@@ -567,13 +574,16 @@ func (s *server) open(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "main", st)
 	// The top bar is not reached by the #main swap, so the parts of it
 	// that describe the project just opened are sent out of band: the
-	// render panel, the Git panel, and the Open field, whose label and
-	// dropdown have both moved on.
+	// render panel, the Git panel, the external editor button, and the
+	// Open field, whose label and dropdown have both moved on.
 	fmt.Fprint(w, `<div hx-swap-oob="innerHTML:#render-panel">`)
 	s.render(w, "render", st)
 	fmt.Fprint(w, `</div>`)
 	fmt.Fprint(w, `<div hx-swap-oob="innerHTML:#git-panel">`)
 	s.render(w, "git", st)
+	fmt.Fprint(w, `</div>`)
+	fmt.Fprint(w, `<div hx-swap-oob="innerHTML:#editor-panel">`)
+	s.render(w, "external-editor", st)
 	fmt.Fprint(w, `</div>`)
 	fmt.Fprint(w, `<div hx-swap-oob="innerHTML:#open-panel">`)
 	s.render(w, "open-form", st)

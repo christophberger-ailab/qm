@@ -307,6 +307,20 @@ function applyCopyeditMark(index, text) {
   return true;
 }
 
+// copyeditMarkRanges says where each suggestion's mark is now, as offsets
+// in the text -- null for a suggestion that has no mark (any more). The
+// marks follow the text as it is edited; this is what lets a list that is
+// put aside and brought back later point at the passages where they are.
+function copyeditMarkRanges() {
+  return copyeditMarks.map(function (mark) {
+    var at = cm && mark ? mark.find() : null;
+    if (!at) {
+      return null;
+    }
+    return { start: cm.indexFromPos(at.from), end: cm.indexFromPos(at.to) };
+  });
+}
+
 // clearCopyeditMark takes one suggestion's mark off the text, leaving the
 // others where they are. It is what Done does: the passage has been seen
 // to, so it is no longer one of the places the run is pointing at. The
