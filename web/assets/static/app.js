@@ -26,7 +26,8 @@ function showRecent(on) {
 }
 
 // pickRecent puts a chosen project into the field -- short label, full
-// path, full path as the tooltip -- and opens it.
+// path, full path as the tooltip -- and opens it. The dropdown itself lists
+// the full paths, so the label rides along on each entry.
 function pickRecent(path, label) {
   var input = openPathInput();
   if (input) {
@@ -51,7 +52,7 @@ document.body.addEventListener('click', function (evt) {
   }
   var entry = evt.target.closest('.path-recent');
   if (entry) {
-    pickRecent(entry.dataset.path, entry.textContent.trim());
+    pickRecent(entry.dataset.path, entry.dataset.label || entry.dataset.path);
     return;
   }
   // A click anywhere else closes the dropdown, the way a menu closes.
@@ -253,6 +254,11 @@ function applyTabs() {
       panel.hidden = name !== activeTab;
     }
   });
+  // The stylesheet dropdown styles the preview, so it goes with it.
+  var css = document.getElementById('preview-css-select');
+  if (css) {
+    css.hidden = activeTab !== 'preview';
+  }
 }
 
 // applyPreview brings the pane and the toggle button in line with
@@ -517,6 +523,130 @@ function settleSuggestion(entry, state, label, why) {
     done.textContent = state === 'done' ? label : '✓';
     done.title = why;
   }
+}
+
+// Suggestions kept across page switches
+//
+// The copyedit tab is part of the editor pane, and the pane is replaced
+// whenever another page is opened -- which would throw away a run the user
+// has not finished working through, and a run costs a model call. So the
+// suggestions on screen are put aside, per page, as the pane goes, and put
+// back when that page is opened again. sessionStorage carries them, so they
+// also outlive the trip to the config pages and back.
+//
+// What is kept is the list as it stands, Applied and Done included. The
+// offsets in it are brought up to date first: the marks have moved with
+// the text since the run, and the page's saved text is what the offsets
+// will be read against when it comes back.
+
+var COPYEDIT_KEY = 'copyeditSuggestions';
+
+function loadStash() {
+  try {
+    return JSON.parse(sessionStorage.getItem(COPYEDIT_KEY) || '{}') || {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveStash(stash) {
+  try {
+    sessionStorage.setItem(COPYEDIT_KEY, JSON.stringify(stash));
+  } catch (e) {
+    // Out of room or storage off: the suggestions last this pane only.
+  }
+}
+
+function editorPagePath() {
+  var input = document.getElementById('content-path');
+  return input ? input.value : '';
+}
+
+// stashSuggestions puts the suggestions now on screen aside for the page
+// the editor holds, or forgets what was kept for it when the tab shows the
+// task list: going back to the tasks is how a run is put away.
+function stashSuggestions() {
+  var path = editorPagePath();
+  var body = document.getElementById('copyedit-body');
+  if (!path || !body) {
+    return;
+  }
+  var stash = loadStash();
+  if (!body.querySelector('.copyedit-suggestions')) {
+    delete stash[path];
+    saveStash(stash);
+    return;
+  }
+  var ranges = copyeditMarkRanges();
+  var text = editorText();
+  suggestionEntries().forEach(function (li, i) {
+    var at = ranges[i];
+    if (at) {
+      li.dataset.start = at.start;
+      li.dataset.end = at.end;
+      li.dataset.passage = text.slice(at.start, at.end);
+    } else {
+      // Applied, done, or gone: nothing in the text to point at any more.
+      delete li.dataset.start;
+      delete li.dataset.end;
+      delete li.dataset.passage;
+    }
+    li.classList.remove('selected');
+  });
+  stash[path] = body.innerHTML;
+  saveStash(stash);
+}
+
+// restoreSuggestions puts back what was kept for the page now in the
+// editor. The page may have changed in between -- on disk, or by a reload
+// -- so every passage is checked against the text before it is marked: one
+// that has moved is found again, one that is gone is no longer pointed at.
+function restoreSuggestions() {
+  var path = editorPagePath();
+  var body = document.getElementById('copyedit-body');
+  var html = path && body ? loadStash()[path] : null;
+  if (!html) {
+    return;
+  }
+  body.innerHTML = html;
+  var text = editorText();
+  suggestionEntries().forEach(function (li) {
+    if (li.dataset.start === undefined) {
+      return;
+    }
+    var passage = li.dataset.passage;
+    var start = Number(li.dataset.start);
+    if (passage === undefined || text.slice(start, Number(li.dataset.end)) === passage) {
+      return;
+    }
+    var found = text.indexOf(passage);
+    if (found >= 0) {
+      li.dataset.start = found;
+      li.dataset.end = found + passage.length;
+      return;
+    }
+    delete li.dataset.start;
+    delete li.dataset.end;
+    li.classList.add('unlocated');
+    var apply = li.querySelector('.copyedit-apply');
+    if (apply) {
+      apply.disabled = true;
+      apply.title = 'This passage is no longer in the page';
+    }
+  });
+  htmx.process(body); // the Back button is an htmx one
+  readSuggestions();
+}
+
+// forgetSuggestions drops everything kept: another project is open, and
+// its pages are not the ones the kept runs were about.
+function forgetSuggestions() {
+  saveStash({});
+}
+
+function editorText() {
+  var editor = document.querySelector('#content textarea.file-content');
+  return editor ? editor.value : '';
 }
 
 // currentPath is the page open in the editor; applySelection re-highlights
@@ -876,6 +1006,12 @@ document.addEventListener('scroll', function (evt) {
 
 document.body.addEventListener('htmx:beforeSwap', function (evt) {
   var id = evt.detail && evt.detail.target && evt.detail.target.id;
+  if (id === 'content') {
+    stashSuggestions(); // the pane, and the run in its copyedit tab, is about to go
+  }
+  if (id === 'main') {
+    forgetSuggestions();
+  }
   if (id === 'render-log') {
     var out = renderLogOutput();
     renderLogTop = out ? out.scrollTop : 0;
@@ -894,6 +1030,7 @@ document.addEventListener('DOMContentLoaded', function () {
   revealSelection();
   initDivider('preview-divider', 'preview', 'previewWidth', 'right');
   initEditor();
+  restoreSuggestions();
   applyPreview();
   refreshEditor();
   initSearch();
@@ -929,6 +1066,7 @@ document.body.addEventListener('htmx:afterSwap', function (evt) {
   }
   if (id === 'content' || id === 'main') {
     initEditor(); // mount before the preview reads the editor's text
+    restoreSuggestions(); // and before the kept marks are painted into it
     applyPreview();
   }
   if (id === 'copyedit-body') {
@@ -1077,7 +1215,8 @@ document.body.addEventListener('click', function (evt) {
     return;
   }
 
-  // Preview toggle: open or close the preview beside the editor.
+  // Toggle Sidebar: open or close the column beside the editor, preview
+  // and copyedit pane alike.
   if (evt.target.closest('#preview-toggle')) {
     previewOpen = !previewOpen;
     localStorage.setItem(PREVIEW_KEY, previewOpen ? 'open' : 'closed');
@@ -1287,6 +1426,35 @@ document.body.addEventListener('htmx:confirm', function (evt) {
 });
 
 // The same for a reload or a closed tab, which htmx never sees.
+// The Render and Git popups hang below their own buttons. One that would
+// reach past the window's right edge is pulled back to the left by as much,
+// so it opens under its button where it can and inside the window always.
+function fitPopup(details) {
+  var body = details.querySelector(':scope > .render-body, :scope > .git-body');
+  if (!body) {
+    return;
+  }
+  body.style.left = '';
+  var margin = 8;
+  var rect = body.getBoundingClientRect();
+  var over = rect.right - (document.documentElement.clientWidth - margin);
+  if (over > 0) {
+    body.style.left = -Math.min(over, rect.left - margin) + 'px';
+  }
+}
+
+// toggle does not bubble, so it is listened for on the way down.
+document.addEventListener('toggle', function (evt) {
+  var details = evt.target;
+  if (details.open && details.matches && details.matches('details.render, details.git')) {
+    fitPopup(details);
+  }
+}, true);
+
+// Leaving for the config pages reloads the app when coming back; the run in
+// the copyedit tab is kept for that as for any other page switch.
+window.addEventListener('pagehide', stashSuggestions);
+
 window.addEventListener('beforeunload', function (evt) {
   if (saveFailed) {
     evt.preventDefault();

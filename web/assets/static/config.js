@@ -19,6 +19,41 @@ function initPreviewCSSEditor() {
       editor.save();
     });
   }
+  makeResizable(editor);
+}
+
+// The stylesheet editor's frame can be dragged taller or shorter by its
+// corner (app.css). CodeMirror sizes what it draws to the frame it measured,
+// so it is told to measure again as the frame changes, and the height is
+// remembered for the next visit.
+var CSS_EDITOR_HEIGHT_KEY = 'cssEditorHeight';
+
+function makeResizable(editor) {
+  var frame = editor.getWrapperElement();
+  try {
+    var saved = localStorage.getItem(CSS_EDITOR_HEIGHT_KEY);
+    if (saved) {
+      editor.setSize(null, saved);
+    }
+  } catch (e) {
+    // no storage: the stylesheet's default height it is
+  }
+  if (typeof ResizeObserver === 'undefined') {
+    return;
+  }
+  var last = frame.offsetHeight;
+  new ResizeObserver(function () {
+    if (frame.offsetHeight === last) {
+      return;
+    }
+    last = frame.offsetHeight;
+    editor.refresh();
+    try {
+      localStorage.setItem(CSS_EDITOR_HEIGHT_KEY, frame.style.height || last + 'px');
+    } catch (e) {
+      // nothing to remember it in
+    }
+  }).observe(frame);
 }
 
 // A Delete button on a config page removes something the user wrote --
@@ -54,6 +89,20 @@ function showBaseURLFor(select) {
 document.addEventListener('change', function (evt) {
   if (evt.target.classList && evt.target.classList.contains('connection-kind')) {
     showBaseURLFor(evt.target);
+  }
+});
+
+// A preset on the External editor page fills in its command line, to be
+// adjusted and saved like one typed in.
+document.addEventListener('click', function (evt) {
+  var preset = evt.target.closest('.editor-preset');
+  if (!preset) {
+    return;
+  }
+  var input = document.getElementById('editor-command');
+  if (input) {
+    input.value = preset.dataset.command;
+    input.focus();
   }
 });
 

@@ -11,6 +11,7 @@ components:
       3: Parameters
       3-1: Flag --project sets the path to the document tree. Defaults to the current directory
       3-2: Flag --addr sets the listen address. Defaults to "localhost:8199"
+      3-2-1: When the default port is taken -- by another qm web, most likely -- the next port up is tried, and so on, until a free one is found; the address actually served is printed. An address given with --addr is used as given, and a taken one is an error
       3-3: A positional path names the project to open and takes precedence over --project
       4: The command serves until it is interrupted, printing the URL it listens on to stderr
 
@@ -23,7 +24,7 @@ constraints:
       carries the schema it is checked against.
     requirements:
       1: 'The settings are one file: `<user config dir>/qm/config.cue`. Nothing else is written beside it but the preview stylesheets, which are CSS rather than settings'
-      2: The file holds the recently opened projects, the per-project render selection and last open page, the active preview stylesheet, and the copyediting setup
+      2: The file holds the recently opened projects, the per-project render selection and last open page, the active preview stylesheet, the copyediting setup, and the external editor's command line
       3: The file is written for its owner alone, since the copyediting setup holds API keys
       4: 'The file carries its own schema: the CUE definitions the settings are checked against are written into it above them, so the file says what belongs in it and in what shape'
       4-1: The schema is written by the app and rewritten with every save, so the schema in the file is always the one the running binary checks against
@@ -65,7 +66,7 @@ constraints:
       3-1-1: Two buttons below the preview open the page before and the page after the open one, in the order the page tree lists them; each names the page it would open, and the one at either end of the project is shown out of use
       3-1-2: The buttons flip to a page the way a click in the tree opens it, so a page inside a collapsed branch is revealed, the tree's selection follows, and an edit that could not be saved is still asked about before the editor is replaced
       3-2: The preview follows the editor's content as the user types
-      3-3: A toggle button in the content header opens and closes the preview; the choice is remembered across sessions
+      3-3: A Toggle Sidebar button in the content header opens and closes the column beside the editor -- the preview and the copyedit pane alike; the choice is remembered across sessions
       3-4: The preview is rendered in the browser from the embedded marked library; it approximates the page, it is not a Quarto render
       3-4-1: A heading is previewed without its own Pandoc attribute block -- `# PERLE OnCall-Schulungen {.unnumbered .unlisted}` reads "PERLE OnCall-Schulungen" -- because the attributes direct the render and are not part of what the heading says; a heading inside a code block is left as written
       3-4-2: A page written for one target group -- an `_FW` or `_POL` suffix on its file name, or on a folder above it, the deepest name deciding -- is previewed inside that group's Quarto div, so the custom stylesheet tints and marks the whole page the way it does a `::: fw` / `::: pol` block written into the page; this is what the flattener does to such a page's content
@@ -109,11 +110,13 @@ constraints:
       7-1: The Config button opens a full config page whose entries are presented as a list that can grow
       7-2: 'The config list contains an entry named "Preview: Custom CSS" that opens the custom preview stylesheet editor'
       7-3: The custom preview stylesheet editor uses the embedded CodeMirror CSS mode, offers Save, and links back to the config page and the app
+      7-3-1: The stylesheet editor can be dragged taller or shorter by its corner; the height is remembered in the browser for the next visit
       7-4: Custom preview stylesheets are stored beside the settings file as `<user config dir>/qm/custom-css/*.css` -- they are CSS rather than settings, so they stay files of their own; the app ships a baked-in default that is materialized as `custom.css` the first time the app runs with a config directory that does not exist yet, and is never rewritten afterwards
       7-4-1: The editor lets the user add an alternate stylesheet by name and switch which one it is editing once more than one exists
       7-5: The app links the active custom preview stylesheet document-wide after `/static/app.css`, the route serves only the requested stored stylesheet as `text/css`, and an empty or absent stylesheet has no effect
       7-6: The editor tells the user to scope rules with `.markdown-preview` when they should affect only the preview
       7-7: When more than one custom CSS file exists, a dropdown below the Markdown preview lets the user switch which one is active; the choice is remembered across restarts and the preview reloads to apply the newly selected stylesheet
+      7-7-1: The dropdown is shown only while the preview tab is, since it styles the preview and has nothing to do with the copyedit pane
       8: A search field in the top bar searches the text of all pages of the open project
       8-1: The search is answered from a word index that is rebuilt in the background whenever the project changed on disk, so typing never waits for a scan of the project
       8-2: While the index is being built the field says so, and the query repeats itself until the index is ready
@@ -131,11 +134,12 @@ constraints:
       8-8: The hits of the current query are highlighted in the editor as well, and opening a page scrolls its editor to the first hit
       9: The Open field in the top bar offers the projects opened before, most recent first
       9-1: The field itself shows only the last element of the open project's path, since the folder name is what tells one project from another; the full path is its tooltip and is what a submit opens
+      9-1-1: The dropdown lists the projects by their full paths, since two projects may share a folder name and the list has the room the field does not; picking one shows its folder name in the field as usual
       9-2: A path typed or pasted into the field is opened as written, whatever the field showed before
       9-3: The dropdown holds the ten most recently opened projects, no project twice, and is remembered across restarts in the settings file (see SETTINGS)
       9-4: A project opened from the command line counts as opened, so it is in the dropdown of the next session
-      9-5: Opening a project updates the field and its dropdown along with the panes, the render panel, and the Git panel, all of which describe the project just opened
-      10: A Git button to the right of the Render button opens a popup, like the render panel, that shows the changes since the last commit
+      9-5: Opening a project updates the field and its dropdown along with the panes, the render panel, the Git panel, and the Editor button, all of which describe the project just opened
+      10: A Git button to the right of the Render button opens a popup, like the render panel and below its own button as the render panel is, that shows the changes since the last commit
       10-1: The changes are shown in two lists -- staged, which is what the next commit would carry, and not staged, which is what it would leave behind -- each entry with its porcelain status letters and the path; a file changed in both the index and the working tree appears in both lists
       10-2: Each entry can be staged or unstaged individually, and each list as a whole
       10-3: The panel commits the staged changes under a message the user types, and pushes the branch to its remote; a branch that tracks nothing yet is pushed with its upstream set
@@ -154,7 +158,8 @@ constraints:
       10-16: The paths the panel sends back are checked the way the editor's are, against the working tree they belong to, since a diff of an arbitrary path would otherwise read any file on the machine
       10-17: Every operation runs at the top of the working tree, because that is what the paths of a status are relative to and the only directory in which git accepts them back; a project that is a subdirectory of a larger repository is therefore managed like one that is a repository of its own
       10-18: The panel lists the whole working tree's changes, so a file outside the open project is shown and staged like any other; only the editor, which addresses pages by their path inside the project, is not offered such a file
-      10-19: The popup keeps one width and one place whether a diff is open or not -- it is as wide as a diff needs from the start and hangs from the right edge of the top bar -- so opening or closing a diff never moves the paths out from under the pointer, and the popup stays inside the window instead of pushing the page sideways
+      10-19: The popup keeps one width and one place whether a diff is open or not -- it is as wide as a diff needs from the start -- so opening or closing a diff never moves the paths out from under the pointer
+      10-20: A popup of the top bar that would reach past the window's right edge from below its button is moved left by as much, so it stays inside the window instead of pushing the page sideways
       11: A copyediting tool sits beside the editor, in the same column as the Markdown preview
       11-1: The column is tabbed; one tab is the preview, the other the copyedit pane, and the tab last looked at is remembered across page switches and sessions
       11-1-1: Picking a tab while the column is closed opens it, since a tab that answers with nothing only looks broken
@@ -212,6 +217,9 @@ constraints:
       11-11-1: Done is offered on every suggestion, the ones naming no replacement and the ones whose passage was never found included, those being exactly the ones that can only be carried out by hand
       11-11-2: A suggestion marked Done keeps its place in the list as a record of what was seen to, and its mark comes off the text, the passage no longer waiting for anything
       11-12: 'The marks go with the suggestions: the Back button, a page switch, and a run that found nothing all take them off the text'
+      11-12-1: The suggestions a run came back with are kept per page when another page is opened, and are back -- Applied and Done included -- when the page is opened again, since a run costs a model call and the user may not have worked through it; the browser session holds them, so they also outlive the trip to the config pages
+      11-12-2: A kept passage is looked for again when its page comes back, the text having possibly changed in between; one that moved is marked where it now is, and one that is gone is no longer marked or offered to be applied
+      11-12-3: Going Back to the task list forgets the page's kept suggestions, and opening another project forgets all of them
       11-13: The model call runs without the server's lock, because it takes as long as it takes and the tree, the editor, and the autosave must stay answerable while the pane waits
       11-13-1: 'An answer carrying no text says what came back instead of saying only that: the reason the model stopped, and the body the provider sent'
       11-13-2: An error the API puts in a body it answers 200 with is reported as that error, a gateway that could not reach the model behind it saying so this way rather than in the status
@@ -219,3 +227,10 @@ constraints:
       11-13-4: A model that thought its way to the answer and never wrote a final message is taken at its reasoning, the answer asked for often being in there
       11-13-5: A message's content is read whether it comes as a string or as the list of parts the newer shape uses
       11-14: 'What went wrong is shown in the pane where the suggestions would be: no connection configured, the API''s own refusal, an unreadable answer'
+      12: An Editor button in the top bar opens the project in an external editor -- VS Code, VSCodium, or another of the user's choice -- for the files the app does not edit
+      12-1: The editor is started on the project's directory, and on the page open in the app when there is one, so the other editor starts where the user is
+      12-2: 'Which editor, and how it is told what to open, is one command line on a config page of its own, stored in the settings file (see SETTINGS): `{root}` stands for the project directory and `{file}` for the open page; VS Code''s `code {root} --goto {file}` is the default, and the page offers ready-made lines for common editors'
+      12-3: With no page open, the argument naming `{file}` is left out together with an option directly before it, so one command line serves both cases and an editor that cannot open a file inside a folder is configured without `{file}`
+      12-4: The command line is split into arguments before the paths are put in, so a path with spaces stays one argument; quotes keep an argument with spaces together, and a line with an unmatched quote is refused rather than stored
+      12-5: The command is run directly, never through a shell, and the page path the browser sends is checked like the editor's own
+      12-6: An editor that could not be started is reported beside the button, with the reason
