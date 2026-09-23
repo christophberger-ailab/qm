@@ -168,17 +168,15 @@ func TestActiveConnectionIsRememberedAndFallsBack(t *testing.T) {
 	}
 }
 
-func TestEditorPaneCarriesTabsAndCopyeditTab(t *testing.T) {
+func TestEditorPaneCarriesPreviewAndCopyeditPanes(t *testing.T) {
 	srv, _ := configTestServer(t)
 	addPrompt(t, srv, "Passive voice", "Rewrite passive sentences actively.")
 	addConnection(t, srv, "Claude", "anthropic", "https://api.anthropic.com/v1", "claude-sonnet-4-5", "sk-secret")
 
 	body := get(t, srv, "/content?path=index.qmd").Body.String()
 	for _, want := range []string{
-		`data-tab="preview"`,
-		`data-tab="copyedit"`,
-		`<article class="markdown-preview pane-panel" id="preview"`,
-		`id="copyedit"`,
+		`<article class="markdown-preview" id="preview"`,
+		`id="copyedit" data-pane="copyedit"`,
 		`id="copyedit-connection"`,
 		"Claude (claude-sonnet-4-5)",
 		`class="copyedit-task" data-id="p1"`,
@@ -194,9 +192,9 @@ func TestEditorPaneCarriesTabsAndCopyeditTab(t *testing.T) {
 		t.Fatalf("the API key reached the editor pane:\n%s", body)
 	}
 
-	// The app page restores the same pane, so it carries the tab too.
-	if page := get(t, srv, "/").Body.String(); !strings.Contains(page, `data-tab="copyedit"`) {
-		t.Errorf("app page's restored editor has no copyedit tab:\n%s", page)
+	// The app page restores the same editor, so it carries the pane too.
+	if page := get(t, srv, "/").Body.String(); !strings.Contains(page, `id="copyedit" data-pane="copyedit"`) {
+		t.Errorf("app page's restored editor has no copyedit pane:\n%s", page)
 	}
 }
 
@@ -209,7 +207,7 @@ func TestCopyeditPaneWithoutSetupSaysWhereToConfigureIt(t *testing.T) {
 		"No editing tasks yet",
 	} {
 		if !strings.Contains(body, want) {
-			t.Errorf("empty copyedit tab missing %q:\n%s", want, body)
+			t.Errorf("empty copyedit pane missing %q:\n%s", want, body)
 		}
 	}
 }

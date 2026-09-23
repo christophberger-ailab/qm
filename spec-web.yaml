@@ -62,11 +62,11 @@ constraints:
       3-0-2: An `order:` the user typed into the frontmatter themselves is kept over the one the tree wrote; a hand-made edit is never silently dropped
       3-0-3: A change to the file that the tree cannot account for -- an edit made outside the browser -- is answered as a conflict: the save is refused, the file is left as it is, and the user is offered the choice between reloading that version and overwriting it
       3-0-4: A replay is reported to the user, because the editor still shows the text from before it and only a reload brings the pane in line
-      3-1: A Markdown preview of the edited page sits to the right of the editor, separated by a draggable divider
+      3-1: A Markdown preview of the edited page sits to the right of the editor, separated by a draggable divider that resizes it
       3-1-1: Two buttons below the preview open the page before and the page after the open one, in the order the page tree lists them; each names the page it would open, and the one at either end of the project is shown out of use
       3-1-2: The buttons flip to a page the way a click in the tree opens it, so a page inside a collapsed branch is revealed, the tree's selection follows, and an edit that could not be saved is still asked about before the editor is replaced
       3-2: The preview follows the editor's content as the user types
-      3-3: A Toggle Sidebar button in the content header opens and closes the column beside the editor -- the preview and the copyedit pane alike; the choice is remembered across sessions
+      3-3: A Preview button and a Copyedit button in the content header each show and hide their pane beside the editor, independently of the other; each choice is remembered across sessions
       3-4: The preview is rendered in the browser from the embedded marked library; it approximates the page, it is not a Quarto render
       3-4-1: A heading is previewed without its own Pandoc attribute block -- `# PERLE OnCall-Schulungen {.unnumbered .unlisted}` reads "PERLE OnCall-Schulungen" -- because the attributes direct the render and are not part of what the heading says; a heading inside a code block is left as written
       3-4-2: A page written for one target group -- an `_FW` or `_POL` suffix on its file name, or on a folder above it, the deepest name deciding -- is previewed inside that group's Quarto div, so the custom stylesheet tints and marks the whole page the way it does a `::: fw` / `::: pol` block written into the page; this is what the flattener does to such a page's content
@@ -116,7 +116,7 @@ constraints:
       7-5: The app links the active custom preview stylesheet document-wide after `/static/app.css`, the route serves only the requested stored stylesheet as `text/css`, and an empty or absent stylesheet has no effect
       7-6: The editor tells the user to scope rules with `.markdown-preview` when they should affect only the preview
       7-7: When more than one custom CSS file exists, a dropdown below the Markdown preview lets the user switch which one is active; the choice is remembered across restarts and the preview reloads to apply the newly selected stylesheet
-      7-7-1: The dropdown is shown only while the preview tab is, since it styles the preview and has nothing to do with the copyedit pane
+      7-7-1: The dropdown sits in the preview pane and is shown only with it, since it styles the preview and has nothing to do with the copyedit pane
       8: A search field in the top bar searches the text of all pages of the open project
       8-1: The search is answered from a word index that is rebuilt in the background whenever the project changed on disk, so typing never waits for a scan of the project
       8-2: While the index is being built the field says so, and the query repeats itself until the index is ready
@@ -160,9 +160,9 @@ constraints:
       10-18: The panel lists the whole working tree's changes, so a file outside the open project is shown and staged like any other; only the editor, which addresses pages by their path inside the project, is not offered such a file
       10-19: The popup keeps one width and one place whether a diff is open or not -- it is as wide as a diff needs from the start -- so opening or closing a diff never moves the paths out from under the pointer
       10-20: A popup of the top bar that would reach past the window's right edge from below its button is moved left by as much, so it stays inside the window instead of pushing the page sideways
-      11: A copyediting tool sits beside the editor, in the same column as the Markdown preview
-      11-1: The column is tabbed; one tab is the preview, the other the copyedit pane, and the tab last looked at is remembered across page switches and sessions
-      11-1-1: Picking a tab while the column is closed opens it, since a tab that answers with nothing only looks broken
+      11: A copyediting tool sits beside the editor, in a pane of its own next to the Markdown preview
+      11-1: When the preview and the copyedit pane are both shown they stand side by side; dragging one pane's head onto the other swaps their places, and the order is remembered across page switches and sessions
+      11-1-1: Every pane beside the editor has a draggable divider on its left; against the editor it resizes the pane and the editor, between the two panes it trades width between them and leaves the editor as it is; the widths are remembered across page switches and sessions
       11-2: The copyedit pane lists the editing tasks the user configured, by title alone; the prompt itself is the task's tooltip
       11-3: An editing task is a prompt with a title, written on a config page that adds, edits, and deletes them; a task without a title or without a prompt is refused
       11-4: The model an editing task runs on is configured as an API connection -- name, API kind, base URL, model, and key -- on a config page of its own that saves any number of them

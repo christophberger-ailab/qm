@@ -706,7 +706,7 @@ button:hover,
 
 /* The dividers between the panes: a 1px line with a wider grab area. */
 #divider,
-#preview-divider {
+.split-divider {
   flex: none;
   width: 5px;
   cursor: col-resize;
@@ -719,9 +719,13 @@ button:hover,
 
 #divider:hover,
 #divider.dragging,
-#preview-divider:hover,
-#preview-divider.dragging {
+.split-divider:hover,
+.split-divider.dragging {
   background-color: var(--accent);
+}
+
+.split-divider[hidden] {
+  display: none;
 }
 
 #content-pane {
@@ -1245,8 +1249,11 @@ li.CodeMirror-hint-active {
 
 /* Markdown preview */
 
-/* The editor and the preview share the content pane, split by their own
-   divider. */
+/* The editor shares the content pane with the preview and the copyedit
+   pane, each of which can be shown on its own or beside the other. The
+   editor takes what the side panes leave; each side pane has the width its
+   divider was dragged to (app.js), and the CSS order app.js gives it and
+   its divider says which side it stands on. */
 .editor-split {
   display: flex;
   flex: 1;
@@ -1254,16 +1261,47 @@ li.CodeMirror-hint-active {
 }
 
 .editor-split .edit-form {
+  order: 0;
   min-width: 12rem;
 }
 
-.preview-column {
+.side-pane {
   flex: none;
-  width: 50%;
+  width: 35%;
   min-width: 12rem;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.side-pane[hidden] {
+  display: none;
+}
+
+/* A side pane's head names it and is what is dragged to swap the two. */
+.side-pane-head {
+  flex: none;
+  padding: 0.25rem 0.2rem 0.3rem 1rem;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: grab;
+  user-select: none;
+}
+
+.side-pane-head::before {
+  content: "⠿ ";
+}
+
+.side-pane.pane-dragging {
+  opacity: 0.5;
+}
+
+.side-pane.pane-drop-target {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
 }
 
 /* The strip below the preview: what pages through the book on the left,
@@ -1309,46 +1347,15 @@ li.CodeMirror-hint-active {
   line-height: 1.55;
 }
 
-/* The tabs of the column beside the editor: the preview, and the
-   copyediting tool. */
-
-.pane-tabs {
-  display: flex;
-  gap: 0.25rem;
-  flex: none;
-  padding: 0 0.2rem 0.3rem 1rem;
-  border-bottom: 1px solid var(--border);
-}
-
-.pane-tab {
-  font-size: 0.85rem;
-  background: none;
-  border: 1px solid transparent;
-}
-
-.pane-tab.active {
-  background: var(--accent-bg);
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-/* Whichever panel is not the active tab's is hidden outright, so the two
-   never share the space the column has. */
-.pane-panel[hidden] {
-  display: none;
-}
-
-/* Copyedit tab */
+/* Copyedit pane */
 
 .copyedit {
-  flex: 1;
-  min-width: 0;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  padding: 0.5rem 0.2rem 0 1rem;
   font-size: 0.9rem;
+}
+
+.copyedit > :not(.side-pane-head) {
+  padding: 0 0.2rem 0 1rem;
 }
 
 .copyedit-head {
@@ -1586,14 +1593,8 @@ li.CodeMirror-hint-active {
   border-bottom-color: var(--warn);
 }
 
-/* Closing the preview leaves the editor the whole pane. */
-#content-pane.preview-off .preview-column,
-#content-pane.preview-off #preview-divider {
-  display: none;
-}
-
-/* The toggles carry their state: pressed means preview open, vim on. */
-.preview-toggle[aria-pressed="true"],
+/* The toggles carry their state: pressed means the pane is shown, vim on. */
+.pane-toggle[aria-pressed="true"],
 .vim-toggle[aria-pressed="true"] {
   background: var(--accent-bg);
   border-color: var(--accent);

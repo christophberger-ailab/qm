@@ -215,71 +215,232 @@ function initDivider(dividerID, paneID, key, side) {
   });
 }
 
-// Markdown preview
+// The panes beside the editor
 //
-// The preview lives to the right of the editor and is rendered in the
-// browser from the textarea's text (see preview.js), so it follows typing
-// without a round trip. Whether it is open is kept in localStorage: the
-// editor pane is re-rendered on every page switch, and the choice should
-// outlive that -- and the session.
+// The Markdown preview and the copyediting tool both work on the text the
+// editor holds. Each is shown or hidden on its own; when both are, they
+// stand side by side, in the order the user dragged them into. Which are
+// shown, their order, and their widths are kept in localStorage: the editor
+// pane is re-rendered on every page switch, and the layout should outlive
+// that -- and the session.
+//
+// The panes and their dividers never move in the DOM; the CSS order
+// property places them. Each pane's divider sits on its left and resizes
+// it against whatever stands left of it: the editor, or the other pane.
 
-var PREVIEW_KEY = 'previewOpen';
+var SIDE_PANES = {
+  preview: { pane: 'preview-pane', divider: 'preview-divider', open: 'previewOpen', width: 'previewPaneWidth' },
+  copyedit: { pane: 'copyedit', divider: 'copyedit-divider', open: 'copyeditOpen', width: 'copyeditPaneWidth' }
+};
 
-var previewOpen = localStorage.getItem(PREVIEW_KEY) !== 'closed';
+var PANE_ORDER_KEY = 'paneOrder';
+
+var paneOpen = {
+  preview: localStorage.getItem(SIDE_PANES.preview.open) !== 'closed',
+  // Before the panes were separate, the copyedit pane was a tab beside the
+  // preview's; one left up is taken as the wish to see it.
+  copyedit: localStorage.getItem(SIDE_PANES.copyedit.open) === null
+    ? localStorage.getItem('paneTab') === 'copyedit'
+    : localStorage.getItem(SIDE_PANES.copyedit.open) === 'open'
+};
+
+var paneOrder = localStorage.getItem(PANE_ORDER_KEY) === 'copyedit,preview'
+  ? ['copyedit', 'preview'] : ['preview', 'copyedit'];
 
 var previewTimer = null;
 
-// The column beside the editor is tabbed: the Markdown preview, and the
-// copyediting tool. Both work on the text the editor holds, so they share
-// the column rather than crowding each other out of it. Which tab was
-// last looked at outlives the page switches that re-render the pane, and
-// the session, the way the preview's own open/closed choice does.
-
-var TAB_KEY = 'paneTab';
-
-var activeTab = localStorage.getItem(TAB_KEY) === 'copyedit' ? 'copyedit' : 'preview';
-
-// applyTabs shows the panel of the active tab and marks its button. It
-// runs wherever applyPreview does: the tab bar is part of the editor pane
-// and is re-rendered with it.
-function applyTabs() {
-  document.querySelectorAll('.pane-tab').forEach(function (button) {
-    var on = button.dataset.tab === activeTab;
-    button.classList.toggle('active', on);
-    button.setAttribute('aria-selected', on ? 'true' : 'false');
-  });
-  ['preview', 'copyedit'].forEach(function (name) {
-    var panel = document.getElementById(name);
-    if (panel) {
-      panel.hidden = name !== activeTab;
-    }
-  });
-  // The stylesheet dropdown styles the preview, so it goes with it.
-  var css = document.getElementById('preview-css-select');
-  if (css) {
-    css.hidden = activeTab !== 'preview';
-  }
+function sidePane(name) {
+  return document.getElementById(SIDE_PANES[name].pane);
 }
 
-// applyPreview brings the pane and the toggle button in line with
-// previewOpen. It runs after every swap that replaces the editor, both on
+function visiblePanes() {
+  return paneOrder.filter(function (name) { return paneOpen[name]; });
+}
+
+// paneWidth is the saved width of a pane, in percent of the split.
+function paneWidth(name) {
+  var saved = parseFloat(localStorage.getItem(SIDE_PANES[name].width));
+  return saved > 0 ? saved : 0;
+}
+
+// applyLayout shows the panes that are open, in their order and at their
+// widths, and marks the toggle buttons to match.
+function applyLayout() {
+  var visible = visiblePanes();
+  // Widths saved while one pane stood alone may not leave the editor room
+  // once both are shown; they are scaled down together rather than
+  // crowding it out.
+  var widths = {};
+  var total = 0;
+  visible.forEach(function (name) {
+    widths[name] = paneWidth(name) || (visible.length > 1 ? 30 : 45);
+    total += widths[name];
+  });
+  var scale = total > 70 ? 70 / total : 1;
+  paneOrder.forEach(function (name, i) {
+    var pane = sidePane(name);
+    var divider = document.getElementById(SIDE_PANES[name].divider);
+    var open = paneOpen[name];
+    if (pane) {
+      pane.hidden = !open;
+      pane.style.order = String(2 * i + 2);
+      if (open) {
+        pane.style.width = (widths[name] * scale) + '%';
+      }
+    }
+    if (divider) {
+      divider.hidden = !open;
+      divider.style.order = String(2 * i + 1);
+    }
+  });
+  document.querySelectorAll('.pane-toggle').forEach(function (button) {
+    button.setAttribute('aria-pressed', paneOpen[button.dataset.pane] ? 'true' : 'false');
+  });
+}
+
+// applyPreview brings the panes and their toggle buttons in line with the
+// layout. It runs after every swap that replaces the editor, both on
 // afterSwap (so nothing flashes) and on afterSettle (which restores the
-// swapped-in button's attributes, including aria-pressed).
+// swapped-in elements' attributes, including style and aria-pressed).
 function applyPreview() {
-  var pane = document.getElementById('content-pane');
-  if (pane) {
-    pane.classList.toggle('preview-off', !previewOpen);
-  }
-  var button = document.getElementById('preview-toggle');
-  if (button) {
-    button.setAttribute('aria-pressed', previewOpen ? 'true' : 'false');
-  }
-  applyTabs();
+  applyLayout();
   applyTaskSelection(); // the pane comes with the editor, ticks and all
-  if (previewOpen && activeTab === 'preview') {
+  if (paneOpen.preview) {
     updatePreview();
   }
 }
+
+// togglePane shows or hides one of the panes beside the editor.
+function togglePane(name) {
+  if (!SIDE_PANES[name]) {
+    return;
+  }
+  paneOpen[name] = !paneOpen[name];
+  localStorage.setItem(SIDE_PANES[name].open, paneOpen[name] ? 'open' : 'closed');
+  applyPreview();
+  refreshEditor(); // the editor just gained or lost room
+}
+
+// Dragging a pane's divider resizes the pane against its left neighbour:
+// against the editor, which takes up the difference, or against the other
+// pane, the two then trading width while the editor keeps its own.
+document.addEventListener('pointerdown', function (evt) {
+  var divider = evt.target.closest && evt.target.closest('.split-divider');
+  if (!divider || evt.button !== 0) {
+    return;
+  }
+  var name = divider.dataset.pane;
+  var pane = sidePane(name);
+  var split = document.getElementById('editor-split');
+  if (!pane || !split) {
+    return;
+  }
+  var visible = visiblePanes();
+  var at = visible.indexOf(name);
+  var leftName = at > 0 ? visible[at - 1] : null;
+  var left = leftName ? sidePane(leftName) : split.querySelector('.edit-form');
+  if (!left) {
+    return;
+  }
+
+  evt.preventDefault();
+  divider.setPointerCapture(evt.pointerId);
+  divider.classList.add('dragging');
+
+  var splitWidth = split.getBoundingClientRect().width;
+  var startX = evt.clientX;
+  var startPane = pane.getBoundingClientRect().width;
+  var startLeft = left.getBoundingClientRect().width;
+  var minPane = parseFloat(getComputedStyle(pane).minWidth) || 0;
+  var minLeft = parseFloat(getComputedStyle(left).minWidth) || 0;
+
+  function onMove(e) {
+    var dx = e.clientX - startX;
+    var total = startLeft + startPane;
+    var leftWidth = Math.max(minLeft, Math.min(startLeft + dx, total - minPane));
+    pane.style.width = ((total - leftWidth) / splitWidth * 100) + '%';
+    if (leftName) {
+      left.style.width = (leftWidth / splitWidth * 100) + '%';
+    }
+    refreshEditor(); // CodeMirror measures its own width
+  }
+
+  function onUp() {
+    divider.removeEventListener('pointermove', onMove);
+    divider.removeEventListener('pointerup', onUp);
+    divider.removeEventListener('pointercancel', onUp);
+    divider.classList.remove('dragging');
+    localStorage.setItem(SIDE_PANES[name].width, parseFloat(pane.style.width));
+    if (leftName) {
+      localStorage.setItem(SIDE_PANES[leftName].width, parseFloat(left.style.width));
+    }
+  }
+
+  divider.addEventListener('pointermove', onMove);
+  divider.addEventListener('pointerup', onUp);
+  divider.addEventListener('pointercancel', onUp);
+});
+
+// Dragging one pane's head onto the other pane swaps the two.
+var draggedPane = null;
+
+function clearPaneDrag() {
+  document.querySelectorAll('.side-pane.pane-dragging, .side-pane.pane-drop-target').forEach(function (el) {
+    el.classList.remove('pane-dragging', 'pane-drop-target');
+  });
+}
+
+document.addEventListener('dragstart', function (evt) {
+  var head = evt.target.closest && evt.target.closest('.side-pane-head');
+  if (!head) {
+    return;
+  }
+  var pane = head.closest('.side-pane');
+  draggedPane = pane.dataset.pane;
+  evt.dataTransfer.effectAllowed = 'move';
+  // A type of its own, so the editor does not take the drop for text.
+  evt.dataTransfer.setData('application/x-qm-pane', draggedPane);
+  pane.classList.add('pane-dragging');
+});
+
+function paneDropTarget(evt) {
+  var target = draggedPane && evt.target.closest && evt.target.closest('.side-pane');
+  return target && target.dataset.pane !== draggedPane ? target : null;
+}
+
+document.addEventListener('dragover', function (evt) {
+  var target = paneDropTarget(evt);
+  if (target) {
+    evt.preventDefault();
+    evt.dataTransfer.dropEffect = 'move';
+    target.classList.add('pane-drop-target');
+  }
+});
+
+document.addEventListener('dragleave', function (evt) {
+  var target = paneDropTarget(evt);
+  if (target && !target.contains(evt.relatedTarget)) {
+    target.classList.remove('pane-drop-target');
+  }
+});
+
+document.addEventListener('drop', function (evt) {
+  if (!paneDropTarget(evt)) {
+    return;
+  }
+  evt.preventDefault();
+  paneOrder.reverse();
+  localStorage.setItem(PANE_ORDER_KEY, paneOrder.join(','));
+  draggedPane = null;
+  clearPaneDrag();
+  applyLayout();
+  refreshEditor();
+});
+
+document.addEventListener('dragend', function () {
+  draggedPane = null;
+  clearPaneDrag();
+});
 
 // updatePreview re-renders the preview from what the editor currently holds.
 // The page's path travels with the render: the preview resolves the page's
@@ -296,7 +457,7 @@ function updatePreview() {
 
 // schedulePreview coalesces the keystrokes of fast typing into one render.
 function schedulePreview() {
-  if (!previewOpen || activeTab !== 'preview') {
+  if (!paneOpen.preview) {
     return;
   }
   clearTimeout(previewTimer);
@@ -337,7 +498,7 @@ document.body.addEventListener('change', function (evt) {
 
 // Copyediting
 //
-// The copyedit tab lists the editing tasks the user configured. Picking
+// The copyedit pane lists the editing tasks the user configured. Picking
 // one posts the page the editor holds to the selected model (htmx does
 // that itself) and swaps the list for the suggestions it answered with.
 // Each suggestion carries the place in the page it is about, and those
@@ -345,7 +506,7 @@ document.body.addEventListener('change', function (evt) {
 // is about. The Back button asks for the task list again, which clears
 // the marks along with the suggestions.
 
-// The dropdown in the copyedit tab's head picks the connection a run goes
+// The dropdown in the copyedit pane's head picks the connection a run goes
 // to. The choice is remembered server-side, beside the connections
 // themselves, so it survives a restart and a fresh /open.
 document.body.addEventListener('change', function (evt) {
@@ -527,7 +688,7 @@ function settleSuggestion(entry, state, label, why) {
 
 // Suggestions kept across page switches
 //
-// The copyedit tab is part of the editor pane, and the pane is replaced
+// The copyedit pane is part of the editor pane, and the pane is replaced
 // whenever another page is opened -- which would throw away a run the user
 // has not finished working through, and a run costs a model call. So the
 // suggestions on screen are put aside, per page, as the pane goes, and put
@@ -563,7 +724,7 @@ function editorPagePath() {
 }
 
 // stashSuggestions puts the suggestions now on screen aside for the page
-// the editor holds, or forgets what was kept for it when the tab shows the
+// the editor holds, or forgets what was kept for it when the pane shows the
 // task list: going back to the tasks is how a run is put away.
 function stashSuggestions() {
   var path = editorPagePath();
@@ -1015,7 +1176,7 @@ document.addEventListener('scroll', function (evt) {
 document.body.addEventListener('htmx:beforeSwap', function (evt) {
   var id = evt.detail && evt.detail.target && evt.detail.target.id;
   if (id === 'content') {
-    stashSuggestions(); // the pane, and the run in its copyedit tab, is about to go
+    stashSuggestions(); // the pane, and the run in its copyedit pane, is about to go
   }
   if (id === 'main') {
     forgetSuggestions();
@@ -1036,7 +1197,6 @@ document.addEventListener('DOMContentLoaded', function () {
   syncCurrentPath();
   applySelection();
   revealSelection();
-  initDivider('preview-divider', 'preview', 'previewWidth', 'right');
   initEditor();
   restoreSuggestions();
   applyPreview();
@@ -1116,10 +1276,9 @@ document.body.addEventListener('htmx:afterSettle', function (evt) {
   if (id === 'main') {
     initDivider('divider', 'tree-pane', 'treePaneWidth', 'left');
   }
-  if (id === 'content' || id === 'main') { // the editor/preview split comes with the editor
-    initDivider('preview-divider', 'preview', 'previewWidth', 'right');
+  if (id === 'content' || id === 'main') { // the editor/pane split comes with the editor
     applyPreview();
-    refreshEditor(); // the saved pane width has just been applied
+    refreshEditor(); // the saved pane widths have just been applied
   }
 });
 
@@ -1177,23 +1336,6 @@ document.body.addEventListener('click', function (evt) {
     return;
   }
 
-  // A tab beside the editor: the preview, or the copyediting tool. The
-  // tabs share the column the preview toggle opens and closes, so picking
-  // one while it is closed opens it -- a tab that answers with nothing
-  // would only look broken.
-  var tab = evt.target.closest('.pane-tab');
-  if (tab) {
-    activeTab = tab.dataset.tab === 'copyedit' ? 'copyedit' : 'preview';
-    localStorage.setItem(TAB_KEY, activeTab);
-    if (!previewOpen) {
-      previewOpen = true;
-      localStorage.setItem(PREVIEW_KEY, 'open');
-    }
-    applyPreview();
-    refreshEditor(); // the editor may just have lost half the pane
-    return;
-  }
-
   // Apply and Done sit inside the entry, so they are asked about before
   // the entry's own click.
   var apply = evt.target.closest('.copyedit-apply');
@@ -1223,13 +1365,10 @@ document.body.addEventListener('click', function (evt) {
     return;
   }
 
-  // Toggle Sidebar: open or close the column beside the editor, preview
-  // and copyedit pane alike.
-  if (evt.target.closest('#preview-toggle')) {
-    previewOpen = !previewOpen;
-    localStorage.setItem(PREVIEW_KEY, previewOpen ? 'open' : 'closed');
-    applyPreview();
-    refreshEditor(); // the editor just gained or lost half the pane
+  // The Preview and Copyedit buttons: show or hide that pane.
+  var toggle = evt.target.closest('.pane-toggle');
+  if (toggle) {
+    togglePane(toggle.dataset.pane);
     return;
   }
 
@@ -1460,7 +1599,7 @@ document.addEventListener('toggle', function (evt) {
 }, true);
 
 // Leaving for the config pages reloads the app when coming back; the run in
-// the copyedit tab is kept for that as for any other page switch.
+// the copyedit pane is kept for that as for any other page switch.
 window.addEventListener('pagehide', stashSuggestions);
 
 window.addEventListener('beforeunload', function (evt) {
