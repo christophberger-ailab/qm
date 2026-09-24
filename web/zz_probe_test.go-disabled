@@ -1,3 +1,5 @@
+// Disabled because GH actions have no Copilot CLI installed
+
 package web
 
 import (
