@@ -23,7 +23,7 @@ constraints:
   PROCESS:
     description: >
       The render flow is shared with `qm web` (see spec-web.yaml); both drive
-      internal/bookrender. `qm render` is a matrix driver and nothing more:
+      internal/bookrender. The default Quarto backend is a matrix driver:
       the artefact is built and named by the project's own Quarto hooks
       (`qm prepare`, `qm finalize`), so a plain
       `quarto render --profile topic-x,format-y,audience-z` produces exactly
@@ -40,3 +40,16 @@ constraints:
       3: With --clean, each selected format's output directory is emptied once, before the first render
       4: Progress, the quarto invocations, and their output are written to stdout
       5: A failing combination does not stop the remaining ones; the command reports how many failed and exits with an error
+
+  NATIVE:
+    description: Optional Go PDF backend with Pandoc DOCX and full-page PNG covers
+    requirements:
+      1: 'A format profile with qm: renderer: go selects the native pipeline in qm render and qm web; absent or quarto uses the original pipeline'
+      2: 'Native profiles declare PDF and DOCX, an output directory, and an interpolated output filename stem'
+      3: Quarto is invoked once with --to docx and a final embedded Lua filter that captures the filtered Pandoc JSON; LaTeX and Typst are never invoked
+      4: 'A topic may declare qm: cover: as a project-relative PNG path supporting profile variables; missing or invalid covers fail before rendering'
+      5: Go generates an A4 PDF with embedded fonts, pagination, contents, links, headings, lists, ordinary tables and local raster images
+      6: Both outputs prepend a full-page PNG with preserved aspect ratio and centered crop-to-fill
+      7: DOCX cover uses its own zero-margin section and page-relative image; original body section properties, styles, headers and footers are preserved
+      8: Unsupported PDF constructs produce actionable errors rather than silently discarding content
+      9: Dry runs print the selected pipeline and create no build artifacts; failed native runs retain diagnostic intermediates

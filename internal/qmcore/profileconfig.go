@@ -37,6 +37,10 @@ import (
 
 // QM is the `qm:` section of a profile.
 type QM struct {
+	// Renderer "go" uses Pandoc DOCX plus the native Go PDF/cover backend.
+	Renderer string `yaml:"renderer"`
+	// Cover is a project-relative PNG, with profile variable interpolation.
+	Cover string `yaml:"cover"`
 	// Folder is the content folder a topic profile renders (topic axis).
 	// Empty means "same name as the topic", e.g. topic-calltaker →
 	// calltaker/. The topics `all` and `none` render no folder at all: they
@@ -90,6 +94,7 @@ type Profile struct {
 	Path string
 
 	Vars    map[string]string `yaml:"_quarto-vars"`
+	Format  OutputFormats     `yaml:"format"`
 	QM      QM                `yaml:"qm"`
 	Project struct {
 		OutputDir string `yaml:"output-dir"`
@@ -99,6 +104,39 @@ type Profile struct {
 		OutputFile string `yaml:"output-file"`
 		Chapters   []any  `yaml:"chapters"`
 	} `yaml:"book"`
+}
+
+// OutputFormats accepts both Quarto's scalar shorthand and format maps.
+type OutputFormats map[string]struct {
+	TOC bool `yaml:"toc"`
+}
+
+func (f *OutputFormats) UnmarshalYAML(node *yaml.Node) error {
+	*f = OutputFormats{}
+	if node.Kind == yaml.ScalarNode {
+		if node.Value != "" {
+			(*f)[node.Value] = struct {
+				TOC bool `yaml:"toc"`
+			}{}
+		}
+		return nil
+	}
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("format must be a name or mapping")
+	}
+	for i := 0; i < len(node.Content); i += 2 {
+		var options struct {
+			TOC bool `yaml:"toc"`
+		}
+		value := node.Content[i+1]
+		if value.Kind == yaml.MappingNode {
+			if err := value.Decode(&options); err != nil {
+				return err
+			}
+		}
+		(*f)[node.Content[i].Value] = options
+	}
+	return nil
 }
 
 // FormatOutputDir returns the `project: output-dir` a format profile

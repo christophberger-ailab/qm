@@ -83,10 +83,74 @@ qm render --audience pol --clean       # the pol variants, from scratch
 qm render --dry-run                    # print the quarto invocations, run none
 ```
 
-Each combination becomes one
+By default, each combination becomes one
 `quarto render --profile topic-<t>,format-<f>,audience-<a> --no-clean`, run in
 the project root. A failing combination does not stop the others; the command
 reports how many failed and exits non-zero.
+
+### PDF and DOCX without LaTeX or Typst
+
+Enable the Go-backed document pipeline in a **format profile**:
+
+```yaml
+qm:
+  renderer: go
+project:
+  type: book
+  output-dir: _output/handout
+book:
+  output-file: "{{< var topic >}}{{< var audience >}}"
+format:
+  pdf:
+    toc: true
+  docx:
+    toc: true
+    reference-doc: assets/templates/reference.docx
+```
+
+Set the optional cover in the **topic profile**. Paths are project-relative
+and support the same profile variables as output filenames:
+
+```yaml
+qm:
+  cover: "assets/templates/coverpage_schulung_calltaker{{< var audience-template >}}.png"
+```
+
+Run `qm render calltaker --format handout --audience pol`, or use **qm web**.
+Both use the same pipeline:
+
+1. Quarto renders **only DOCX**, preserving project hooks, includes, variables,
+   audience filters, and the existing Word reference styles. An embedded Lua
+   filter captures the processed Pandoc JSON during that same invocation.
+2. Go lays out an A4 PDF using `signintech/gopdf`, with embedded Go fonts,
+   headings, paragraphs, lists, ordinary tables, raster images, links,
+   bookmarks, page numbers, and a linked contents list.
+3. Go prepends the PNG to the DOCX in a dedicated zero-margin section. The image
+   is anchored at the page origin and fills the page edge to edge. The body's
+   original section properties, styles, headers, and footers are preserved.
+
+Both covers preserve the image's aspect ratio and **crop centrally to fill**
+the page; use artwork matching the page ratio to avoid cropping. PDF is A4;
+the DOCX cover uses the document's page dimensions. No header/footer is added
+to the cover. Omit `qm: cover:` to render without one.
+
+This backend requires both `pdf` and `docx` in the format profile and a filename
+stem in `book: output-file:` or `qm: output-file:`. The backend uses
+Quarto/Pandoc; neither LaTeX nor Typst is invoked. Content-specific Quarto
+dependencies still apply (for example, Chrome for rendering Mermaid diagrams).
+Use **qm render / qm web** for this pipeline: a direct `quarto render` still
+uses Quarto's configured writers. Set `qm: renderer: quarto` to select the
+original pipeline explicitly.
+
+The PDF backend has its own layout; it does not reproduce the Word template
+or interpret LaTeX/CSS styling. Callout content is retained with simplified
+formatting. Advanced constructs such as mathematical typesetting, footnotes,
+merged table cells, and images inside table cells currently report an error
+rather than silently losing content. Failed runs retain their captured AST
+under `_build/native-*/` for diagnosis. Word computes its DOCX table of contents
+when fields are updated.
+
+Library research and rationale: [docs/native-rendering.md](docs/native-rendering.md).
 
 `--clean` empties each selected format's output directory once, before the
 first render. It is a `qm` flag rather than Quarto's own cleaning because

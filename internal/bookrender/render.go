@@ -180,7 +180,7 @@ func Run(o Options, log Logf) error {
 	}
 	failed := 0
 	for _, sel := range o.Selections {
-		if err := quarto(o.Root, sel, o.DryRun, log); err != nil {
+		if err := renderSelection(o.Root, sel, o.DryRun, log); err != nil {
 			log("%s: %v", sel, err)
 			failed++
 		}

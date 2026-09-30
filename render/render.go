@@ -50,7 +50,7 @@ func Register(projectFlag *string) {
 	cleanFlag = flag.Bool("clean", false,
 		"Empty the output directories of the selected formats first")
 	dryRunFlag = flag.Bool("dry-run", false,
-		"Print the quarto invocations without running them")
+		"Print the render pipeline without running it")
 
 	start.Add(&start.Command{
 		Name:  "render",
