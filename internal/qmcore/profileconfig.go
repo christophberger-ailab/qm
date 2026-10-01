@@ -37,7 +37,7 @@ import (
 
 // QM is the `qm:` section of a profile.
 type QM struct {
-	// Renderer "go" uses Pandoc DOCX plus the native Go PDF/cover backend.
+	// Renderer "qm" uses Pandoc DOCX plus the native Go PDF/cover backend.
 	Renderer string `yaml:"renderer"`
 	// Cover is a project-relative PNG, with profile variable interpolation.
 	Cover string `yaml:"cover"`

@@ -17,7 +17,7 @@ import (
 func TestNativeDryRunAndCoverValidation(t *testing.T) {
 	root := project(t)
 	format := filepath.Join(root, "_quarto-format-handout.yml")
-	os.WriteFile(format, []byte("project:\n  output-dir: _output/handout\nbook:\n  output-file: book\nqm:\n  renderer: go\nformat:\n  pdf: default\n  docx: default\n"), 0644)
+	os.WriteFile(format, []byte("project:\n  output-dir: _output/handout\nbook:\n  output-file: book\nqm:\n  renderer: qm\nformat:\n  pdf: default\n  docx: default\n"), 0644)
 	callLog := stubQuarto(t, "exit 99\n")
 	if err := renderSelection(root, sel("book", "handout", "std"), true, func(string, ...any) {}); err != nil {
 		t.Fatal(err)
@@ -47,7 +47,7 @@ func TestNativeQuartoIntegration(t *testing.T) {
 	}
 	root := project(t)
 	files := map[string]string{
-		"_quarto-format-handout.yml": "project:\n  type: book\n  output-dir: _output/handout\nbook:\n  output-file: book\nqm:\n  renderer: go\nformat:\n  pdf:\n    toc: true\n  docx:\n    toc: true\n",
+		"_quarto-format-handout.yml": "project:\n  type: book\n  output-dir: _output/handout\nbook:\n  output-file: book\nqm:\n  renderer: qm\nformat:\n  pdf:\n    toc: true\n  docx:\n    toc: true\n",
 		"_quarto-topic-book.yml":     "book:\n  title: Integration\nqm:\n  cover: cover.png\n",
 		"_quarto.yml":                "project:\n  type: book\nbook:\n  chapters: [index.qmd]\nfilters: [audience.lua]\n",
 		"audience.lua":               "function Div(el) if el.classes:includes('private') then return {} end end\n",
