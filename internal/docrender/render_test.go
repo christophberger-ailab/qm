@@ -72,10 +72,15 @@ func TestCoverDOCXPreservesBodyAndPackage(t *testing.T) {
 	if !strings.Contains(doc, body) {
 		t.Fatal("original body/section changed")
 	}
-	for _, want := range []string{`relativeFrom="page"`, `<wp:posOffset>0</wp:posOffset>`, `cx="7560310" cy="10692130"`, `<w:pgMar w:top="0"`, `w:val="nextPage"`, `<a:srcRect l="`} {
+	// 200x100 cover on A4 (7560310x10692130 EMU): fit to width, no crop,
+	// anchored bottom-right, so the free space is above the image.
+	for _, want := range []string{`relativeFrom="page"`, `<wp:posOffset>0</wp:posOffset>`, `<wp:posOffset>6911975</wp:posOffset>`, `cx="7560310" cy="3780155"`, `<w:pgMar w:top="0"`, `w:val="nextPage"`} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("missing %s", want)
 		}
+	}
+	if strings.Contains(doc, "srcRect") {
+		t.Error("cover must not be cropped")
 	}
 	for _, name := range []string{"word/document.xml", "word/_rels/document.xml.rels", "[Content_Types].xml"} {
 		d := xml.NewDecoder(strings.NewReader(got[name]))

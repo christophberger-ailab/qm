@@ -61,7 +61,9 @@ func PDF(path string, doc *Document, o Options) error {
 		}
 		scale := math.Max(pageW/float64(c.Width), pageH/float64(c.Height))
 		iw, ih := float64(c.Width)*scale, float64(c.Height)*scale
-		if err = p.Image(o.Cover, (pageW-iw)/2, (pageH-ih)/2, &gopdf.Rect{W: iw, H: ih}); err != nil {
+		// Anchor bottom-right: the brand graphic ends at those edges, so any
+		// overflow from cover-scaling is cropped at the top/left instead.
+		if err = p.Image(o.Cover, pageW-iw, pageH-ih, &gopdf.Rect{W: iw, H: ih}); err != nil {
 			return err
 		}
 	}

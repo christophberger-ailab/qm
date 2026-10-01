@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -80,16 +81,18 @@ func CoverDOCX(path, cover string) error {
 	if err != nil {
 		return err
 	}
-	cropX, cropY := 0, 0
-	if float64(c.Width)/float64(c.Height) > float64(w)/float64(h) {
-		cropX = int((1 - float64(w)*float64(c.Height)/(float64(h)*float64(c.Width))) * 50000)
-	} else {
-		cropY = int((1 - float64(h)*float64(c.Width)/(float64(w)*float64(c.Height))) * 50000)
-	}
+	// Shrink to fit (never crop), preserving the aspect ratio. The image is
+	// anchored at the bottom-right page corner, where the brand graphic ends;
+	// any leftover space appears at the top or left. Units: EMU (1 twip = 635).
+	pageCX, pageCY := int64(w)*635, int64(h)*635
+	scale := math.Min(float64(pageCX)/float64(c.Width), float64(pageCY)/float64(c.Height))
+	cx := min(int64(math.Round(float64(c.Width)*scale)), pageCX)
+	cy := min(int64(math.Round(float64(c.Height)*scale)), pageCY)
+	offX, offY := pageCX-cx, pageCY-cy
 	// Local namespaces avoid assumptions about the document root's prefixes.
 	// The cover section has no header/footer references; the first section
 	// consequently has none. The following original section keeps its own.
-	fragment := fmt.Sprintf(`<w:p xmlns:w="%s" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:pPr><w:spacing w:before="0" w:after="0"/><w:sectPr><w:type w:val="nextPage"/><w:pgSz w:w="%d" w:h="%d"/><w:pgMar w:top="0" w:right="0" w:bottom="0" w:left="0" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr></w:pPr><w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="1" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="%d" cy="%d"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="2147483646" name="qm cover"/><wp:cNvGraphicFramePr/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="Cover"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="%s"/><a:srcRect l="%d" r="%d" t="%d" b="%d"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="%d" cy="%d"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r></w:p>`, wordNS, w, h, w*635, h*635, id, cropX, cropX, cropY, cropY, w*635, h*635)
+	fragment := fmt.Sprintf(`<w:p xmlns:w="%s" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:pPr><w:spacing w:before="0" w:after="0"/><w:sectPr><w:type w:val="nextPage"/><w:pgSz w:w="%d" w:h="%d"/><w:pgMar w:top="0" w:right="0" w:bottom="0" w:left="0" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr></w:pPr><w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="1" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>%d</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>%d</wp:posOffset></wp:positionV><wp:extent cx="%d" cy="%d"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="2147483646" name="qm cover"/><wp:cNvGraphicFramePr/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="Cover"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="%s"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="%d" cy="%d"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r></w:p>`, wordNS, w, h, offX, offY, cx, cy, id, cx, cy)
 	files["word/document.xml"] = append(append(append([]byte{}, doc[:bodyStart]...), []byte(fragment)...), doc[bodyStart:]...)
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".qm-cover-*.docx")
 	if err != nil {
