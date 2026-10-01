@@ -25,7 +25,7 @@ func renderSelection(root string, sel qmcore.Selection, dry bool, log Logf) erro
 	switch ps.Format.QM.Renderer {
 	case "", "quarto":
 		return quarto(root, sel, dry, log)
-	case "go":
+	case "qm":
 	default:
 		return fmt.Errorf("unknown qm renderer %q", ps.Format.QM.Renderer)
 	}
