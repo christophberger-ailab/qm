@@ -154,6 +154,46 @@ body {
   width: 11rem;
 }
 
+/* The clear button sits inside the field's right end, so the field leaves
+   room for it. It replaces the browser's own cancel button, which only some
+   browsers draw, and is hidden while the field is empty -- an empty field
+   shows its placeholder, so there is no script to keep the two in step. */
+.search-box {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.search-box input {
+  padding-right: 1.6rem;
+}
+
+.search-box input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.search-clear {
+  position: absolute;
+  right: 0.25rem;
+  padding: 0 0.3rem;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.search-clear:hover {
+  color: var(--fg);
+  background: none;
+}
+
+.search-box input:placeholder-shown+.search-clear {
+  display: none;
+}
+
 /* The hits themselves are shown in the tree; this is the count, for when
    the tree is scrolled away from all of them. */
 .search-summary {

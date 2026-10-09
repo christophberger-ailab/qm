@@ -132,6 +132,7 @@ constraints:
       8-6: A collapsed branch that contains hits is shown open while the search is active, without changing the branch's remembered collapsed state
       8-7: The highlighting survives tree refreshes, page switches, and edits, and the query is remembered across sessions, so the results stay until the query changes
       8-8: The hits of the current query are highlighted in the editor as well, and opening a page scrolls its editor to the first hit
+      8-9: While the field holds a query, an x inside its right end clears it, as does Escape in the field; clearing ends the search, so its highlighting goes and the branches it held open can be collapsed again
       9: The Open field in the top bar offers the projects opened before, most recent first
       9-1: The field itself shows only the last element of the open project's path, since the folder name is what tells one project from another; the full path is its tooltip and is what a submit opens
       9-1-1: The dropdown lists the projects by their full paths, since two projects may share a folder name and the list has the room the field does not; picking one shows its folder name in the field as usual

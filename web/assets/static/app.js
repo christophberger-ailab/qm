@@ -1124,6 +1124,36 @@ function refreshHits() {
   }
 }
 
+// clearSearch empties the field and asks for the answer to the empty
+// query, which has no hits: that takes the highlighting off the tree and the
+// editor, and lets the branches that were held open for hits close again.
+function clearSearch() {
+  var input = document.getElementById('search-input');
+  if (!input) {
+    return;
+  }
+  input.value = '';
+  localStorage.setItem(SEARCH_KEY, '');
+  clearTimeout(searchRetry);
+  runSearch();
+  input.focus();
+}
+
+document.body.addEventListener('click', function (evt) {
+  if (evt.target.closest('#search-clear')) {
+    clearSearch();
+  }
+});
+
+// Escape in the field clears it, as it does in a browser's own search
+// fields -- not all of them do it for a page's field, so it is done here.
+document.body.addEventListener('keydown', function (evt) {
+  if (evt.key === 'Escape' && evt.target.id === 'search-input' && evt.target.value) {
+    evt.preventDefault();
+    clearSearch();
+  }
+});
+
 // initSearch puts the last query back into the field and runs it. Nothing
 // re-renders the field, but a reload starts it empty, and a search the user
 // never cleared is one they are still working with.
