@@ -416,6 +416,21 @@ func TestPreviewAssetsAreServed(t *testing.T) {
 	}
 }
 
+// Hovering an image in the preview shows its path as written in the page.
+// The tooltip is set in the browser, out of a Go test's reach; what can be
+// checked here is that the script still takes the title from the source
+// path before pointing the image at /media.
+func TestPreviewShowsImagePathOnHover(t *testing.T) {
+	preview, err := assets.ReadFile("assets/static/preview.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "img.setAttribute('title', title ? title + '\\n' + src : src);"
+	if !strings.Contains(string(preview), want) {
+		t.Errorf("preview.js does not show the image path as a tooltip, missing %q", want)
+	}
+}
+
 // An image alone in a paragraph -- a blank line before and after it -- is
 // Quarto's implicit figure, so the preview shows the image's alt text as a
 // caption below it. The figure is built in the browser, out of a Go test's
