@@ -79,6 +79,7 @@ constraints:
       3-5-4: An image standing alone in a paragraph -- a blank line before and after it -- is shown with its alt text as a caption below the image, the way Quarto renders such an image; an image inside a paragraph of text, and one without alt text, get no caption
       3-5-5: Reloading a page from disk shows its images as they are on disk, an image replaced under the same name included: the image URLs carry a stamp that the reload renews, so the browser fetches the files again instead of showing what it cached
       3-5-6: The stamp changes only when the page is loaded or reloaded, so the images are not fetched again for every keystroke the preview follows
+      3-5-7: Hovering an image in the preview shows the image's path as written in the page as a tooltip; an image with a Markdown title shows the title with the path on a line below it
       3-6: The editor is CodeMirror, embedded in the binary like the other assets, and highlights the page's YAML frontmatter and Markdown
       3-6-1: A toggle button in the editor's own column, below the editor text, switches Vim keybindings on and off; the choice is remembered across sessions
       3-6-2: Vim mode is off unless the user turns it on

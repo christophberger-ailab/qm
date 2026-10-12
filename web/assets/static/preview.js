@@ -338,11 +338,18 @@ function mediaURL(src, baseDir) {
 // route that reaches a file inside the project. pagePath is the edited
 // page's path relative to the project root; relative image paths resolve
 // against the folder it sits in.
+//
+// Each image also gets the path written in the page as its tooltip, so
+// hovering it tells which file it is. An image that has a Markdown title
+// keeps it, with the path on a line below.
 function resolveMedia(root, pagePath) {
   var cut = (pagePath || '').lastIndexOf('/');
   var baseDir = cut < 0 ? '' : pagePath.slice(0, cut);
   root.querySelectorAll('img[src]').forEach(function (img) {
-    img.setAttribute('src', mediaURL(img.getAttribute('src'), baseDir));
+    var src = img.getAttribute('src');
+    var title = img.getAttribute('title');
+    img.setAttribute('title', title ? title + '\n' + src : src);
+    img.setAttribute('src', mediaURL(src, baseDir));
   });
 }
 
