@@ -69,6 +69,7 @@ function initEditor() {
   clearCompletionCache();
   clearCopyeditMarks(); // the marks belonged to the pane just replaced
   cm.on('inputRead', maybeOpenPathCompletion);
+  cm.on('scroll', followEditor);
 
   // The textarea is what /save posts and what the preview reads, so it has
   // to follow the editor. Re-emitting the input event is what keeps both
@@ -681,3 +682,142 @@ if (typeof CodeMirror !== 'undefined' && CodeMirror.Vim) {
     }
   });
 }
+
+// Scroll sync
+//
+// The preview keeps to the part of the page the editor shows, and the
+// editor to the part the preview shows: whichever of the two the user
+// scrolls leads, and the other follows. The preview's blocks carry the page
+// line they were made from (data-line, see preview.js); a position between
+// two of them is placed proportionally between the two, so a long
+// paragraph or a tall image does not throw the other side off for more
+// than its own height.
+//
+// Moving one side makes it fire a scroll event of its own, which must not
+// turn round and move the side that led. So the side being scrolled holds
+// the lead until it has been still for a moment, and the follower's events
+// are ignored while it does.
+
+var scrollLead = null;
+var scrollLeadTimer = null;
+
+// claimLead makes side the leader, unless the other side leads right now.
+function claimLead(side) {
+  if (scrollLead !== null && scrollLead !== side) {
+    return false;
+  }
+  scrollLead = side;
+  clearTimeout(scrollLeadTimer);
+  scrollLeadTimer = setTimeout(function () {
+    scrollLead = null;
+  }, 150);
+  return true;
+}
+
+// lineAnchors lists where the page's lines sit in the preview: a line and
+// the height in the preview's scrolled content its block starts at, in the
+// order of the page. The top of the preview stands for the first line and
+// its bottom for the line after the last. A block that is not laid out, or
+// that sits higher than one listed before it, is left out, so that the
+// heights only ever grow along with the lines.
+function lineAnchors(preview) {
+  var base = preview.getBoundingClientRect().top - preview.scrollTop;
+  var anchors = [{ line: 0, top: 0 }];
+  preview.querySelectorAll('[data-line]').forEach(function (el) {
+    if (el.getClientRects().length === 0) {
+      return;
+    }
+    var line = Number(el.getAttribute('data-line'));
+    var top = el.getBoundingClientRect().top - base;
+    var last = anchors[anchors.length - 1];
+    if (line > last.line && top >= last.top) {
+      anchors.push({ line: line, top: top });
+    }
+  });
+  anchors.push({ line: cm.lineCount(), top: preview.scrollHeight });
+  return anchors;
+}
+
+// interpolate finds where value, measured in anchors' from, falls between
+// two anchors and returns the same point measured in their to.
+function interpolate(anchors, from, to, value) {
+  var i = 1;
+  while (i < anchors.length - 1 && anchors[i][from] <= value) {
+    i++;
+  }
+  var a = anchors[i - 1];
+  var b = anchors[i];
+  if (b[from] <= a[from]) {
+    return a[to];
+  }
+  var t = Math.min(1, Math.max(0, (value - a[from]) / (b[from] - a[from])));
+  return a[to] + t * (b[to] - a[to]);
+}
+
+// syncPreview returns the preview pane when it is on screen and there is
+// an editor to keep it in step with.
+function syncPreview() {
+  var preview = document.getElementById('preview');
+  if (!cm || !preview || preview.getClientRects().length === 0) {
+    return null;
+  }
+  return preview;
+}
+
+// followEditor scrolls the preview to the line at the top of the editor.
+// It is also what app.js calls after a render, so the preview stays with
+// the text being typed.
+function followEditor() {
+  var preview = syncPreview();
+  if (!preview || !claimLead('editor')) {
+    return;
+  }
+  var info = cm.getScrollInfo();
+  var bottom = preview.scrollHeight - preview.clientHeight;
+  if (info.top > 0 && info.top >= info.height - info.clientHeight - 1) {
+    preview.scrollTop = bottom; // the end of the text: show the end of the page
+    return;
+  }
+  var line = cm.lineAtHeight(info.top, 'local');
+  var start = cm.heightAtLine(line, 'local');
+  var end = cm.heightAtLine(line + 1, 'local');
+  var at = line + (end > start ? (info.top - start) / (end - start) : 0);
+  preview.scrollTop = Math.min(bottom, interpolate(lineAnchors(preview), 'line', 'top', at));
+}
+
+// followPreview scrolls the editor to the line the top of the preview
+// shows.
+function followPreview() {
+  var preview = syncPreview();
+  if (!preview || !claimLead('preview')) {
+    return;
+  }
+  var info = cm.getScrollInfo();
+  if (preview.scrollTop > 0 &&
+    preview.scrollTop >= preview.scrollHeight - preview.clientHeight - 1) {
+    cm.scrollTo(null, info.height - info.clientHeight);
+    return;
+  }
+  var at = interpolate(lineAnchors(preview), 'top', 'line', preview.scrollTop);
+  var line = Math.min(Math.floor(at), cm.lineCount() - 1);
+  var start = cm.heightAtLine(line, 'local');
+  var end = cm.heightAtLine(line + 1, 'local');
+  cm.scrollTo(null, start + (at - line) * (end - start));
+}
+
+// The preview is replaced along with the editor on every page switch, so
+// its scrolling is caught where it bubbles to -- scroll events do not
+// bubble, but they can be caught on the way down.
+document.addEventListener('scroll', function (evt) {
+  if (evt.target.id === 'preview') {
+    followPreview();
+  }
+}, true);
+
+// An image that arrives after the render pushes everything below it
+// down, so the preview is placed again once it has.
+document.addEventListener('load', function (evt) {
+  if (evt.target.tagName === 'IMG' && evt.target.closest('#preview')) {
+    followEditor();
+  }
+}, true);

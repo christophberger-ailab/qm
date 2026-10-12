@@ -66,6 +66,7 @@ constraints:
       3-1-1: Two buttons below the preview open the page before and the page after the open one, in the order the page tree lists them; each names the page it would open, and the one at either end of the project is shown out of use
       3-1-2: The buttons flip to a page the way a click in the tree opens it, so a page inside a collapsed branch is revealed, the tree's selection follows, and an edit that could not be saved is still asked about before the editor is replaced
       3-2: The preview follows the editor's content as the user types
+      3-2-1: The editor and the preview scroll together: scrolling either one brings the other to the same part of the page, matched block by block by the page line each preview block was made from, and the preview stays with the editor while the user types
       3-3: A Preview button and a Copyedit button in the content header each show and hide their pane beside the editor, independently of the other; each choice is remembered across sessions
       3-4: The preview is rendered in the browser from the embedded marked library; it approximates the page, it is not a Quarto render
       3-4-1: A heading is previewed without its own Pandoc attribute block -- `# PERLE OnCall-Schulungen {.unnumbered .unlisted}` reads "PERLE OnCall-Schulungen" -- because the attributes direct the render and are not part of what the heading says; a heading inside a code block is left as written
