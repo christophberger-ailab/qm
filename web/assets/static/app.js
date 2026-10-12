@@ -452,6 +452,7 @@ function updatePreview() {
   if (preview && editor) {
     var path = document.querySelector('#content input[name="path"]');
     renderPreview(preview, editor.value, path ? path.value : '');
+    followEditor(); // the render may have moved the text under the top
   }
 }
 

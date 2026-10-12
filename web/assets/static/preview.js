@@ -45,22 +45,25 @@ function escapeHTML(text) {
 }
 
 // splitFrontmatter separates a leading YAML block from the page body. A page
-// without frontmatter yields an empty front.
+// without frontmatter yields an empty front. offset is the number of lines
+// in front of the body, which is what turns a line of the body back into a
+// line of the page.
 function splitFrontmatter(text) {
   var lines = text.split('\n');
   if (lines[0].trim() !== '---') {
-    return { front: '', body: text };
+    return { front: '', body: text, offset: 0 };
   }
   for (var i = 1; i < lines.length; i++) {
     var line = lines[i].trim();
     if (line === '---' || line === '...') {
       return {
         front: lines.slice(1, i).join('\n'),
-        body: lines.slice(i + 1).join('\n')
+        body: lines.slice(i + 1).join('\n'),
+        offset: i + 1
       };
     }
   }
-  return { front: '', body: text }; // unterminated: treat it all as body
+  return { front: '', body: text, offset: 0 }; // unterminated: treat it all as body
 }
 
 // Target groups
@@ -175,15 +178,31 @@ function stripHeadingAttrs(body) {
 // convertDivs rewrites fenced divs into HTML block tags, surrounded by blank
 // lines so that marked reads them as HTML blocks and keeps parsing the
 // Markdown between them. Fences inside code blocks are left alone.
-function convertDivs(body) {
+//
+// Each fence becomes three lines, so the result no longer lines up with the
+// body. lineMap, if given, is filled with the body line every line of the
+// result came from; that is what lets the preview say which line of the
+// page each of its blocks stands for (see markSourceLines).
+function convertDivs(body, lineMap) {
   var out = [];
   var fence = null; // the open code fence's delimiter, if any
   var depth = 0;    // number of open divs
 
-  body.split('\n').forEach(function (line) {
+  // emit adds lines to the result, each noted as coming from body line n.
+  function emit(n, lines) {
+    lines.forEach(function (line) {
+      out.push(line);
+      if (lineMap) {
+        lineMap.push(n);
+      }
+    });
+  }
+
+  var lines = body.split('\n');
+  lines.forEach(function (line, n) {
     var code = line.match(codeFence);
     if (fence !== null) {
-      out.push(line);
+      emit(n, [line]);
       if (code && code[1].charAt(0) === fence.charAt(0) &&
         code[1].length >= fence.length && code[2].trim() === '') {
         fence = null;
@@ -192,27 +211,27 @@ function convertDivs(body) {
     }
     if (code) {
       fence = code[1];
-      out.push(line);
+      emit(n, [line]);
       return;
     }
     var div = line.match(divFence);
     if (!div) {
-      out.push(line);
+      emit(n, [line]);
       return;
     }
     if (div[2].trim() !== '') {
-      out.push('', '<div' + divAttrs(div[2].trim()) + '>', '');
+      emit(n, ['', '<div' + divAttrs(div[2].trim()) + '>', '']);
       depth++;
     } else if (depth > 0) {
-      out.push('', '</div>', '');
+      emit(n, ['', '</div>', '']);
       depth--;
     } else {
-      out.push(line); // stray closing fence: show it as written
+      emit(n, [line]); // stray closing fence: show it as written
     }
   });
 
   while (depth-- > 0) {
-    out.push('', '</div>', '');
+    emit(lines.length - 1, ['', '</div>', '']);
   }
   return out.join('\n');
 }
@@ -552,6 +571,61 @@ function registerImageExtension() {
   });
 }
 
+// Source lines
+//
+// The editor and the preview scroll together, and for that the preview has
+// to know which line of the page each of its blocks was made from. Every
+// top-level block marked reads is rendered on its own, behind a comment
+// naming the page line it starts on; once the HTML is in place, the comment
+// hands its line to the element after it as data-line, and goes. The
+// blocks inside a fenced div are top-level blocks too -- convertDivs turns
+// the fences into HTML blocks of their own -- so a callout's paragraphs are
+// marked like any other.
+var lineMark = 'qm-line:';
+
+// renderBlocks renders src, the converted body, block by block. lineMap
+// takes a line of src back to a line of the body (see convertDivs), and
+// offset a line of the body to a line of the page.
+function renderBlocks(src, lineMap, offset) {
+  var tokens = marked.lexer(src);
+  var html = '';
+  var line = 0;
+  tokens.forEach(function (token) {
+    if (token.type !== 'space') {
+      var at = line < lineMap.length ? lineMap[line] : lineMap.length;
+      html += '<!--' + lineMark + (offset + at) + '-->';
+    }
+    var block = [token];
+    block.links = tokens.links; // reference links resolve against the whole page
+    html += marked.parser(block);
+    line += (token.raw.match(/\n/g) || []).length;
+  });
+  return html;
+}
+
+// markSourceLines turns the comments renderBlocks left into data-line
+// attributes on the elements they precede. A comment with no element after
+// it -- the one in front of a closing </div> -- marks nothing.
+function markSourceLines(root) {
+  var walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
+  var marks = [];
+  while (walker.nextNode()) {
+    if (walker.currentNode.data.indexOf(lineMark) === 0) {
+      marks.push(walker.currentNode);
+    }
+  }
+  marks.forEach(function (mark) {
+    var next = mark.nextSibling;
+    while (next && next.nodeType !== Node.ELEMENT_NODE) {
+      next = next.nextSibling;
+    }
+    if (next && !next.hasAttribute('data-line')) {
+      next.setAttribute('data-line', mark.data.slice(lineMark.length));
+    }
+    mark.remove();
+  });
+}
+
 // renderPreview fills el with the preview of the Quarto Markdown in text.
 // pagePath is the edited page's path relative to the project root: it is
 // what the image paths resolve against, and what says which target group
@@ -566,9 +640,10 @@ function renderPreview(el, text, pagePath) {
   var page = splitFrontmatter(text);
   var html = '';
   if (page.front.trim() !== '') {
-    html += '<pre class="preview-frontmatter">' + escapeHTML(page.front) + '</pre>';
+    html += '<pre class="preview-frontmatter" data-line="0">' + escapeHTML(page.front) + '</pre>';
   }
-  var body = marked.parse(convertDivs(stripHeadingAttrs(page.body)));
+  var lineMap = [];
+  var body = renderBlocks(convertDivs(stripHeadingAttrs(page.body), lineMap), lineMap, page.offset);
   var group = targetGroupOf(pagePath);
   if (group !== '') {
     // The frontmatter stays outside the wrapper: it directs the render, it
@@ -581,4 +656,5 @@ function renderPreview(el, text, pagePath) {
   sanitize(el);
   resolveMedia(el, pagePath);
   captionFigures(el);
+  markSourceLines(el); // after the figures, so a figure carries its line
 }

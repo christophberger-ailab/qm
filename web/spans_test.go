@@ -177,7 +177,7 @@ func TestPreviewStripsHeadingAttributes(t *testing.T) {
 	}
 	for _, want := range []string{
 		"function stripHeadingAttrs(body)",
-		"marked.parse(convertDivs(stripHeadingAttrs(page.body)))",
+		"renderBlocks(convertDivs(stripHeadingAttrs(page.body), lineMap), lineMap, page.offset)",
 	} {
 		if !strings.Contains(string(preview), want) {
 			t.Errorf("preview.js does not strip heading attributes, missing %q", want)
