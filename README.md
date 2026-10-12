@@ -263,12 +263,18 @@ the default is VS Code's `code {root} --goto {file}`, and the page offers
 ready-made lines for VSCodium and a few others. With no page open, the
 `{file}` argument and an option right before it are left out.
 
+Double-clicking an image in the preview opens the image's file in an image
+editor, which the same config page sets: by default the program the system
+opens the file with, or GIMP, Krita, Inkscape, or any other command with
+`{file}` for the image. When the editor saves, the preview shows the new
+version within a couple of seconds, without a reload.
+
 ### Settings
 
 Everything the UI remembers between runs lives in one file,
 `<user config dir>/qm/config.cue`: the projects opened before, the render
 selection and last open page per project, which preview stylesheet is active,
-the copyediting setup, and the external editor's command line. The stylesheets themselves stay beside it in
+the copyediting setup, and the external editors' command lines. The stylesheets themselves stay beside it in
 `custom-css/`, being CSS rather than settings.
 
 The file is CUE because it carries its own schema. The definitions are written

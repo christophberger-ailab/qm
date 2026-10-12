@@ -909,6 +909,32 @@ function bumpMediaVersion() {
   setMediaVersion(String(Date.now()));
 }
 
+// An image changed on disk -- the image editor saved it, most likely --
+// is announced by /watch, the tree's poll, as an event. The preview then
+// fetches its images again: a new stamp, and a render that puts it into
+// the image URLs. The editor's text is left as it is.
+document.body.addEventListener('qm-media-changed', function () {
+  bumpMediaVersion();
+  updatePreview();
+});
+
+// A double-click on an image of the project in the preview opens the
+// image's file in the image editor set under Config. What the server says
+// back -- nothing, or why the editor did not start -- is shown where the
+// Editor button shows its own.
+document.body.addEventListener('dblclick', function (evt) {
+  var img = evt.target.closest && evt.target.closest('#preview img[data-media-path]');
+  if (!img || !document.getElementById('external-editor-status')) {
+    return;
+  }
+  evt.preventDefault();
+  htmx.ajax('POST', '/editor/image', {
+    target: '#external-editor-status',
+    swap: 'innerHTML',
+    values: { path: img.dataset.mediaPath }
+  });
+});
+
 // revealSelection expands the collapsed branches above the selected page,
 // so a restored page is not hidden inside one, and scrolls the tree pane
 // to its row: flipping through a long book walks the selection off the

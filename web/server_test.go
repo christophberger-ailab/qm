@@ -419,15 +419,21 @@ func TestPreviewAssetsAreServed(t *testing.T) {
 // Hovering an image in the preview shows its path as written in the page.
 // The tooltip is set in the browser, out of a Go test's reach; what can be
 // checked here is that the script still takes the title from the source
-// path before pointing the image at /media.
+// path before pointing the image at /media, and that an image of the
+// project says it opens in the image editor on a double-click.
 func TestPreviewShowsImagePathOnHover(t *testing.T) {
 	preview, err := assets.ReadFile("assets/static/preview.js")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "img.setAttribute('title', title ? title + '\\n' + src : src);"
-	if !strings.Contains(string(preview), want) {
-		t.Errorf("preview.js does not show the image path as a tooltip, missing %q", want)
+	for _, want := range []string{
+		"var tip = title ? title + '\\n' + src : src;",
+		"tip += '\\nDouble-click to open it in the image editor';",
+		"img.setAttribute('title', tip);",
+	} {
+		if !strings.Contains(string(preview), want) {
+			t.Errorf("preview.js does not show the image path as a tooltip, missing %q", want)
+		}
 	}
 }
 
