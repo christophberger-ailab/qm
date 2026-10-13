@@ -552,7 +552,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>External editor</title>
+  <title>External editors</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/config.js" defer></script>
@@ -575,7 +575,21 @@
       <label>Command<input type="text" name="command" id="editor-command" value="{{.Command}}" spellcheck="false" required></label>
       <div class="editor-presets">
         <span>Presets:</span>
-        {{range .Presets}}<button type="button" class="editor-preset" data-command="{{.Command}}" title="{{.Command}}">{{.Name}}</button>
+        {{range .Presets}}<button type="button" class="editor-preset" data-target="editor-command" data-command="{{.Command}}" title="{{.Command}}">{{.Name}}</button>
+        {{end}}
+      </div>
+      <div class="config-actions"><button type="submit">Save</button></div>
+    </form>
+    <h2>Image editor</h2>
+    <p class="config-intro">Double-clicking an image in the preview runs this command to open the image's file. When the file changes on disk, the preview shows the new version without a reload.</p>
+    <p class="config-intro"><code>{file}</code> stands for the image and is required; <code>{root}</code> stands for the project's directory. <strong>System default</strong> opens the image in the program your system opens it with on a double-click. Quoting and <code>PATH</code> work as for the editor above.</p>
+    {{if .ImageError}}<div class="error">{{.ImageError}}</div>{{end}}
+    {{if .ImageMessage}}<div class="notice">{{.ImageMessage}}</div>{{end}}
+    <form class="config-form config-setting" method="post" action="/config/editor" autocomplete="off">
+      <label>Command<input type="text" name="image" id="image-editor-command" value="{{.Image}}" spellcheck="false" required></label>
+      <div class="editor-presets">
+        <span>Presets:</span>
+        {{range .ImagePresets}}<button type="button" class="editor-preset" data-target="image-editor-command" data-command="{{.Command}}" title="{{.Command}}">{{.Name}}</button>
         {{end}}
       </div>
       <div class="config-actions"><button type="submit">Save</button></div>

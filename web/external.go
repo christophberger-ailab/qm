@@ -12,13 +12,21 @@ package web
 // settings. The placeholders {root} and {file} stand for the project's
 // directory and the open page's file; an argument naming {file} is left out
 // when no page is open, so the same command opens the bare project then.
+//
+// Images get an editor of their own. A double-click on an image in the
+// preview opens the image's file in it, and /watch notices when the file
+// changes on disk, so the preview shows what the image editor saved
+// without a reload.
 
 import (
 	"errors"
 	"fmt"
 	"html"
 	"net/http"
+	"os"
 	"os/exec"
+	"path"
+	"runtime"
 	"strings"
 	"unicode"
 )
@@ -28,10 +36,41 @@ import (
 // takes the same arguments.
 const defaultEditorCommand = "code {root} --goto {file}"
 
-// editorConfig is the external editor's setting: the command line that
-// opens it.
+// editorConfig is the external editors' settings: the command line that
+// opens the project, and the one that opens an image.
 type editorConfig struct {
 	Command string `json:"command"`
+	Image   string `json:"image"`
+}
+
+// defaultImageEditorCommand opens an image the way the system opens a file
+// that is double-clicked, in whatever program is set up for the type.
+// Windows' explorer does that when it is handed a file.
+func defaultImageEditorCommand() string {
+	return systemOpenCommand(runtime.GOOS)
+}
+
+func systemOpenCommand(goos string) string {
+	switch goos {
+	case "windows":
+		return "explorer {file}"
+	case "darwin":
+		return "open {file}"
+	default:
+		return "xdg-open {file}"
+	}
+}
+
+// imageEditorPresets are the command lines the config page offers for the
+// image editor. The first is the system's own, for the system qm runs on.
+func imageEditorPresets() []editorPreset {
+	return []editorPreset{
+		{Name: "System default", Command: defaultImageEditorCommand()},
+		{Name: "GIMP", Command: "gimp {file}"},
+		{Name: "Krita", Command: "krita {file}"},
+		{Name: "Inkscape", Command: "inkscape {file}"},
+		{Name: "Paint (Windows)", Command: "mspaint {file}"},
+	}
 }
 
 // editorPresets are the command lines the config page offers to fill in.
@@ -50,12 +89,17 @@ type editorPreset struct {
 	Command string
 }
 
-// editorPageView is the page data of /config/editor.
+// editorPageView is the page data of /config/editor. The page has a form
+// for each of the two commands, and each form's message is shown with it.
 type editorPageView struct {
-	Command string
-	Presets []editorPreset
-	Error   string
-	Message string
+	Command      string
+	Presets      []editorPreset
+	Error        string
+	Message      string
+	Image        string
+	ImagePresets []editorPreset
+	ImageError   string
+	ImageMessage string
 }
 
 // splitCommand breaks a command line into its arguments. Whitespace
@@ -178,38 +222,98 @@ func (s *server) openEditorHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeEditorError(w http.ResponseWriter, err error) {
-	fmt.Fprintf(w, `<span class="error-inline" title="%s">Editor: %s</span>`,
-		html.EscapeString(err.Error()), html.EscapeString(err.Error()))
+	writeError(w, "Editor", err)
+}
+
+func writeError(w http.ResponseWriter, what string, err error) {
+	fmt.Fprintf(w, `<span class="error-inline" title="%s">%s: %s</span>`,
+		html.EscapeString(err.Error()), what, html.EscapeString(err.Error()))
+}
+
+// openImageEditorHandler opens an image of the project in the configured
+// image editor. The path is the image's path relative to the project root,
+// the one the preview fetched the image by; like /media, the route takes
+// image files only, so it cannot be made to open anything else of the
+// project. Its answer goes where the Editor button's does.
+func (s *server) openImageEditorHandler(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r.ParseForm()
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	rel := r.PostFormValue("path")
+	abs, err := s.resolvePath(rel)
+	if err == nil && !mediaExts[strings.ToLower(path.Ext(rel))] {
+		err = errors.New("not an image")
+	}
+	if err == nil {
+		if _, statErr := os.Stat(abs); statErr != nil {
+			err = fmt.Errorf("%s is not in the project", rel)
+		}
+	}
+	var name string
+	var args []string
+	if err == nil {
+		name, args, err = editorArgs(s.cfg.Editor.Image, s.root, abs)
+	}
+	if err == nil {
+		err = startEditor(name, args, s.root)
+	}
+	if err != nil {
+		writeError(w, "Image editor", err)
+	}
 }
 
 func (s *server) editorConfigPage(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.render(w, "editor-page", editorPageView{Command: s.cfg.Editor.Command, Presets: editorPresets})
+	s.render(w, "editor-page", s.editorPageView())
 }
 
-// saveEditorHandler stores the editor command. A command that does not
-// split is refused rather than stored: it could never be run.
+func (s *server) editorPageView() editorPageView {
+	return editorPageView{
+		Command:      s.cfg.Editor.Command,
+		Presets:      editorPresets,
+		Image:        s.cfg.Editor.Image,
+		ImagePresets: imageEditorPresets(),
+	}
+}
+
+// saveEditorHandler stores one of the editor commands: the form for the
+// project's editor posts "command", the one for images "image". A command
+// that does not split is refused rather than stored: it could never be
+// run. So is an image command without {file}, which would start the
+// editor without the image it was asked to open.
 func (s *server) saveEditorHandler(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	r.ParseForm()
+	view := s.editorPageView()
+	_, isImage := r.PostForm["image"]
+	field, setting, fail, done := &view.Command, &s.cfg.Editor.Command, &view.Error, &view.Message
+	if isImage {
+		field, setting, fail, done = &view.Image, &s.cfg.Editor.Image, &view.ImageError, &view.ImageMessage
+	}
 	command := strings.TrimSpace(r.PostFormValue("command"))
-	view := editorPageView{Command: command, Presets: editorPresets}
+	if isImage {
+		command = strings.TrimSpace(r.PostFormValue("image"))
+	}
+	*field = command
 	parts, err := splitCommand(command)
 	switch {
 	case err != nil:
-		view.Error = err.Error()
+		*fail = err.Error()
 	case len(parts) == 0:
-		view.Error = "Name the program to run."
+		*fail = "Name the program to run."
+	case isImage && !strings.Contains(command, "{file}"):
+		*fail = "Put {file} where the image goes."
 	default:
-		prev := s.cfg.Editor
-		s.cfg.Editor.Command = command
+		prev := *setting
+		*setting = command
 		if err := s.saveConfig(); err != nil {
-			s.cfg.Editor = prev
-			view.Error = "Could not save: " + err.Error()
+			*setting = prev
+			*fail = "Could not save: " + err.Error()
 		} else {
-			view.Message = "Saved."
+			*done = "Saved."
 		}
 	}
 	s.render(w, "editor-page", view)

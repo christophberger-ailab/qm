@@ -313,25 +313,40 @@ function stampVersion(url, suffix) {
 // External and inline sources are left alone, and so is anything that
 // climbs out of the project: the server would refuse it anyway.
 function mediaURL(src, baseDir) {
-  if (src === '' || /^[a-z][a-z0-9+.-]*:/i.test(src) || src.slice(0, 2) === '//') {
+  var rel = mediaPath(src, baseDir);
+  if (rel === '') {
     return src;
+  }
+  var suffix = '';
+  var mark = src.search(/[?#]/);
+  if (mark >= 0) {
+    suffix = src.slice(mark);
+  }
+  return stampVersion('/media/' + rel.split('/').map(encodeURIComponent).join('/'), suffix);
+}
+
+// mediaPath is the path, relative to the project root, of the file an
+// image source on a page names -- the path /media serves it by, and the
+// one the image editor is asked to open. It is empty for a source that
+// names no file of the project: an external or inline one, or one that
+// climbs out of it.
+function mediaPath(src, baseDir) {
+  if (src === '' || /^[a-z][a-z0-9+.-]*:/i.test(src) || src.slice(0, 2) === '//') {
+    return '';
   }
   var rel = src.charAt(0) === '/' ? src.slice(1) : baseDir + '/' + src;
 
-  // A query or fragment is not part of the path and must not be escaped
-  // along with it.
-  var suffix = '';
+  // A query or fragment is not part of the path.
   var mark = rel.search(/[?#]/);
   if (mark >= 0) {
-    suffix = rel.slice(mark);
     rel = rel.slice(0, mark);
   }
 
   rel = normalizePath(rel);
   if (rel === '' || rel === '..' || rel.slice(0, 3) === '../') {
-    return src;
+    return '';
   }
-  return stampVersion('/media/' + rel.split('/').map(encodeURIComponent).join('/'), suffix);
+  return rel;
 }
 
 // resolveMedia points the images of the rendered page at /media, the only
@@ -341,14 +356,24 @@ function mediaURL(src, baseDir) {
 //
 // Each image also gets the path written in the page as its tooltip, so
 // hovering it tells which file it is. An image that has a Markdown title
-// keeps it, with the path on a line below.
+// keeps it, with the path on a line below. An image of the project carries
+// its project path in data-media-path, which is what a double-click opens
+// in the image editor (see app.js), and says so in its tooltip.
 function resolveMedia(root, pagePath) {
   var cut = (pagePath || '').lastIndexOf('/');
   var baseDir = cut < 0 ? '' : pagePath.slice(0, cut);
   root.querySelectorAll('img[src]').forEach(function (img) {
     var src = img.getAttribute('src');
     var title = img.getAttribute('title');
-    img.setAttribute('title', title ? title + '\n' + src : src);
+    var rel = mediaPath(src, baseDir);
+    var tip = title ? title + '\n' + src : src;
+    if (rel !== '') {
+      img.setAttribute('data-media-path', rel);
+      tip += '\nDouble-click to open it in the image editor';
+    } else {
+      img.removeAttribute('data-media-path');
+    }
+    img.setAttribute('title', tip);
     img.setAttribute('src', mediaURL(src, baseDir));
   });
 }

@@ -105,6 +105,11 @@ const configSchema = `// -------------------------------------------------------
 	// naming {file} (with an option right before it) is left out when no
 	// page is open. Quotes keep an argument with spaces together.
 	command: string | *"code {root} --goto {file}"
+
+	// The command line a double-click on an image in the preview runs.
+	// {file} is the image, {root} the project's directory. Left empty,
+	// the system's own way of opening a file is used.
+	image: string | *""
 }
 
 #Copyedit: {
@@ -214,7 +219,7 @@ func defaultConfig() storedConfig {
 			Mode:        modeBatched,
 			Selected:    []string{},
 		},
-		Editor: editorConfig{Command: defaultEditorCommand},
+		Editor: editorConfig{Command: defaultEditorCommand, Image: defaultImageEditorCommand()},
 	}
 }
 
@@ -241,6 +246,9 @@ func (c *storedConfig) normalize() {
 	}
 	if c.Editor.Command == "" {
 		c.Editor.Command = defaultEditorCommand
+	}
+	if c.Editor.Image == "" {
+		c.Editor.Image = defaultImageEditorCommand()
 	}
 	if c.Copyedit.Selected == nil {
 		c.Copyedit.Selected = []string{}

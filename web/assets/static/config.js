@@ -93,13 +93,14 @@ document.addEventListener('change', function (evt) {
 });
 
 // A preset on the External editor page fills in its command line, to be
-// adjusted and saved like one typed in.
+// adjusted and saved like one typed in. The page has two commands, and
+// each preset names the field it is for.
 document.addEventListener('click', function (evt) {
   var preset = evt.target.closest('.editor-preset');
   if (!preset) {
     return;
   }
-  var input = document.getElementById('editor-command');
+  var input = document.getElementById(preset.dataset.target || 'editor-command');
   if (input) {
     input.value = preset.dataset.command;
     input.focus();

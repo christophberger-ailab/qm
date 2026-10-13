@@ -24,7 +24,7 @@ constraints:
       carries the schema it is checked against.
     requirements:
       1: 'The settings are one file: `<user config dir>/qm/config.cue`. Nothing else is written beside it but the preview stylesheets, which are CSS rather than settings'
-      2: The file holds the recently opened projects, the per-project render selection and last open page, the active preview stylesheet, the copyediting setup, and the external editor's command line
+      2: The file holds the recently opened projects, the per-project render selection and last open page, the active preview stylesheet, the copyediting setup, and the external editors' command lines
       3: The file is written for its owner alone, since the copyediting setup holds API keys
       4: 'The file carries its own schema: the CUE definitions the settings are checked against are written into it above them, so the file says what belongs in it and in what shape'
       4-1: The schema is written by the app and rewritten with every save, so the schema in the file is always the one the running binary checks against
@@ -80,6 +80,7 @@ constraints:
       3-5-5: Reloading a page from disk shows its images as they are on disk, an image replaced under the same name included: the image URLs carry a stamp that the reload renews, so the browser fetches the files again instead of showing what it cached
       3-5-6: The stamp changes only when the page is loaded or reloaded, so the images are not fetched again for every keystroke the preview follows
       3-5-7: Hovering an image in the preview shows the image's path as written in the page as a tooltip; an image with a Markdown title shows the title with the path on a line below it
+      3-5-8: An image of the project changed on disk -- saved by the image editor (see 12-7), or by anything else -- is shown as it is now without a reload: the tree's watch announces the change, and the preview renews its image stamp and renders again; the editor's text is untouched
       3-6: The editor is CodeMirror, embedded in the binary like the other assets, and highlights the page's YAML frontmatter and Markdown
       3-6-1: A toggle button in the editor's own column, below the editor text, switches Vim keybindings on and off; the choice is remembered across sessions
       3-6-2: Vim mode is off unless the user turns it on
@@ -237,3 +238,7 @@ constraints:
       12-4: The command line is split into arguments before the paths are put in, so a path with spaces stays one argument; quotes keep an argument with spaces together, and a line with an unmatched quote is refused rather than stored
       12-5: The command is run directly, never through a shell, and the page path the browser sends is checked like the editor's own
       12-6: An editor that could not be started is reported beside the button, with the reason
+      12-7: Double-clicking an image of the project in the preview opens the image's file in an image editor; the image's tooltip says so
+      12-7-1: The image editor is a second command line on the same config page, stored in the settings file; `{file}` stands for the image and is required, `{root}` for the project directory; the default opens the file with the system's own program for it (`xdg-open`, `open`, or `explorer`), and the page offers ready-made lines for GIMP, Krita, Inkscape, and Paint
+      12-7-2: The route that opens an image takes the image's path relative to the project root and refuses anything that is not an image file inside the open project
+      12-7-3: An image editor that could not be started is reported where the Editor button reports its own failure

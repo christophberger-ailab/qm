@@ -38,6 +38,13 @@ type server struct {
 	// rendered; /watch re-renders only when the disk no longer matches.
 	fp string
 
+	// mediaFP is the fingerprint of the project's images as /watch last
+	// saw them. It is kept apart from fp because nothing the app itself
+	// does writes an image: only an outside change -- an image editor
+	// saving -- moves it, and when it moves the preview fetches its images
+	// again (see watch).
+	mediaFP string
+
 	// configFile is the one file the settings live in; empty keeps them
 	// to this run. cfg holds its content: the projects opened before,
 	// what is selected per project, the preview's stylesheet, and the
@@ -116,6 +123,7 @@ func newServer(configFile string) (*server, error) {
 	s.mux.HandleFunc("GET /config/editor", s.editorConfigPage)
 	s.mux.HandleFunc("POST /config/editor", s.saveEditorHandler)
 	s.mux.HandleFunc("POST /editor/open", s.openEditorHandler)
+	s.mux.HandleFunc("POST /editor/image", s.openImageEditorHandler)
 	s.mux.HandleFunc("POST /copyedit/active", s.activeConnectionHandler)
 	s.mux.HandleFunc("POST /copyedit/selection", s.selectedTasksHandler)
 	s.mux.HandleFunc("GET /copyedit/prompts", s.copyeditPromptsHandler)
@@ -404,7 +412,18 @@ func (s *server) render(w http.ResponseWriter, name string, data any) {
 // sizes, and mtimes of the project's .qmd files and _quarto*.yml configs.
 // Equal fingerprints mean no refresh is needed.
 func fingerprint(root string) string {
+	tree, _ := fingerprints(root)
+	return tree
+}
+
+// fingerprints hashes, in one walk, what the tree pane is rendered from
+// (see fingerprint) and the images the preview can show: the paths, sizes,
+// and mtimes of the files /media serves. The images are looked for where
+// the pages are, so the output folders the renders write copies into stay
+// out of it.
+func fingerprints(root string) (tree, media string) {
 	h := fnv.New64a()
+	m := fnv.New64a()
 	filepath.WalkDir(root, func(p string, d iofs.DirEntry, err error) error {
 		if err != nil {
 			return nil // unreadable entries just drop out of the hash
@@ -419,15 +438,22 @@ func fingerprint(root string) string {
 		qmd := strings.HasSuffix(name, ".qmd") && !strings.HasPrefix(name, "_")
 		cfg := filepath.Dir(p) == root && strings.HasSuffix(name, ".yml") &&
 			(name == "_quarto.yml" || strings.HasPrefix(name, "_quarto-"))
-		if !qmd && !cfg {
+		img := mediaExts[strings.ToLower(filepath.Ext(name))]
+		if !qmd && !cfg && !img {
 			return nil
 		}
-		if fi, err := d.Info(); err == nil {
+		fi, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		if img {
+			fmt.Fprintf(m, "%s|%d|%d;", p, fi.Size(), fi.ModTime().UnixNano())
+		} else {
 			fmt.Fprintf(h, "%s|%d|%d;", p, fi.Size(), fi.ModTime().UnixNano())
 		}
 		return nil
 	})
-	return strconv.FormatUint(h.Sum64(), 16)
+	return strconv.FormatUint(h.Sum64(), 16), strconv.FormatUint(m.Sum64(), 16)
 }
 
 // rememberFP records the current on-disk fingerprint as rendered, so
@@ -471,7 +497,7 @@ func (s *server) config(w http.ResponseWriter, r *http.Request) {
 		Href:        "/config/connections",
 	}, {
 		Title:       "External editor",
-		Description: "Choose the editor the top bar's Editor button opens the project in.",
+		Description: "Choose the editor the top bar's Editor button opens the project in, and the one images open in.",
 		Href:        "/config/editor",
 	}}})
 }
@@ -605,6 +631,7 @@ func (s *server) setRoot(dir string) error {
 		return fmt.Errorf("%s is not a directory", root)
 	}
 	s.root = root
+	s.mediaFP = "" // the page that opens it fetches its images anyway
 	s.rememberRoot(root)
 	// The editor pane is replaced along with the project, so whatever text
 	// it held belongs to the project being left.
@@ -638,15 +665,37 @@ func (s *server) renderTree(w http.ResponseWriter, msg string) {
 // watch is polled by the client. It re-renders the tree only when the
 // project changed on disk outside the sorter; 204 tells htmx to leave the
 // page alone.
+//
+// An image that changed on disk -- saved by the image editor the preview
+// opens it in, most likely -- is announced with the mediaChangedEvent
+// header, which htmx raises as an event whether or not the tree is
+// swapped; app.js answers it by fetching the preview's images again. The
+// first poll after the app starts only takes note of the images as they
+// are: the page load has just fetched them.
 func (s *server) watch(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.root == "" || fingerprint(s.root) == s.fp {
+	if s.root == "" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	tree, media := fingerprints(s.root)
+	if media != s.mediaFP {
+		if s.mediaFP != "" {
+			w.Header().Set("HX-Trigger", mediaChangedEvent)
+		}
+		s.mediaFP = media
+	}
+	if tree == s.fp {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	s.renderTree(w, "")
 }
+
+// mediaChangedEvent is the event /watch raises in the browser when an
+// image in the project changed on disk.
+const mediaChangedEvent = "qm-media-changed"
 
 // apply runs op on a freshly loaded tree and responds with the updated
 // tree. Errors from op appear as a banner above the (reverted) tree.
