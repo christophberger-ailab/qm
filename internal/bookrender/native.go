@@ -1,16 +1,39 @@
 package bookrender
 
 import (
+	"context"
 	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/christophberger-ailab/qm/internal/docrender"
 	"github.com/christophberger-ailab/qm/internal/qmcore"
 )
+
+// DefaultPDFTimeout bounds the Go PDF layout. A full handout lays out in
+// seconds; the limit only exists so a layout bug fails the render instead
+// of hanging it (and qm web) forever. Override with QM_PDF_TIMEOUT
+// (a Go duration such as "20m"; "0" disables the limit).
+const DefaultPDFTimeout = 5 * time.Minute
+
+func pdfTimeout() (time.Duration, error) {
+	v := strings.TrimSpace(os.Getenv("QM_PDF_TIMEOUT"))
+	if v == "" {
+		return DefaultPDFTimeout, nil
+	}
+	if v == "0" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 {
+		return 0, fmt.Errorf("QM_PDF_TIMEOUT: invalid duration %q", v)
+	}
+	return d, nil
+}
 
 //go:embed capture.lua
 var captureFilter []byte
@@ -136,7 +159,11 @@ func renderSelection(root string, sel qmcore.Selection, dry bool, log Logf) erro
 	}
 	options := docrender.Options{Root: root, Cover: cover, Title: title, TOC: ps.Format.Format["pdf"].TOC}
 	tmpPDF := filepath.Join(scratch, "document.pdf")
-	if err = docrender.PDF(tmpPDF, doc, options); err != nil {
+	timeout, err := pdfTimeout()
+	if err != nil {
+		return err
+	}
+	if err = docrender.RunPDF(context.Background(), timeout, tmpPDF, doc, options); err != nil {
 		return fmt.Errorf("PDF: %w", err)
 	}
 	if cover != "" {

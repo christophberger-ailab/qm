@@ -1,10 +1,13 @@
 package docrender
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/signintech/gopdf"
@@ -23,6 +26,7 @@ type pdfWriter struct {
 	page     int
 	root     string
 	headings []tocEntry
+	ctx      context.Context
 }
 type tocEntry struct {
 	title, id   string
@@ -37,6 +41,14 @@ type piece struct {
 // PDF uses embedded Unicode fonts and measured, paginated text. It never invokes
 // a typesetting process. Unsupported AST constructs are errors, not lost text.
 func PDF(path string, doc *Document, o Options) error {
+	return PDFContext(context.Background(), path, doc, o)
+}
+
+// PDFContext is PDF with cancellation: layout stops with an error once ctx
+// is done. Callers that must not block indefinitely should additionally run
+// it with a timeout of their own, since a call into gopdf cannot be
+// interrupted (see RunPDF).
+func PDFContext(ctx context.Context, path string, doc *Document, o Options) error {
 	bb, err := blocks(doc.Blocks, 0)
 	if err != nil {
 		return err
@@ -48,7 +60,7 @@ func PDF(path string, doc *Document, o Options) error {
 			return err
 		}
 	}
-	w := &pdfWriter{p: p, root: o.Root}
+	w := &pdfWriter{p: p, root: o.Root, ctx: ctx}
 	if o.Cover != "" {
 		if err = ValidateCover(o.Cover); err != nil {
 			return err
@@ -100,6 +112,9 @@ func PDF(path string, doc *Document, o Options) error {
 		w.y += 12
 	}
 	for _, b := range bb {
+		if err = w.checkDeadline(); err != nil {
+			return err
+		}
 		if b.Break {
 			w.newPage()
 			continue
@@ -351,9 +366,29 @@ func (w *pdfWriter) table(b Block) error {
 			widths[i] = width * b.Widths[i] / sum
 		}
 	}
+	// Pandoc derives relative widths from the dashes of a pipe table, which
+	// can leave a column (typically "Nr.") narrower than a single glyph.
+	// Every column must at least hold its widest character plus padding.
+	minimums := make([]float64, n)
 	for rowIndex, row := range b.Rows {
 		if len(row) != n {
 			return fmt.Errorf("inconsistent PDF table column count")
+		}
+		if err := w.font(Run{Bold: rowIndex == 0}, 9); err != nil {
+			return err
+		}
+		for i, s := range row {
+			g, err := w.widestRune(s)
+			if err != nil {
+				return err
+			}
+			minimums[i] = max(minimums[i], g+2*cellPadding)
+		}
+	}
+	widths = enforceMinimums(widths, minimums)
+	for rowIndex, row := range b.Rows {
+		if err := w.checkDeadline(); err != nil {
+			return err
 		}
 		lines := make([][]string, n)
 		maxLines := 0
@@ -365,7 +400,7 @@ func (w *pdfWriter) table(b Block) error {
 					lines[i] = append(lines[i], "")
 					continue
 				}
-				ll, err := w.p.SplitTextWithWordWrap(part, widths[i]-10)
+				ll, err := w.wrap(part, widths[i]-2*cellPadding)
 				if err != nil {
 					return err
 				}
@@ -425,4 +460,125 @@ func imageWidth(value string, available float64) float64 {
 		}
 	}
 	return 0
+}
+
+const cellPadding = 5.0
+
+// checkDeadline lets a cancelled or timed-out render stop between layout
+// steps instead of running on unobserved.
+func (w *pdfWriter) checkDeadline() error {
+	if w.ctx == nil {
+		return nil
+	}
+	if err := w.ctx.Err(); err != nil {
+		return fmt.Errorf("PDF layout aborted: %w", err)
+	}
+	return nil
+}
+
+// widestRune measures the widest single character of s in the current font.
+func (w *pdfWriter) widestRune(s string) (float64, error) {
+	widest := 0.0
+	seen := map[rune]bool{}
+	for _, c := range s {
+		if seen[c] || unicode.IsSpace(c) {
+			continue
+		}
+		seen[c] = true
+		cw, err := w.p.MeasureTextWidth(string(c))
+		if err != nil {
+			return 0, err
+		}
+		widest = max(widest, cw)
+	}
+	return widest, nil
+}
+
+// wrap word-wraps text in the current font. gopdf's SplitTextWithWordWrap
+// (v0.38.1) never returns when a single character is wider than the width:
+// it emits an empty line and retries the same character forever, growing
+// memory until the process is killed. Such text is broken one character
+// per line here instead.
+func (w *pdfWriter) wrap(text string, width float64) ([]string, error) {
+	g, err := w.widestRune(text)
+	if err != nil {
+		return nil, err
+	}
+	if width > 0 && g <= width {
+		return w.p.SplitTextWithWordWrap(text, width)
+	}
+	var lines []string
+	for _, c := range text {
+		if !unicode.IsSpace(c) {
+			lines = append(lines, string(c))
+		}
+	}
+	return lines, nil
+}
+
+// enforceMinimums raises every column to its minimum and takes the
+// difference from the columns with room to spare, in proportion to that
+// room. The total width is preserved; if the minimums alone exceed it, the
+// columns get their minimums scaled down to fit (wrap still terminates).
+func enforceMinimums(widths, minimums []float64) []float64 {
+	total, need := 0.0, 0.0
+	for i := range widths {
+		total += widths[i]
+		need += minimums[i]
+	}
+	out := make([]float64, len(widths))
+	if need >= total {
+		for i := range out {
+			out[i] = total * minimums[i] / need
+		}
+		return out
+	}
+	deficit, spare := 0.0, 0.0
+	for i := range widths {
+		if widths[i] < minimums[i] {
+			deficit += minimums[i] - widths[i]
+		} else {
+			spare += widths[i] - minimums[i]
+		}
+	}
+	for i := range widths {
+		switch {
+		case widths[i] < minimums[i]:
+			out[i] = minimums[i]
+		case deficit > 0:
+			out[i] = widths[i] - deficit*(widths[i]-minimums[i])/spare
+		default:
+			out[i] = widths[i]
+		}
+	}
+	return out
+}
+
+// ErrPDFTimeout reports a PDF layout that did not finish in time.
+var ErrPDFTimeout = errors.New("PDF rendering timed out")
+
+// RunPDF renders like PDFContext but guarantees to return within timeout
+// (if > 0). Cooperative cancellation stops qm's own layout loops; should a
+// library call hang regardless, the render goroutine is abandoned and the
+// caller gets ErrPDFTimeout instead of blocking forever.
+func RunPDF(ctx context.Context, timeout time.Duration, path string, doc *Document, o Options) error {
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	done := make(chan error, 1)
+	go func() { done <- PDFContext(ctx, path, doc, o) }()
+	select {
+	case err := <-done:
+		if errors.Is(err, context.DeadlineExceeded) {
+			return fmt.Errorf("%w after %s", ErrPDFTimeout, timeout)
+		}
+		return err
+	case <-ctx.Done():
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return fmt.Errorf("%w after %s (layout did not respond; a table or text may be unwrappable)", ErrPDFTimeout, timeout)
+		}
+		return ctx.Err()
+	}
 }
