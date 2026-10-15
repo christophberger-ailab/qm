@@ -124,6 +124,7 @@ constraints:
       8-1: The search is answered from a word index that is rebuilt in the background whenever the project changed on disk, so typing never waits for a scan of the project
       8-2: While the index is being built the field says so, and the query repeats itself until the index is ready
       8-3: A query term matches the words that start with it; a page matches when it matches every term of the query, case-insensitively
+      8-3-7: A case button beside the field makes the search case-sensitive, in the counts and in the editor's highlighting alike; its state is remembered across sessions
       8-3-1: Words are separated by whitespace, by punctuation of any script, and by every ASCII character that is not a letter or a digit, so that Markdown and YAML syntax never becomes part of a word; every other character belongs to a word, so a page is found by the characters it is written with in any script, symbols and emoji included
       8-3-2: A single hyphen between two word characters belongs to the word, so `semi-wide` is one word, found by `semi-wide` or `semi` but not by `wide`; a run of hyphens separates words as any other Markdown does
       8-3-3: A term of a single letter or digit is ignored, since it would match almost every page after the first keystroke; a single character that is neither is searched for
@@ -131,11 +132,12 @@ constraints:
       8-3-5: A quotation mark that a word character precedes is an apostrophe, not the start of a phrase
       8-3-6: The last word of a phrase matches the words that start with it until the closing quote is typed and matches whole afterwards, so that a quoted query narrows down while it is typed and a closed one is the way to ask for whole words
       8-4: The index covers the same files as the page tree, so pages the tree does not show are not found either
-      8-5: Pages with hits are highlighted in the page tree, each with its number of hits
-      8-6: A collapsed branch that contains hits is shown open while the search is active, without changing the branch's remembered collapsed state
-      8-7: The highlighting survives tree refreshes, page switches, and edits, and the query is remembered across sessions, so the results stay until the query changes
+      8-5: While a search is active, the page tree is replaced by a list of the pages with hits, in the tree's order, each with its title, its path, and its number of hits; clicking one opens it
+      8-6: The tree is kept as it was under the list, so ending the search brings it back with its collapsed branches, selection, and scroll position
+      8-7: The list survives tree refreshes, page switches, and edits, and the query is remembered across sessions, so the results stay until the query changes
+      8-7-1: Enter in the field runs the search again even when the query did not change, reading the project anew, so the hits and their counts describe the pages as they are now
       8-8: The hits of the current query are highlighted in the editor as well, and opening a page scrolls its editor to the first hit
-      8-9: While the field holds a query, an x inside its right end clears it, as does Escape in the field; clearing ends the search, so its highlighting goes and the branches it held open can be collapsed again
+      8-9: While the field holds a query, an x inside its right end clears it, as does Escape in the field; clearing ends the search, so the tree takes the list's place again
       9: The Open field in the top bar offers the projects opened before, most recent first
       9-1: The field itself shows only the last element of the open project's path, since the folder name is what tells one project from another; the full path is its tooltip and is what a submit opens
       9-1-1: The dropdown lists the projects by their full paths, since two projects may share a folder name and the list has the room the field does not; picking one shows its folder name in the field as usual

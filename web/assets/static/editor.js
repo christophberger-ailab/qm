@@ -89,8 +89,8 @@ function initEditor() {
 
 // Search highlighting
 //
-// The project search highlights the pages that matched in the tree; the
-// page open in the editor gets the same treatment inside its text. An
+// The project search lists the pages that matched in the tree pane; the
+// page open in the editor gets its hits highlighted inside its text. An
 // overlay is CodeMirror's own way to paint on top of the syntax
 // highlighting without touching the document, and "searching" is the token
 // style its stylesheet already dresses as a hit.
@@ -98,12 +98,15 @@ function initEditor() {
 // app.js owns the query; the editor is only told which terms it matched.
 
 var searchTerms = [];
+var searchCase = false;
 var searchOverlay = null;
 
 // setSearchTerms paints the given terms, replacing whatever was painted
-// before. An empty list clears the highlighting.
-function setSearchTerms(terms) {
+// before. An empty list clears the highlighting. cased says whether a hit
+// has to match the terms' case as well, as the case button asks.
+function setSearchTerms(terms, cased) {
   searchTerms = terms;
+  searchCase = !!cased;
   applySearchHighlight();
 }
 
@@ -135,7 +138,7 @@ function searchPattern() {
     });
     return begins + words.join(gap) + (term.exact ? ends : restOfWord);
   });
-  return new RegExp('(?:' + alternatives.join('|') + ')', 'giu');
+  return new RegExp('(?:' + alternatives.join('|') + ')', searchCase ? 'gu' : 'giu');
 }
 
 function applySearchHighlight() {

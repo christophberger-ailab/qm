@@ -44,13 +44,17 @@
     <div class="search-form">
       <span class="search-box">
         <input type="search" name="q" id="search-input" placeholder="Search pages" autocomplete="off"
-               title="Highlight the pages containing every term. Quotes make a phrase: &quot;logging in&quot;"
-               hx-get="/search" hx-trigger="input changed delay:300ms, search"
+               title="List the pages containing every term. Quotes make a phrase: &quot;logging in&quot;. Enter searches again."
+               hx-get="/search" hx-trigger="input changed delay:300ms"
                hx-target="#search-results" hx-swap="innerHTML">
         {{/* Sits inside the field's right end and is shown only while the
              field holds a query (see app.css). */}}
         <button type="button" id="search-clear" class="search-clear" title="Clear search" aria-label="Clear search">&times;</button>
       </span>
+      {{/* A toggle: pressed, the search tells "Go" from "go". app.js keeps
+           its state and sends it along with every search. */}}
+      <button type="button" id="search-case" class="search-case" aria-pressed="false"
+              title="Match case" aria-label="Match case">Aa</button>
       <span id="search-results" class="search-results"></span>
     </div>
     <div id="render-panel">{{template "render" .}}</div>
@@ -306,6 +310,9 @@
     <button type="submit">＋ Page</button>
   </form>
   <div id="tree" hx-get="/watch" hx-trigger="every 2s" hx-swap="innerHTML">{{template "tree" .Tree}}</div>
+  {{/* Takes the tree's place while a search stands; app.js fills it from
+       the hits and hides the tree (see .searching in app.css). */}}
+  <div id="search-list" class="search-list" hidden></div>
   <div class="tree-toolbar">
     <button type="button" id="expand-all" title="Expand all branches" aria-label="Expand all branches">⊞</button>
     <button type="button" id="collapse-all" title="Collapse all branches" aria-label="Collapse all branches">⊟</button>
@@ -340,10 +347,10 @@
 
 {{define "treewrap"}}{{if .Error}}<div class="error">{{.Error}}</div>{{end}}{{template "tree" .Tree}}{{end}}
 
-{{/* The hits are the pages the tree highlights, so they travel as data
-     rather than as a result list of their own: app.js reads the paths and
-     marks the matching tree entries. The summary is all the search field
-     itself shows. */}}
+{{/* The hits travel as data: app.js reads the paths and builds the result
+     list in the tree pane from them, with the titles and in the order of
+     the tree it stands in for. The summary is all the search field itself
+     shows. */}}
 {{define "search-results"}}<span class="search-summary"{{if .Indexing}} data-indexing="1"{{end}}>{{.Summary}}</span>
 <ul class="search-hits" hidden>{{range .Hits}}<li data-path="{{.Path}}" data-count="{{.Count}}"></li>{{end}}</ul>{{end}}
 

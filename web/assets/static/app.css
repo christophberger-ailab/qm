@@ -194,12 +194,25 @@ body {
   display: none;
 }
 
-/* The hits themselves are shown in the tree; this is the count, for when
-   the tree is scrolled away from all of them. */
+/* The total, beside the field; the pages themselves are listed in the
+   tree pane. */
 .search-summary {
   font-size: 0.8rem;
   color: var(--muted);
   white-space: nowrap;
+}
+
+/* The case toggle: pressed, it is drawn in the accent colours. */
+.search-case {
+  padding: 0.15rem 0.4rem;
+  font-size: 0.8rem;
+  line-height: 1.2;
+}
+
+.search-case[aria-pressed="true"] {
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 /* Render panel */
@@ -800,6 +813,75 @@ button:hover,
   flex: 1;
 }
 
+/* While a search stands, its result list takes the tree's place. The tree
+   stays in the page, hidden, so its scroll position, collapsed branches and
+   selection are as the user left them when the search is cleared. */
+#tree-pane.searching #tree,
+#tree-pane.searching .tree-toolbar {
+  display: none;
+}
+
+.search-list {
+  flex: 1;
+}
+
+.search-list-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.search-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 4px;
+}
+
+.search-item:hover {
+  background: var(--hover);
+}
+
+.search-item.selected {
+  background: var(--accent-bg);
+}
+
+.search-link {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0.3rem 0.4rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.search-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-path {
+  font-size: 0.75rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-count {
+  flex: none;
+  margin-right: 0.4rem;
+  padding: 0 0.35rem;
+  border-radius: 8px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+
 /* Expand/collapse-all controls, pinned below the tree. */
 .tree-toolbar {
   display: flex;
@@ -969,38 +1051,6 @@ li.page.bad-fences>.row>.title {
 
 li.selected>.row {
   background: var(--accent-bg);
-}
-
-/* Search hits. The title of a page the current query matched is set in
-   bold, and the number of hits sits at the end of its row -- after the
-   title, which takes the remaining width. The selection background is
-   untouched, so a page can show as found and as open at once. */
-li.page.hit>.row>.title {
-  font-weight: 600;
-}
-
-li.page.hit>.row::after {
-  content: attr(data-hits);
-  padding: 0 0.35rem;
-  border-radius: 8px;
-  background: var(--accent-bg);
-  color: var(--accent);
-  font-size: 0.7rem;
-  line-height: 1.5;
-}
-
-/* A collapsed branch with hits inside is shown open for as long as they are
-   there. The branch stays collapsed as far as the tree is concerned -- the
-   user's own collapsing is not overwritten by a search -- so the triangle
-   is pointed down here to describe what is actually on screen, in the
-   accent colour that says the search did it. */
-li.page.hit-branch.collapsed>ul.children {
-  display: block;
-}
-
-li.page.has-children.collapsed.hit-branch>.row>.toggle::before {
-  content: "\25BE";
-  color: var(--accent);
 }
 
 .drag-ghost {

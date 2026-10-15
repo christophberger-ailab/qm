@@ -15,9 +15,16 @@ import (
 // may still answer "indexing"; the browser repeats them, and so does this.
 func searchFor(t *testing.T, srv *server, q string) string {
 	t.Helper()
+	return searchWith(t, srv, q, "")
+}
+
+// searchWith is searchFor with further query parameters, such as the case
+// button's.
+func searchWith(t *testing.T, srv *server, q, params string) string {
+	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		body := get(t, srv, "/search?q="+url.QueryEscape(q)).Body.String()
+		body := get(t, srv, "/search?q="+url.QueryEscape(q)+params).Body.String()
 		if !strings.Contains(body, "data-indexing") {
 			return body
 		}
@@ -249,8 +256,8 @@ func TestIndexWordsReadsThePageAsText(t *testing.T) {
 		text string
 		want []string
 	}{
-		{"# A heading\n", []string{"a", "heading"}},
-		{"---\ntitle: Home\n---\n", []string{"title", "home"}},
+		{"# A heading\n", []string{"A", "heading"}},
+		{"---\ntitle: Home\n---\n", []string{"title", "Home"}},
 		{"- one\n- two\n", []string{"one", "two"}},
 		// A compound is one word; the dashes around a word are not part of it.
 		{"semi-wide well-known-enough", []string{"semi-wide", "well-known-enough"}},
@@ -259,7 +266,7 @@ func TestIndexWordsReadsThePageAsText(t *testing.T) {
 		{"this--that", []string{"this", "that"}},
 		{"*emphasis* and `code` and [link](url)", []string{"emphasis", "and", "code", "and", "link", "url"}},
 		// Any script, and anything that is not a letter at all.
-		{"Größe в Ελλάδα 🚒", []string{"größe", "в", "ελλάδα", "🚒"}},
+		{"Größe в Ελλάδα 🚒", []string{"Größe", "в", "Ελλάδα", "🚒"}},
 		{"a 🚒 b", []string{"a", "🚒", "b"}},
 		// A quotation mark is punctuation in every script.
 		{"say “hello” now", []string{"say", "hello", "now"}},
@@ -426,5 +433,69 @@ func TestSearchQuotesShortWords(t *testing.T) {
 	// A one-character phrase is a keystroke like a one-character word.
 	if found := hits(t, searchFor(t, srv, `"a"`)); len(found) != 0 {
 		t.Errorf("search for \"a\" found %v, want nothing", found)
+	}
+}
+
+// The case button makes the search tell "Go" from "go"; without it, every
+// spelling of a word is found, and a phrase as well.
+func TestSearchCaseSensitivity(t *testing.T) {
+	srv, root := testServer(t)
+	addPages(t, srv, root, map[string]string{
+		"lang.qmd": "Written in Go Lang.\n",
+		"verb.qmd": "Ready, set, go lang.\n",
+	})
+	cased := func(q string) map[string]string {
+		t.Helper()
+		return hits(t, searchWith(t, srv, q, "&case=1"))
+	}
+	if found := hits(t, searchFor(t, srv, "go")); found["lang.qmd"] == "" || found["verb.qmd"] == "" {
+		t.Errorf("search for go found %v, want both pages", found)
+	}
+	if found := cased("Go"); len(found) != 1 || found["lang.qmd"] == "" {
+		t.Errorf("case-sensitive search for Go found %v, want only lang.qmd", found)
+	}
+	if found := cased(`"go lang"`); len(found) != 1 || found["verb.qmd"] == "" {
+		t.Errorf("case-sensitive phrase \"go lang\" found %v, want only verb.qmd", found)
+	}
+	if found := hits(t, searchFor(t, srv, `"go lang"`)); len(found) != 2 {
+		t.Errorf("phrase \"go lang\" found %v, want both pages", found)
+	}
+	// A prefix keeps its case too.
+	if found := cased("La"); len(found) != 1 || found["lang.qmd"] == "" {
+		t.Errorf("case-sensitive search for La found %v, want only lang.qmd", found)
+	}
+}
+
+// Asking again for the same query reads the project anew, so an edit the
+// fingerprint could not see -- same size, same modification time -- is
+// counted.
+func TestSearchFreshRereadsTheProject(t *testing.T) {
+	srv, root := testServer(t)
+	addPages(t, srv, root, map[string]string{"fruit.qmd": "aaaaaaa kumquat.\n"})
+	if found := hits(t, searchFor(t, srv, "kumquat")); found["fruit.qmd"] != "1" {
+		t.Fatalf("search for kumquat found %v, want fruit.qmd once", found)
+	}
+	path := filepath.Join(root, "fruit.qmd")
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := strings.Replace(string(src), "aaaaaaa", "kumquat", 1)
+	if err := os.WriteFile(path, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, fi.ModTime(), fi.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	if found := hits(t, searchFor(t, srv, "kumquat")); found["fruit.qmd"] != "1" {
+		t.Fatalf("without a fresh run the index was expected to be unchanged, found %v", found)
+	}
+	get(t, srv, "/search?q=kumquat&fresh=1")
+	if found := hits(t, searchFor(t, srv, "kumquat")); found["fruit.qmd"] != "2" {
+		t.Errorf("search for kumquat after a fresh run found %v, want fruit.qmd twice", found)
 	}
 }

@@ -828,6 +828,7 @@ function applySelection() {
   document.querySelectorAll('#tree li.page').forEach(function (li) {
     li.classList.toggle('selected', !!currentPath && li.dataset.path === currentPath);
   });
+  applySearchSelection();
   // The flip buttons name the pages around the selected one, so they are
   // answered from the same tree at the same moments.
   applyPageNav();
@@ -965,14 +966,17 @@ function revealSelection() {
 // Search
 //
 // The search field in the top bar is answered by /search with the pages
-// that match, as data rather than as a result list: the tree already shows
-// every page of the project, so the hits are shown by highlighting the
-// entries that have them. That is also what makes a result outlast
-// everything that re-renders the tree -- the two-second watch, moves,
-// saves, page switches -- because the highlighting is re-applied from here
-// after every swap, the way the selection and the collapsed branches are.
+// that match, as data: the paths and their hit counts. While a query
+// stands, the tree pane shows those pages as a list in place of the tree,
+// in the order the tree has them and under the titles it gives them -- the
+// tree stays in the page underneath, hidden, and keeps being refreshed, so
+// the list is rebuilt from here after every swap of either, and clearing
+// the search brings the tree back as the user left it.
 
 var SEARCH_KEY = 'searchQuery';
+
+// SEARCH_CASE_KEY remembers whether the case button is pressed.
+var SEARCH_CASE_KEY = 'searchCase';
 
 // searchHits maps a page's path to its number of hits, for the query the
 // field currently holds.
@@ -1013,8 +1017,23 @@ var wordRun = new RegExp(WORD_CHAR + '+(?:' + JOINER + WORD_CHAR + '+)*', 'gu');
 var QUOTE_ENDS = { '"': '"', "'": "'", '\u201C': '\u201D', '\u2018': '\u2019' };
 
 // searchWords splits text into words the way the index splits page text.
+// The words keep their case; whether it matters is the case button's call.
 function searchWords(text) {
-  return text.toLowerCase().match(wordRun) || [];
+  return text.match(wordRun) || [];
+}
+
+// searchCased says whether the case button is pressed: the search then
+// tells "Go" from "go".
+function searchCased() {
+  var button = document.getElementById('search-case');
+  return !!button && button.getAttribute('aria-pressed') === 'true';
+}
+
+function setSearchCased(on) {
+  var button = document.getElementById('search-case');
+  if (button) {
+    button.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
 }
 
 // parseQuery reads a query into the terms it asks for: {words, exact}.
@@ -1078,24 +1097,34 @@ function skipTerm(term) {
 
 // runSearch asks for the hits of whatever the field holds. The field posts
 // itself as it is typed in; this is for the times the field did not change
-// but the answer did -- the query restored on startup, and the retry while
-// the index is still being built.
-function runSearch() {
-  htmx.ajax('GET', '/search?q=' + encodeURIComponent(searchQuery()), {
+// but the answer may have -- the query restored on startup, the retry while
+// the index is still being built, a press of Enter or of the case button.
+// fresh asks the server to read the project anew rather than trust its
+// index: it is what Enter sends, since the user asking again for the same
+// query is the user saying the answer looks out of date.
+function runSearch(fresh) {
+  var url = '/search?q=' + encodeURIComponent(searchQuery());
+  if (searchCased()) {
+    url += '&case=1';
+  }
+  if (fresh) {
+    url += '&fresh=1';
+  }
+  htmx.ajax('GET', url, {
     target: '#search-results',
     swap: 'innerHTML'
   });
 }
 
-// readHits takes an answer apart and applies it to the tree and to the
-// editor.
+// readHits takes an answer apart and applies it to the tree pane and to
+// the editor.
 function readHits() {
   searchHits = new Map();
   document.querySelectorAll('#search-results .search-hits li').forEach(function (li) {
     searchHits.set(li.dataset.path, Number(li.dataset.count));
   });
-  applyHits();
-  setSearchTerms(parseQuery(searchQuery()));
+  renderSearchList();
+  setSearchTerms(parseQuery(searchQuery()), searchCased());
 
   // The index is rebuilt in the background whenever the project changed on
   // disk. Until the new one is in, the answer describes the project as it
@@ -1106,54 +1135,118 @@ function readHits() {
   }
 }
 
-// applyHits marks the pages that matched, each with its number of hits. A
-// branch holding hits is shown open for as long as they are there -- a hit
-// inside a collapsed branch would be invisible -- but the remembered
-// collapsed state is left alone, so clearing the search returns the tree to
-// the shape the user gave it.
-function applyHits() {
-  var tree = document.getElementById('tree');
-  if (!tree) {
+// searchActive says whether the field holds a query that asks for
+// anything. A lone letter does not -- the server ignores it too -- and
+// replacing the tree with an empty list after the first keystroke would
+// only make the tree flicker.
+function searchActive() {
+  return parseQuery(searchQuery()).length > 0;
+}
+
+// renderSearchList shows the pages that matched in place of the tree, each
+// with its title, its path, and its number of hits. The pages come in the
+// tree's order, which is the book's, and with the tree's titles; a hit the
+// tree does not list -- the tree may be a moment behind the index -- is
+// added at the end under its path.
+function renderSearchList() {
+  var pane = document.getElementById('tree-pane');
+  var list = document.getElementById('search-list');
+  if (!pane || !list) {
     return;
   }
-  tree.querySelectorAll('li.page').forEach(function (li) {
-    li.classList.remove('hit', 'hit-branch');
-    var row = li.querySelector(':scope > .row');
-    if (row) {
-      row.removeAttribute('data-hits');
+  var active = searchActive();
+  pane.classList.toggle('searching', active);
+  list.hidden = !active;
+  list.textContent = '';
+  if (!active) {
+    return;
+  }
+
+  var titles = new Map();
+  document.querySelectorAll('#tree li.page').forEach(function (li) {
+    var title = li.querySelector(':scope > .row > .title');
+    if (li.dataset.path && title) {
+      titles.set(li.dataset.path, title.textContent.trim());
     }
   });
-  tree.querySelectorAll('li.page').forEach(function (li) {
-    var count = searchHits.get(li.dataset.path);
-    if (!count) {
-      return;
+  var paths = [];
+  titles.forEach(function (title, path) {
+    if (searchHits.has(path)) {
+      paths.push(path);
     }
-    li.classList.add('hit');
-    var row = li.querySelector(':scope > .row');
-    if (row) {
-      row.dataset.hits = count;
+  });
+  searchHits.forEach(function (count, path) {
+    if (!titles.has(path)) {
+      paths.push(path);
     }
-    for (var node = li.parentElement; node && node.id !== 'tree'; node = node.parentElement) {
-      if (node.classList.contains('page')) {
-        node.classList.add('hit-branch');
-      }
-    }
+  });
+
+  if (!paths.length) {
+    var empty = document.createElement('p');
+    empty.className = 'empty';
+    var summary = document.querySelector('#search-results .search-summary');
+    empty.textContent = summary && summary.textContent === 'Indexing…'
+      ? 'Indexing…'
+      : 'No page matches the search.';
+    list.appendChild(empty);
+    return;
+  }
+
+  var ul = document.createElement('ul');
+  ul.className = 'search-list-items';
+  paths.forEach(function (path) {
+    var li = document.createElement('li');
+    li.className = 'search-item';
+    li.dataset.path = path;
+    var link = document.createElement('a');
+    link.href = '#';
+    link.className = 'search-link';
+    // Opened the way the tree opens a page, so the guard for edits that
+    // could not be saved asks here too.
+    link.setAttribute('hx-get', '/content?path=' + encodeURIComponent(path));
+    link.setAttribute('hx-target', '#content');
+    var title = document.createElement('span');
+    title.className = 'search-title';
+    title.textContent = titles.get(path) || path;
+    var where = document.createElement('span');
+    where.className = 'search-path';
+    where.textContent = path;
+    link.appendChild(title);
+    link.appendChild(where);
+    var count = document.createElement('span');
+    count.className = 'search-count';
+    count.textContent = searchHits.get(path);
+    count.title = searchHits.get(path) === 1 ? '1 hit' : searchHits.get(path) + ' hits';
+    li.appendChild(link);
+    li.appendChild(count);
+    ul.appendChild(li);
+  });
+  list.appendChild(ul);
+  htmx.process(list);
+  applySearchSelection();
+}
+
+// applySearchSelection marks the open page in the result list, the way the
+// tree marks it.
+function applySearchSelection() {
+  document.querySelectorAll('#search-list li.search-item').forEach(function (li) {
+    li.classList.toggle('selected', !!currentPath && li.dataset.path === currentPath);
   });
 }
 
-// refreshHits re-applies the current search to a tree that has just been
+// refreshHits rebuilds the result list from a tree that has just been
 // rendered again, and asks for the hits anew: what the tree shows changed,
 // which is why it was rendered again, so the counts may have changed too.
 function refreshHits() {
-  applyHits();
+  renderSearchList();
   if (searchQuery()) {
     runSearch();
   }
 }
 
 // clearSearch empties the field and asks for the answer to the empty
-// query, which has no hits: that takes the highlighting off the tree and the
-// editor, and lets the branches that were held open for hits close again.
+// query, which has no hits: that puts the tree back in place of the result
+// list and takes the highlighting off the editor.
 function clearSearch() {
   var input = document.getElementById('search-input');
   if (!input) {
@@ -1169,15 +1262,42 @@ function clearSearch() {
 document.body.addEventListener('click', function (evt) {
   if (evt.target.closest('#search-clear')) {
     clearSearch();
+    return;
+  }
+  if (evt.target.closest('#search-case')) {
+    setSearchCased(!searchCased());
+    localStorage.setItem(SEARCH_CASE_KEY, searchCased() ? '1' : '');
+    clearTimeout(searchRetry);
+    runSearch();
+    return;
+  }
+  var link = evt.target.closest('#search-list a.search-link');
+  if (link) {
+    evt.preventDefault();
+    var item = link.closest('li');
+    currentPath = item ? item.dataset.path : null;
+    applySelection();
   }
 });
 
 // Escape in the field clears it, as it does in a browser's own search
 // fields -- not all of them do it for a page's field, so it is done here.
 document.body.addEventListener('keydown', function (evt) {
-  if (evt.key === 'Escape' && evt.target.id === 'search-input' && evt.target.value) {
+  if (evt.target.id !== 'search-input') {
+    return;
+  }
+  if (evt.key === 'Escape' && evt.target.value) {
     evt.preventDefault();
     clearSearch();
+  }
+  // Enter runs the search again even when the query did not change: the
+  // field only posts itself when its value does, and the user pressing
+  // Enter wants an answer that reflects the pages as they are now.
+  if (evt.key === 'Enter') {
+    evt.preventDefault();
+    localStorage.setItem(SEARCH_KEY, evt.target.value);
+    clearTimeout(searchRetry);
+    runSearch(true);
   }
 });
 
@@ -1190,6 +1310,7 @@ function initSearch() {
     return;
   }
   input.value = localStorage.getItem(SEARCH_KEY) || '';
+  setSearchCased(localStorage.getItem(SEARCH_CASE_KEY) === '1');
   if (input.value) {
     runSearch();
   }
@@ -1314,6 +1435,11 @@ document.body.addEventListener('htmx:configRequest', function (evt) {
   var elt = evt.detail && evt.detail.elt;
   if (elt && elt.classList && elt.classList.contains('new-file-form')) {
     evt.detail.parameters.after = currentPath || '';
+  }
+  // The search field posts its query as it is typed; the case button rides
+  // along, as it does with every other search request.
+  if (elt && elt.id === 'search-input' && searchCased()) {
+    evt.detail.parameters['case'] = '1';
   }
   // The Open field posts the label it shows; the project it stands for is
   // the full path behind it, which is what the server has to be given.
