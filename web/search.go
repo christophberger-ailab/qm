@@ -41,8 +41,20 @@ type searchIndex struct {
 	terms wordIndex
 }
 
-// wordIndex is what a built index holds: word -> page -> positions.
-type wordIndex map[string]map[string][]int
+// wordIndex is what a built index holds: every word as it is written,
+// mapped to the pages it is on and the positions it stands at there. The
+// words keep their case so that a case-sensitive search can tell "Go" from
+// "go"; folded is what a search that ignores case looks words up by: every
+// word lowercased, mapped to the spellings it stands for.
+type wordIndex struct {
+	words  map[string]map[string][]int
+	folded map[string][]string
+}
+
+// fold is the form a word is compared in when case does not matter.
+func fold(w string) string {
+	return strings.Map(unicode.ToLower, w)
+}
 
 // indexState identifies what an index describes: a project, in the shape it
 // had at a given fingerprint.
@@ -116,14 +128,14 @@ func (x *searchIndex) expire() {
 // with a build pending still answers -- its hits are a moment old, which
 // beats clearing the tree's highlighting on every autosave -- but says so,
 // and the client comes back for the new answer.
-func (x *searchIndex) search(root, q string) ([]searchHit, bool) {
+func (x *searchIndex) search(root, q string, cased bool) ([]searchHit, bool) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if !x.ready || x.root != root {
 		return nil, false
 	}
 	current := x.want == indexState{x.root, x.fp}
-	return matchPages(x.terms, q), current
+	return matchPages(x.terms, q, cased), current
 }
 
 // indexPages counts the words of every page of the project. It covers the
@@ -132,7 +144,7 @@ func (x *searchIndex) search(root, q string) ([]searchHit, bool) {
 // the user can open from the tree. Unreadable files drop out of the index
 // the way they drop out of the fingerprint.
 func indexPages(root string) wordIndex {
-	terms := wordIndex{}
+	terms := wordIndex{words: map[string]map[string][]int{}, folded: map[string][]string{}}
 	if root == "" {
 		return terms
 	}
@@ -160,10 +172,12 @@ func indexPages(root string) wordIndex {
 		}
 		page := filepath.ToSlash(rel)
 		for at, term := range indexWords(string(src)) {
-			pages := terms[term]
+			pages := terms.words[term]
 			if pages == nil {
 				pages = map[string][]int{}
-				terms[term] = pages
+				terms.words[term] = pages
+				f := fold(term)
+				terms.folded[f] = append(terms.folded[f], term)
 			}
 			pages[page] = append(pages[page], at)
 		}
@@ -199,8 +213,8 @@ func isJoiner(r rune) bool {
 	return r == '-' || r == '\u2010' || r == '\u2011'
 }
 
-// indexWords splits text into the lowercased words the index is keyed by,
-// in the order they are read. Their order is their position: the index
+// indexWords splits text into the words the index is keyed by, as they are
+// written, in the order they are read. Their order is their position: the index
 // keeps it so that a phrase can be told apart from the same words scattered
 // over a page.
 func indexWords(text string) []string {
@@ -221,7 +235,7 @@ func indexWords(text string) []string {
 			} else if joiners > 0 {
 				flush() // a run of dashes, or one that starts a word
 			}
-			word, joiners = append(word, unicode.ToLower(r)), 0
+			word, joiners = append(word, r), 0
 		case isJoiner(r):
 			joiner, joiners = r, joiners+1
 		default:
@@ -316,14 +330,17 @@ func (t queryTerm) skip() bool {
 // matches. A page matches a term where the term's words are, so a loose
 // query counts its words and a phrase counts the places the whole phrase
 // stands.
-func matchPages(terms wordIndex, q string) []searchHit {
+//
+// cased says whether the case of a word has to match as well; otherwise
+// "go" finds "Go" and "GO" too.
+func matchPages(terms wordIndex, q string, cased bool) []searchHit {
 	query := parseQuery(q)
 	if len(query) == 0 {
 		return nil
 	}
 	var found map[string]int
 	for _, t := range query {
-		pages := t.match(terms)
+		pages := t.match(terms, cased)
 		if found == nil {
 			found = pages
 			continue
@@ -347,10 +364,10 @@ func matchPages(terms wordIndex, q string) []searchHit {
 }
 
 // match counts the term on every page that has it.
-func (t queryTerm) match(terms wordIndex) map[string]int {
+func (t queryTerm) match(terms wordIndex, cased bool) map[string]int {
 	hits := map[string]int{}
 	if len(t.words) == 1 {
-		for page, at := range wordPages(terms, t.words[0], t.exact) {
+		for page, at := range wordPages(terms, t.words[0], t.exact, cased) {
 			hits[page] = len(at)
 		}
 		return hits
@@ -360,12 +377,12 @@ func (t queryTerm) match(terms wordIndex) map[string]int {
 	// next word does not carry on from; what survives the last word are the
 	// places the whole phrase stands at.
 	starts := map[string][]int{}
-	for page, at := range wordPages(terms, t.words[0], true) {
+	for page, at := range wordPages(terms, t.words[0], true, cased) {
 		starts[page] = slices.Clone(at)
 	}
 	for i := 1; i < len(t.words); i++ {
 		// Only the last word of a phrase may still be being typed.
-		next := wordPages(terms, t.words[i], t.exact || i < len(t.words)-1)
+		next := wordPages(terms, t.words[i], t.exact || i < len(t.words)-1, cased)
 		for page, from := range starts {
 			kept := from[:0]
 			for _, p := range from {
@@ -389,25 +406,42 @@ func (t queryTerm) match(terms wordIndex) map[string]int {
 // wordPages are the pages a single word of a query is on, with the sorted
 // positions it is at. A word matches by prefix while it is being typed --
 // a query that only matched whole words would find nothing until its last
-// letter -- and whole once a closing quote says it is finished.
+// letter -- and whole once a closing quote says it is finished. Unless the
+// search is case-sensitive, every spelling of the word counts: "go" stands
+// for "go", "Go" and "GO" alike.
 //
-// The result of an exact lookup is the index's own map and must be read
-// only; the prefix lookup builds its own.
-func wordPages(terms wordIndex, w string, exact bool) map[string][]int {
-	if exact {
-		return terms[w]
+// The result of an exact, case-sensitive lookup is the index's own map and
+// must be read only; every other lookup builds its own.
+func wordPages(terms wordIndex, w string, exact, cased bool) map[string][]int {
+	if exact && cased {
+		return terms.words[w]
+	}
+	var spellings []string
+	switch {
+	case cased:
+		for term := range terms.words {
+			if strings.HasPrefix(term, w) {
+				spellings = append(spellings, term)
+			}
+		}
+	case exact:
+		spellings = terms.folded[fold(w)]
+	default:
+		w = fold(w)
+		for f, words := range terms.folded {
+			if strings.HasPrefix(f, w) {
+				spellings = append(spellings, words...)
+			}
+		}
 	}
 	pages := map[string][]int{}
-	for term, at := range terms {
-		if !strings.HasPrefix(term, w) {
-			continue
-		}
-		for page, positions := range at {
+	for _, term := range spellings {
+		for page, positions := range terms.words[term] {
 			pages[page] = append(pages[page], positions...)
 		}
 	}
 	// The positions of one word come out of the index in order, but those
-	// of several words merged into one prefix do not, and the phrase walk
+	// of several words merged into one do not, and the phrase walk
 	// searches them.
 	for _, positions := range pages {
 		slices.Sort(positions)
@@ -431,9 +465,18 @@ func (s *server) search(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	q := r.URL.Query().Get("q")
+	cased := r.URL.Query().Get("case") == "1"
 	view := searchView{Query: q}
 	if s.root != "" {
-		hits, current := s.index.search(s.root, q)
+		if r.URL.Query().Get("fresh") == "1" {
+			// The user asked again for a query they had already asked. The
+			// index follows the fingerprint, which can miss a change -- an
+			// edit that keeps a page's size, made within the same second --
+			// so the answer is read from the disk anew rather than taken on
+			// trust; until it is in, the client keeps asking.
+			s.index.expire()
+		}
+		hits, current := s.index.search(s.root, q, cased)
 		// An empty query needs no index: reporting it as still indexing
 		// would put the client into a poll that nothing ends.
 		view.Hits, view.Indexing = hits, !current && len(parseQuery(q)) > 0

@@ -639,20 +639,21 @@ the panel polls `state()` for a consistent snapshot. `bookrender.Run` receives
 `fmt.Printf`.
 
 `searchIndex` (`search.go:24`) is the same pattern applied to the word index:
-`rebuild` (`search.go:64`) schedules a build and returns at once, a build
+`rebuild` (`search.go:76`) schedules a build and returns at once, a build
 already running is not interrupted but picks up the newer state when it
 finishes (so a burst of saves costs one extra pass, not one per save), and
-`search` (`search.go:119`) answers from whatever the index currently holds,
+`search` (`search.go:131`) answers from whatever the index currently holds,
 telling the client to ask again while a build runs.
 
-What the index holds is `wordIndex` (`search.go:45`), word → page →
-positions. The positions are what make a quoted phrase answerable: a phrase
+What the index holds is `wordIndex` (`search.go:49`), word → page →
+positions, with the words as they are written plus a lowercased lookup, so a
+search can ignore case or, with the case button pressed, match it. The positions are what make a quoted phrase answerable: a phrase
 is the places its first word appears, minus the ones its next word does not
-carry on from. `indexWords` (`search.go:206`) is the tokenizer both sides of
+carry on from. `indexWords` (`search.go:220`) is the tokenizer both sides of
 the wire use — Markdown and YAML syntax separates words, a single hyphen
 inside one does not, and everything that is neither punctuation nor
 whitespace is a word character, emoji included. `parseQuery`
-(`search.go:264`) reads a query into loose words and quoted phrases;
+(`search.go:278`) reads a query into loose words and quoted phrases;
 `app.js` reads it a second time for the editor's highlighting, and
 `TestParseQueryReadsQuotesAndWords` is where the two readings are kept
 honest.
