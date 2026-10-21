@@ -1,6 +1,6 @@
 module github.com/christophberger-ailab/qm
 
-go 1.27
+go 1.27.3
 
 require (
 	cuelang.org/go v0.17.1
