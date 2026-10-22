@@ -1442,6 +1442,7 @@ li.CodeMirror-hint-active {
 
 .help-nav {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem;
   flex: none;
@@ -1453,9 +1454,15 @@ li.CodeMirror-hint-active {
   white-space: nowrap;
 }
 
+/* The topic menu takes the room the buttons leave; in a narrow pane it
+   wraps below them rather than shrinking to nothing. */
 .help-topic {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 8rem;
+  min-width: 8rem;
+}
+
+.help-lang[hidden] {
+  display: none;
 }
 
 #help {

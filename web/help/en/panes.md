@@ -19,6 +19,7 @@ The help pane shows these pages. Links between help pages open in the pane itsel
 - `◀ Back` returns to the help page you read before.
 - `Contents` brings you to the table of contents.
 - The dropdown jumps to any help topic.
+- The language menu switches the help between English and German. The help starts in your system's language when it has that language, and in English otherwise; once you pick one, it keeps your choice.
 
 The pane remembers the page you were reading, also across sessions.
 
