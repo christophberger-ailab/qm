@@ -245,11 +245,15 @@ constraints:
       12-7-2: The route that opens an image takes the image's path relative to the project root and refuses anything that is not an image file inside the open project
       12-7-3: An image editor that could not be started is reported where the Editor button reports its own failure
       13: A help pane sits beside the editor with the preview and the copyedit pane, and shows the app's online help
-      13-1: The help is a set of Markdown pages kept in the repository under web/help and embedded in the binary like the other assets; no help file is read from disk at run time
+      13-1: The help is a set of Markdown pages kept in the repository under web/help/<lang> and embedded in the binary like the other assets; no help file is read from disk at run time
       13-2: The pages are rendered in the browser by the preview's own renderer, so the help needs no Markdown implementation of its own and reads like a previewed page
       13-3: The help opens on its table of contents, index.md; a dropdown at the head of the pane lists every page by its first heading, in the order the table of contents links them, any page it does not link following by name
       13-4: A link to another help page opens that page in the pane; a link out of the help opens in a new browser tab, so the app is not left
       13-5: A Back button returns to the help page shown before, and a Contents button to the table of contents
       13-6: The help page shown is remembered across page switches and sessions; a page switch, which rebuilds the pane, keeps its scroll position
+      13-7: The routes serve the help pages by plain name only -- `GET /help` lists the languages and one language's pages, `GET /help/<lang>/<name>.md` serves one page's Markdown -- so nothing but the embedded pages is reachable through them
       13-8: The help needs no page: while none is open -- none selected yet, or no project opened -- the content header still offers the Help button, and the pane stands beside a placeholder in the editor's place, laid out and resized as it is beside the editor
-      13-7: The routes serve the help pages by plain name only -- `GET /help` lists them, `GET /help/<name>.md` serves one's Markdown -- so nothing but the embedded pages is reachable through them
+      13-9: The help is written in English and in German, one folder of pages per language under the same file names, and a menu in the pane switches between them; the pane's own buttons follow the help's language
+      13-9-1: Until the user picks a language in the pane, the help is shown in the first of the browser's languages -- which follow the system's -- that it is written in, a regional tag such as de-AT asking for its language; with none of them, it is shown in English
+      13-9-2: The language picked is remembered across sessions, and switching shows the page that was open in the other language
+      13-9-3: A page a translation lacks, and a language the help is not written in, are answered in English rather than not at all

@@ -465,66 +465,122 @@ document.addEventListener('dragend', function () {
 
 // The help pane
 //
-// The help is a set of Markdown pages embedded in the binary. /help lists
-// them, /help/<name> serves one, and the pane renders it with the
+// The help is a set of Markdown pages embedded in the binary, in one or
+// more languages. /help lists the languages and the topics of one of them,
+// /help/<lang>/<name> serves a page, and the pane renders it with the
 // preview's renderer. A link to another help page opens that page in the
 // pane; a link out of the help opens in a new tab, so the app stays put.
-// The page shown is remembered across sessions; the pages fetched are kept
-// for the session, since the pane is rebuilt on every page switch and the
-// help does not change while the app runs.
+//
+// The help is shown in the language the user picked in the pane, else in
+// the first of the browser's languages -- which follow the system's -- the
+// help is written in, else in English. The page shown and the language
+// picked are remembered across sessions; what was fetched is kept for the
+// session, since the pane is rebuilt on every page switch and the help does
+// not change while the app runs.
 
 var HELP_PAGE_KEY = 'helpPage';
+var HELP_LANG_KEY = 'helpLang';
 var HELP_INDEX = 'index.md';
 var helpPageName = /^[A-Za-z0-9_-]+\.md$/;
+
+// HELP_LABELS are the pane's own buttons in the languages the help is
+// written in; a language without an entry keeps the English ones.
+var HELP_LABELS = {
+  en: { back: '◀ Back', home: 'Contents', error: 'The help could not be loaded.' },
+  de: { back: '◀ Zurück', home: 'Inhalt', error: 'Die Hilfe konnte nicht geladen werden.' }
+};
 
 var helpPage = localStorage.getItem(HELP_PAGE_KEY) || HELP_INDEX;
 var helpHistory = [];
 var helpCache = {};
-var helpTopicList = null;
+var helpContents = null;
 var helpScroll = 0;
+
+// helpWanted is the language list the server picks the help's language
+// from: the one picked in the pane, else the browser's own.
+function helpWanted() {
+  var picked = localStorage.getItem(HELP_LANG_KEY);
+  if (picked) {
+    return picked;
+  }
+  var langs = navigator.languages && navigator.languages.length
+    ? navigator.languages : [navigator.language || ''];
+  return langs.join(',');
+}
+
+// fetchHelpContents gets the languages and, in the language the help is
+// shown in, its topics.
+function fetchHelpContents() {
+  if (helpContents) {
+    return Promise.resolve(helpContents);
+  }
+  return fetch('/help?lang=' + encodeURIComponent(helpWanted())).then(function (resp) {
+    if (!resp.ok) {
+      throw new Error('no help');
+    }
+    return resp.json();
+  }).then(function (contents) {
+    helpContents = contents;
+    return contents;
+  });
+}
 
 // fetchHelp gets one help page's text, from the cache when it was fetched
 // before.
-function fetchHelp(name) {
-  if (helpCache[name] !== undefined) {
-    return Promise.resolve(helpCache[name]);
+function fetchHelp(lang, name) {
+  var key = lang + '/' + name;
+  if (helpCache[key] !== undefined) {
+    return Promise.resolve(helpCache[key]);
   }
-  return fetch('/help/' + encodeURIComponent(name)).then(function (resp) {
+  return fetch('/help/' + encodeURIComponent(lang) + '/' + encodeURIComponent(name)).then(function (resp) {
     if (!resp.ok) {
       throw new Error('no help page ' + name);
     }
     return resp.text();
   }).then(function (text) {
-    helpCache[name] = text;
+    helpCache[key] = text;
     return text;
   });
 }
 
-// fillHelpTopics puts the list of help pages into the pane's dropdown,
-// with the page shown selected.
-function fillHelpTopics() {
-  var select = document.getElementById('help-topic');
+// fillSelect replaces the options of the select with id by items, each
+// made of value and label by the two functions, and selects current.
+function fillSelect(id, items, value, label, current) {
+  var select = document.getElementById(id);
   if (!select) {
     return;
   }
-  var fill = function (topics) {
-    select.innerHTML = '';
-    topics.forEach(function (topic) {
-      var option = document.createElement('option');
-      option.value = topic.name;
-      option.textContent = topic.title;
-      select.appendChild(option);
-    });
-    select.value = helpPage;
-  };
-  if (helpTopicList) {
-    fill(helpTopicList);
-    return;
+  select.innerHTML = '';
+  items.forEach(function (item) {
+    var option = document.createElement('option');
+    option.value = value(item);
+    option.textContent = label(item);
+    select.appendChild(option);
+  });
+  select.value = current;
+}
+
+// fillHelpNav brings the pane's navigation in line with the page shown:
+// the topics and the languages in their menus, the buttons in the
+// language of the help.
+function fillHelpNav(contents) {
+  var get = function (key) { return function (item) { return item[key]; }; };
+  fillSelect('help-topic', contents.topics, get('name'), get('title'), helpPage);
+  var lang = document.getElementById('help-lang');
+  if (lang) {
+    fillSelect('help-lang', contents.languages, get('code'), get('name'), contents.lang);
+    lang.hidden = contents.languages.length < 2;
   }
-  fetch('/help').then(function (resp) { return resp.json(); }).then(function (topics) {
-    helpTopicList = topics;
-    fill(topics);
-  }).catch(function () {});
+  var labels = HELP_LABELS[contents.lang] || HELP_LABELS.en;
+  var back = document.getElementById('help-back');
+  if (back) {
+    back.textContent = labels.back;
+    back.disabled = helpHistory.length === 0;
+  }
+  var home = document.getElementById('help-home');
+  if (home) {
+    home.textContent = labels.home;
+  }
 }
 
 // linkHelp points the links of a rendered help page where they belong: a
@@ -554,9 +610,13 @@ function showHelp(name, remember) {
   if (!helpPageName.test(name)) {
     name = HELP_INDEX;
   }
-  fetchHelp(name).catch(function () {
-    name = HELP_INDEX; // a page remembered from an older build may be gone
-    return fetchHelp(name);
+  var contents;
+  fetchHelpContents().then(function (c) {
+    contents = c;
+    return fetchHelp(contents.lang, name).catch(function () {
+      name = HELP_INDEX; // a page remembered from an older build may be gone
+      return fetchHelp(contents.lang, name);
+    });
   }).then(function (text) {
     if (remember && name !== helpPage) {
       helpHistory.push(helpPage);
@@ -566,15 +626,13 @@ function showHelp(name, remember) {
     localStorage.setItem(HELP_PAGE_KEY, name);
     renderPreview(el, text, '');
     linkHelp(el);
+    el.lang = contents.lang;
     el.scrollTop = again ? helpScroll : 0;
     helpScroll = el.scrollTop;
-    var back = document.getElementById('help-back');
-    if (back) {
-      back.disabled = helpHistory.length === 0;
-    }
-    fillHelpTopics();
+    fillHelpNav(contents);
   }).catch(function () {
-    el.textContent = 'The help could not be loaded.';
+    var labels = HELP_LABELS[contents ? contents.lang : 'en'] || HELP_LABELS.en;
+    el.textContent = labels.error;
   });
 }
 
@@ -606,6 +664,13 @@ document.addEventListener('click', function (evt) {
 document.addEventListener('change', function (evt) {
   if (evt.target.id === 'help-topic') {
     showHelp(evt.target.value, true);
+  }
+  if (evt.target.id === 'help-lang') {
+    // The same page, in the language picked; the topics come along anew.
+    localStorage.setItem(HELP_LANG_KEY, evt.target.value);
+    helpContents = null;
+    helpScroll = 0;
+    showHelp(helpPage, false);
   }
 });
 
