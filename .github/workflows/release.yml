@@ -4,9 +4,9 @@ name: Release
 # job drops the "closed without merging" case. workflow_dispatch is kept for
 # manual re-runs and for setting a version by hand.
 #
-# Versions follow SemVer. The next version is the newest vX.Y.Z tag bumped by
-# the merged PR's label: semver:major, semver:minor or semver:patch (the
-# highest one wins; no label means patch).
+# Versions follow SemVer with the major version held at 0. The next version
+# is the newest v0.Y.Z tag bumped by the merged PR's label: semver:minor for a
+# new or improved feature, semver:patch (or no label) for fixes only.
 on:
   pull_request:
     types: [closed]
@@ -16,10 +16,10 @@ on:
       bump:
         description: Part of the last version to bump
         type: choice
-        options: [patch, minor, major]
+        options: [patch, minor]
         default: patch
       version:
-        description: Exact version to release (e.g. v0.1.0); overrides bump
+        description: Exact version to release (e.g. v0.1.0, major must be 0); overrides bump
         required: false
 
 permissions:
@@ -61,31 +61,28 @@ jobs:
           INPUT_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          semver='^v0\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
           last=$(git tag --list 'v*' | grep -E "$semver" | sort -V | tail -n1 || true)
           last=${last:-v0.0.0}
 
           if [ -n "${INPUT_VERSION:-}" ]; then
             next=$INPUT_VERSION
             if ! printf '%s\n' "$next" | grep -Eq "$semver"; then
-              echo "::error::version '$next' is not of the form vMAJOR.MINOR.PATCH"
+              echo "::error::version '$next' is not of the form v0.MINOR.PATCH"
               exit 1
             fi
           else
             bump=${INPUT_BUMP:-patch}
             if [ "${{ github.event_name }}" = "pull_request" ]; then
               bump=patch
-              for level in minor major; do
-                if printf '%s' "$LABELS" | jq -e --arg l "semver:$level" 'index($l) != null' >/dev/null; then
-                  bump=$level
-                fi
-              done
+              if printf '%s' "$LABELS" | jq -e 'index("semver:minor") != null' >/dev/null; then
+                bump=minor
+              fi
             fi
-            IFS=. read -r major minor patch <<<"${last#v}"
+            IFS=. read -r _ minor patch <<<"${last#v}"
             case $bump in
-              major) next="v$((major + 1)).0.0" ;;
-              minor) next="v${major}.$((minor + 1)).0" ;;
-              *)     next="v${major}.${minor}.$((patch + 1))" ;;
+              minor) next="v0.$((minor + 1)).0" ;;
+              *)     next="v0.${minor}.$((patch + 1))" ;;
             esac
           fi
 
