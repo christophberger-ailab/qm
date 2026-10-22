@@ -251,4 +251,5 @@ constraints:
       13-4: A link to another help page opens that page in the pane; a link out of the help opens in a new browser tab, so the app is not left
       13-5: A Back button returns to the help page shown before, and a Contents button to the table of contents
       13-6: The help page shown is remembered across page switches and sessions; a page switch, which rebuilds the pane, keeps its scroll position
+      13-8: The help needs no page: while none is open -- none selected yet, or no project opened -- the content header still offers the Help button, and the pane stands beside a placeholder in the editor's place, laid out and resized as it is beside the editor
       13-7: The routes serve the help pages by plain name only -- `GET /help` lists them, `GET /help/<name>.md` serves one's Markdown -- so nothing but the embedded pages is reachable through them

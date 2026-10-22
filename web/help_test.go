@@ -100,6 +100,26 @@ func TestHelpPaneIsOffered(t *testing.T) {
 	}
 }
 
+// UI.13-8: the help is offered while no page is open, with or without a
+// project.
+func TestHelpPaneWithoutAPage(t *testing.T) {
+	srv, err := newServer("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(when, body string) {
+		t.Helper()
+		for _, want := range []string{`id="help-toggle" data-pane="help"`, `id="help-pane" data-pane="help"`, `id="help-divider"`, `class="edit-form editor-placeholder"`} {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s: page does not carry %s", when, want)
+			}
+		}
+	}
+	check("no project", get(t, srv, "/").Body.String())
+	srv, _ = testServer(t)
+	check("no page", get(t, srv, "/").Body.String())
+}
+
 // helpTitle falls back to the page's name when it has no heading.
 func TestHelpTitle(t *testing.T) {
 	if got := helpTitle("intro\n# The tree \n", "tree.md"); got != "The tree" {
