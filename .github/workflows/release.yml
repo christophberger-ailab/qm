@@ -2,30 +2,97 @@ name: Release
 
 # Fires when a pull request is closed against main; the `merged` guard on each
 # job drops the "closed without merging" case. workflow_dispatch is kept for
-# manual re-runs.
+# manual re-runs and for setting a version by hand.
+#
+# Versions follow SemVer with the major version held at 0. The next version
+# is the newest v0.Y.Z tag bumped by the merged PR's label: semver:minor for a
+# new or improved feature, semver:patch (or no label) for fixes only.
 on:
   pull_request:
     types: [closed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      bump:
+        description: Part of the last version to bump
+        type: choice
+        options: [patch, minor]
+        default: patch
+      version:
+        description: Exact version to release (e.g. v0.1.0, major must be 0); overrides bump
+        required: false
 
 permissions:
   contents: write
 
+# One release at a time across all PRs: each run derives its version from the
+# tags the previous run created. (github.ref differs per PR on pull_request
+# events, so it cannot be part of the group.)
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 env:
-  # Monotonic, derived from the workflow run counter. Also stamped into the
-  # binary via -X main.version (see main.go: `var version = "dev"`).
-  VERSION: v0.0.${{ github.run_number }}
   # On a `pull_request` event github.sha points at the ephemeral refs/pull/N/merge
   # commit, not at the commit that landed on main. merge_commit_sha is the real
   # one (and is also set correctly for squash and rebase merges).
   BUILD_SHA: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
 
 jobs:
+  version:
+    name: Version
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BUILD_SHA }}
+          fetch-depth: 0
+
+      # The result is also stamped into the binary via -X main.version
+      # (see main.go: `var version = "dev"`).
+      - name: Next version
+        id: next
+        env:
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          INPUT_BUMP: ${{ inputs.bump }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          semver='^v0\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          last=$(git tag --list 'v*' | grep -E "$semver" | sort -V | tail -n1 || true)
+          last=${last:-v0.0.0}
+
+          if [ -n "${INPUT_VERSION:-}" ]; then
+            next=$INPUT_VERSION
+            if ! printf '%s\n' "$next" | grep -Eq "$semver"; then
+              echo "::error::version '$next' is not of the form v0.MINOR.PATCH"
+              exit 1
+            fi
+          else
+            bump=${INPUT_BUMP:-patch}
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              bump=patch
+              if printf '%s' "$LABELS" | jq -e 'index("semver:minor") != null' >/dev/null; then
+                bump=minor
+              fi
+            fi
+            IFS=. read -r _ minor patch <<<"${last#v}"
+            case $bump in
+              minor) next="v0.$((minor + 1)).0" ;;
+              *)     next="v0.${minor}.$((patch + 1))" ;;
+            esac
+          fi
+
+          if git rev-parse -q --verify "refs/tags/$next" >/dev/null; then
+            echo "::error::tag $next already exists"
+            exit 1
+          fi
+          echo "Last release: $last, next: $next"
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+
   test:
     name: Test
     if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
@@ -48,8 +115,10 @@ jobs:
 
   build:
     name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
-    needs: test
+    needs: [version, test]
     runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
     strategy:
       fail-fast: false
       matrix:
@@ -112,8 +181,10 @@ jobs:
 
   release:
     name: Publish release
-    needs: build
+    needs: [version, build]
     runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
