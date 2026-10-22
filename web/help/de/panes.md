@@ -23,6 +23,8 @@ Der Hilfebereich zeigt diese Seiten. Links zwischen Hilfeseiten öffnen sich im 
 
 Der Bereich merkt sich die Seite, die du gelesen hast, auch über Sitzungen hinweg.
 
+Die Schaltfläche `Help` ist auch da, wenn keine Seite geöffnet ist. So kannst du die Hilfe lesen, bevor du ein Projekt öffnest oder eine Seite auswählst.
+
 ## Größe ändern
 
 Jeder Bereich hat an seiner linken Seite einen Teiler.

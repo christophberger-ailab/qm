@@ -319,12 +319,26 @@
   </div>
 </section>
 <div id="divider" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
-<section id="content-pane"><div id="content">{{if .Page}}{{template "content" .Page}}{{else}}<p class="empty">Select a page to view its content.</p>{{end}}</div></section>
+<section id="content-pane"><div id="content">{{if .Page}}{{template "content" .Page}}{{else}}{{template "no-page" "Select a page to view its content."}}{{end}}</div></section>
 {{else}}
 <section id="tree-pane"><p class="empty">Open a Quarto project to get started.</p></section>
 <div id="divider" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
-<section id="content-pane"><div id="content"></div></section>
+<section id="content-pane"><div id="content">{{template "no-page" "Open a project to view its pages."}}</div></section>
 {{end}}{{end}}
+
+{{/* The editor's place while no page is open. The help does not depend on
+     a page, so its button and pane are offered here too; the placeholder
+     stands where the editor would, so the pane is laid out and resized
+     against it as it is against the editor. */}}
+{{define "no-page"}}<div class="content-header">
+  <h2 class="content-title" id="content-title"></h2>
+  <button type="button" class="pane-toggle" id="help-toggle" data-pane="help" aria-pressed="false" title="Show or hide the help">Help</button>
+</div>
+<div class="editor-split" id="editor-split">
+  <div class="edit-form editor-placeholder"><p class="empty">{{.}}</p></div>
+  <div class="split-divider" id="help-divider" data-pane="help" role="separator" aria-orientation="vertical" title="Drag to resize" hidden></div>
+  {{template "help"}}
+</div>{{end}}
 
 {{define "tree"}}{{template "pages" group "" .Pages}}{{end}}
 

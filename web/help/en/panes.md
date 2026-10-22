@@ -23,6 +23,8 @@ The help pane shows these pages. Links between help pages open in the pane itsel
 
 The pane remembers the page you were reading, also across sessions.
 
+The `Help` button is there even when no page is open, so you can read the help before you open a project or select a page.
+
 ## Resizing
 
 Every pane has a divider on its left side.

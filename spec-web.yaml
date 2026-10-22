@@ -252,6 +252,7 @@ constraints:
       13-5: A Back button returns to the help page shown before, and a Contents button to the table of contents
       13-6: The help page shown is remembered across page switches and sessions; a page switch, which rebuilds the pane, keeps its scroll position
       13-7: The routes serve the help pages by plain name only -- `GET /help` lists the languages and one language's pages, `GET /help/<lang>/<name>.md` serves one page's Markdown -- so nothing but the embedded pages is reachable through them
+      13-8: The help needs no page: while none is open -- none selected yet, or no project opened -- the content header still offers the Help button, and the pane stands beside a placeholder in the editor's place, laid out and resized as it is beside the editor
       13-9: The help is written in English and in German, one folder of pages per language under the same file names, and a menu in the pane switches between them; the pane's own buttons follow the help's language
       13-9-1: Until the user picks a language in the pane, the help is shown in the first of the browser's languages -- which follow the system's -- that it is written in, a regional tag such as de-AT asking for its language; with none of them, it is shown in English
       13-9-2: The language picked is remembered across sessions, and switching shows the page that was open in the other language
