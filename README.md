@@ -419,7 +419,10 @@ behaviour changes, change the spec with it.
 
 Releases are cut by `.github/workflows/release.yml` when a pull request is
 merged into `main`: it vets, tests, cross-compiles the four targets, and
-publishes a `v0.0.<run-number>` release with checksums.
+publishes a release with checksums. Versions follow [SemVer](https://semver.org):
+the newest `vX.Y.Z` tag is bumped by the PR's label, `semver:major`,
+`semver:minor` or `semver:patch`, and a PR without one is a patch release. A
+manual run of the workflow can bump any part or set an exact version.
 
 ## Origins
 
