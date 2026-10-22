@@ -218,19 +218,21 @@ function initDivider(dividerID, paneID, key, side) {
 // The panes beside the editor
 //
 // The Markdown preview and the copyediting tool both work on the text the
-// editor holds. Each is shown or hidden on its own; when both are, they
-// stand side by side, in the order the user dragged them into. Which are
+// editor holds; the help stands beside them. Each is shown or hidden on its
+// own; those shown stand side by side, in the order the user dragged them
+// into. Which are
 // shown, their order, and their widths are kept in localStorage: the editor
 // pane is re-rendered on every page switch, and the layout should outlive
 // that -- and the session.
 //
 // The panes and their dividers never move in the DOM; the CSS order
 // property places them. Each pane's divider sits on its left and resizes
-// it against whatever stands left of it: the editor, or the other pane.
+// it against whatever stands left of it: the editor, or another pane.
 
 var SIDE_PANES = {
   preview: { pane: 'preview-pane', divider: 'preview-divider', open: 'previewOpen', width: 'previewPaneWidth' },
-  copyedit: { pane: 'copyedit', divider: 'copyedit-divider', open: 'copyeditOpen', width: 'copyeditPaneWidth' }
+  copyedit: { pane: 'copyedit', divider: 'copyedit-divider', open: 'copyeditOpen', width: 'copyeditPaneWidth' },
+  help: { pane: 'help-pane', divider: 'help-divider', open: 'helpOpen', width: 'helpPaneWidth' }
 };
 
 var PANE_ORDER_KEY = 'paneOrder';
@@ -241,11 +243,23 @@ var paneOpen = {
   // preview's; one left up is taken as the wish to see it.
   copyedit: localStorage.getItem(SIDE_PANES.copyedit.open) === null
     ? localStorage.getItem('paneTab') === 'copyedit'
-    : localStorage.getItem(SIDE_PANES.copyedit.open) === 'open'
+    : localStorage.getItem(SIDE_PANES.copyedit.open) === 'open',
+  help: localStorage.getItem(SIDE_PANES.help.open) === 'open'
 };
 
-var paneOrder = localStorage.getItem(PANE_ORDER_KEY) === 'copyedit,preview'
-  ? ['copyedit', 'preview'] : ['preview', 'copyedit'];
+// paneOrder is the stored order, with a pane it does not name -- one added
+// since the order was saved -- appended at the end.
+var paneOrder = (function () {
+  var order = (localStorage.getItem(PANE_ORDER_KEY) || '').split(',').filter(function (name, i, all) {
+    return SIDE_PANES[name] && all.indexOf(name) === i;
+  });
+  Object.keys(SIDE_PANES).forEach(function (name) {
+    if (order.indexOf(name) < 0) {
+      order.push(name);
+    }
+  });
+  return order;
+})();
 
 var previewTimer = null;
 
@@ -307,6 +321,9 @@ function applyPreview() {
   applyTaskSelection(); // the pane comes with the editor, ticks and all
   if (paneOpen.preview) {
     updatePreview();
+  }
+  if (paneOpen.help) {
+    showHelp(helpPage, false); // the pane came back empty with the editor
   }
 }
 
@@ -381,7 +398,7 @@ document.addEventListener('pointerdown', function (evt) {
   divider.addEventListener('pointercancel', onUp);
 });
 
-// Dragging one pane's head onto the other pane swaps the two.
+// Dragging one pane's head onto another pane swaps the two.
 var draggedPane = null;
 
 function clearPaneDrag() {
@@ -425,11 +442,15 @@ document.addEventListener('dragleave', function (evt) {
 });
 
 document.addEventListener('drop', function (evt) {
-  if (!paneDropTarget(evt)) {
+  var target = paneDropTarget(evt);
+  if (!target) {
     return;
   }
   evt.preventDefault();
-  paneOrder.reverse();
+  var from = paneOrder.indexOf(draggedPane);
+  var to = paneOrder.indexOf(target.dataset.pane);
+  paneOrder[from] = target.dataset.pane;
+  paneOrder[to] = draggedPane;
   localStorage.setItem(PANE_ORDER_KEY, paneOrder.join(','));
   draggedPane = null;
   clearPaneDrag();
@@ -440,6 +461,152 @@ document.addEventListener('drop', function (evt) {
 document.addEventListener('dragend', function () {
   draggedPane = null;
   clearPaneDrag();
+});
+
+// The help pane
+//
+// The help is a set of Markdown pages embedded in the binary. /help lists
+// them, /help/<name> serves one, and the pane renders it with the
+// preview's renderer. A link to another help page opens that page in the
+// pane; a link out of the help opens in a new tab, so the app stays put.
+// The page shown is remembered across sessions; the pages fetched are kept
+// for the session, since the pane is rebuilt on every page switch and the
+// help does not change while the app runs.
+
+var HELP_PAGE_KEY = 'helpPage';
+var HELP_INDEX = 'index.md';
+var helpPageName = /^[A-Za-z0-9_-]+\.md$/;
+
+var helpPage = localStorage.getItem(HELP_PAGE_KEY) || HELP_INDEX;
+var helpHistory = [];
+var helpCache = {};
+var helpTopicList = null;
+var helpScroll = 0;
+
+// fetchHelp gets one help page's text, from the cache when it was fetched
+// before.
+function fetchHelp(name) {
+  if (helpCache[name] !== undefined) {
+    return Promise.resolve(helpCache[name]);
+  }
+  return fetch('/help/' + encodeURIComponent(name)).then(function (resp) {
+    if (!resp.ok) {
+      throw new Error('no help page ' + name);
+    }
+    return resp.text();
+  }).then(function (text) {
+    helpCache[name] = text;
+    return text;
+  });
+}
+
+// fillHelpTopics puts the list of help pages into the pane's dropdown,
+// with the page shown selected.
+function fillHelpTopics() {
+  var select = document.getElementById('help-topic');
+  if (!select) {
+    return;
+  }
+  var fill = function (topics) {
+    select.innerHTML = '';
+    topics.forEach(function (topic) {
+      var option = document.createElement('option');
+      option.value = topic.name;
+      option.textContent = topic.title;
+      select.appendChild(option);
+    });
+    select.value = helpPage;
+  };
+  if (helpTopicList) {
+    fill(helpTopicList);
+    return;
+  }
+  fetch('/help').then(function (resp) { return resp.json(); }).then(function (topics) {
+    helpTopicList = topics;
+    fill(topics);
+  }).catch(function () {});
+}
+
+// linkHelp points the links of a rendered help page where they belong: a
+// link to another help page opens it in the pane, anything else in a new
+// tab.
+function linkHelp(root) {
+  root.querySelectorAll('a[href]').forEach(function (a) {
+    var href = a.getAttribute('href');
+    var name = href.replace(/#.*$/, '');
+    if (helpPageName.test(name)) {
+      a.setAttribute('data-help', name);
+    } else if (href.charAt(0) !== '#') {
+      a.setAttribute('target', '_blank');
+      a.setAttribute('rel', 'noopener');
+    }
+  });
+}
+
+// showHelp renders the help page name in the pane. With remember, the page
+// shown before is put on the Back button's history; without, the page is
+// shown again where it was scrolled to, the pane having only been rebuilt.
+function showHelp(name, remember) {
+  var el = document.getElementById('help');
+  if (!el) {
+    return;
+  }
+  if (!helpPageName.test(name)) {
+    name = HELP_INDEX;
+  }
+  fetchHelp(name).catch(function () {
+    name = HELP_INDEX; // a page remembered from an older build may be gone
+    return fetchHelp(name);
+  }).then(function (text) {
+    if (remember && name !== helpPage) {
+      helpHistory.push(helpPage);
+    }
+    var again = !remember && name === helpPage;
+    helpPage = name;
+    localStorage.setItem(HELP_PAGE_KEY, name);
+    renderPreview(el, text, '');
+    linkHelp(el);
+    el.scrollTop = again ? helpScroll : 0;
+    helpScroll = el.scrollTop;
+    var back = document.getElementById('help-back');
+    if (back) {
+      back.disabled = helpHistory.length === 0;
+    }
+    fillHelpTopics();
+  }).catch(function () {
+    el.textContent = 'The help could not be loaded.';
+  });
+}
+
+document.addEventListener('scroll', function (evt) {
+  if (evt.target && evt.target.id === 'help') {
+    helpScroll = evt.target.scrollTop;
+  }
+}, true);
+
+document.addEventListener('click', function (evt) {
+  var link = evt.target.closest && evt.target.closest('#help a[data-help]');
+  if (link) {
+    evt.preventDefault();
+    showHelp(link.getAttribute('data-help'), true);
+    return;
+  }
+  if (evt.target.closest && evt.target.closest('#help-home')) {
+    showHelp(HELP_INDEX, true);
+    return;
+  }
+  if (evt.target.closest && evt.target.closest('#help-back') && helpHistory.length > 0) {
+    var previous = helpHistory.pop();
+    helpPage = previous; // not a step forward, so nothing goes on the history
+    helpScroll = 0;
+    showHelp(previous, false);
+  }
+});
+
+document.addEventListener('change', function (evt) {
+  if (evt.target.id === 'help-topic') {
+    showHelp(evt.target.value, true);
+  }
 });
 
 // updatePreview re-renders the preview from what the editor currently holds.
@@ -1548,7 +1715,7 @@ document.body.addEventListener('click', function (evt) {
     return;
   }
 
-  // The Preview and Copyedit buttons: show or hide that pane.
+  // The Preview, Copyedit, and Help buttons: show or hide that pane.
   var toggle = evt.target.closest('.pane-toggle');
   if (toggle) {
     togglePane(toggle.dataset.pane);

@@ -67,7 +67,7 @@ constraints:
       3-1-2: The buttons flip to a page the way a click in the tree opens it, so a page inside a collapsed branch is revealed, the tree's selection follows, and an edit that could not be saved is still asked about before the editor is replaced
       3-2: The preview follows the editor's content as the user types
       3-2-1: The editor and the preview scroll together: scrolling either one brings the other to the same part of the page, matched block by block by the page line each preview block was made from, and the preview stays with the editor while the user types
-      3-3: A Preview button and a Copyedit button in the content header each show and hide their pane beside the editor, independently of the other; each choice is remembered across sessions
+      3-3: A Preview button, a Copyedit button, and a Help button in the content header each show and hide their pane beside the editor, independently of the others; each choice is remembered across sessions
       3-4: The preview is rendered in the browser from the embedded marked library; it approximates the page, it is not a Quarto render
       3-4-1: A heading is previewed without its own Pandoc attribute block -- `# PERLE OnCall-Schulungen {.unnumbered .unlisted}` reads "PERLE OnCall-Schulungen" -- because the attributes direct the render and are not part of what the heading says; a heading inside a code block is left as written
       3-4-2: A page written for one target group -- an `_FW` or `_POL` suffix on its file name, or on a folder above it, the deepest name deciding -- is previewed inside that group's Quarto div, so the custom stylesheet tints and marks the whole page the way it does a `::: fw` / `::: pol` block written into the page; this is what the flattener does to such a page's content
@@ -167,8 +167,8 @@ constraints:
       10-19: The popup keeps one width and one place whether a diff is open or not -- it is as wide as a diff needs from the start -- so opening or closing a diff never moves the paths out from under the pointer
       10-20: A popup of the top bar that would reach past the window's right edge from below its button is moved left by as much, so it stays inside the window instead of pushing the page sideways
       11: A copyediting tool sits beside the editor, in a pane of its own next to the Markdown preview
-      11-1: When the preview and the copyedit pane are both shown they stand side by side; dragging one pane's head onto the other swaps their places, and the order is remembered across page switches and sessions
-      11-1-1: Every pane beside the editor has a draggable divider on its left; against the editor it resizes the pane and the editor, between the two panes it trades width between them and leaves the editor as it is; the widths are remembered across page switches and sessions
+      11-1: The panes beside the editor that are shown stand side by side; dragging one pane's head onto another swaps the two, and the order is remembered across page switches and sessions
+      11-1-1: Every pane beside the editor has a draggable divider on its left; against the editor it resizes the pane and the editor, between two panes it trades width between them and leaves the editor as it is; the widths are remembered across page switches and sessions
       11-2: The copyedit pane lists the editing tasks the user configured, by title alone; the prompt itself is the task's tooltip
       11-3: An editing task is a prompt with a title, written on a config page that adds, edits, and deletes them; a task without a title or without a prompt is refused
       11-4: The model an editing task runs on is configured as an API connection -- name, API kind, base URL, model, and key -- on a config page of its own that saves any number of them
@@ -244,3 +244,11 @@ constraints:
       12-7-1: The image editor is a second command line on the same config page, stored in the settings file; `{file}` stands for the image and is required, `{root}` for the project directory; the default opens the file with the system's own program for it (`xdg-open`, `open`, or `explorer`), and the page offers ready-made lines for GIMP, Krita, Inkscape, and Paint
       12-7-2: The route that opens an image takes the image's path relative to the project root and refuses anything that is not an image file inside the open project
       12-7-3: An image editor that could not be started is reported where the Editor button reports its own failure
+      13: A help pane sits beside the editor with the preview and the copyedit pane, and shows the app's online help
+      13-1: The help is a set of Markdown pages kept in the repository under web/help and embedded in the binary like the other assets; no help file is read from disk at run time
+      13-2: The pages are rendered in the browser by the preview's own renderer, so the help needs no Markdown implementation of its own and reads like a previewed page
+      13-3: The help opens on its table of contents, index.md; a dropdown at the head of the pane lists every page by its first heading, in the order the table of contents links them, any page it does not link following by name
+      13-4: A link to another help page opens that page in the pane; a link out of the help opens in a new browser tab, so the app is not left
+      13-5: A Back button returns to the help page shown before, and a Contents button to the table of contents
+      13-6: The help page shown is remembered across page switches and sessions; a page switch, which rebuilds the pane, keeps its scroll position
+      13-7: The routes serve the help pages by plain name only -- `GET /help` lists them, `GET /help/<name>.md` serves one's Markdown -- so nothing but the embedded pages is reachable through them
