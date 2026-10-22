@@ -45,8 +45,12 @@ type editorConfig struct {
 
 // defaultImageEditorCommand opens an image the way the system opens a file
 // that is double-clicked, in whatever program is set up for the type.
-// Windows' explorer does that when it is handed a file.
+// Windows' explorer does that when it is handed a file, and does it for
+// qm under WSL too, where there is rarely a Linux desktop to ask.
 func defaultImageEditorCommand() string {
+	if runtime.GOOS == "linux" && inWSL() {
+		return "explorer.exe {file}"
+	}
 	return systemOpenCommand(runtime.GOOS)
 }
 
@@ -179,6 +183,9 @@ func editorArgs(command, root, file string) (string, []string, error) {
 // startEditor is how the editor is started; tests replace it so that no
 // test starts a real one.
 var startEditor = func(name string, args []string, dir string) error {
+	if runtime.GOOS == "linux" && inWSL() {
+		name, args = wslCommand(name, args)
+	}
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	if err := cmd.Start(); err != nil {
