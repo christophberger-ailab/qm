@@ -373,10 +373,11 @@
        keeps refusing from being a dead end. */ -}}
   <button type="button" class="save-overwrite" id="save-overwrite" hidden
           title="Write the editor's text over the file on disk, discarding the change made outside">Overwrite</button>
-  {{/* The two panes beside the editor are shown and hidden one by one;
+  {{/* The panes beside the editor are shown and hidden one by one;
        app.js remembers each choice and sets aria-pressed to match. */ -}}
   <button type="button" class="pane-toggle" id="preview-toggle" data-pane="preview" aria-pressed="true" title="Show or hide the Markdown preview">Preview</button>
   <button type="button" class="pane-toggle" id="copyedit-toggle" data-pane="copyedit" aria-pressed="false" title="Show or hide the copyedit tool">Copyedit</button>
+  <button type="button" class="pane-toggle" id="help-toggle" data-pane="help" aria-pressed="false" title="Show or hide the help">Help</button>
   <button class="reload" id="content-reload" title="Reload from disk" hx-get="/content?path={{.Path}}&reload=1" hx-target="#content" hx-swap="innerHTML">↻ Reload</button>
 </div>
 <div class="editor-split" id="editor-split">
@@ -403,15 +404,15 @@
       <button type="button" class="vim-toggle" id="vim-toggle" aria-pressed="false" title="Vim keybindings in the editor">⌨ Vim Mode</button>
     </div>
   </form>
-  {{/* Beside the editor: the Markdown preview of the page, and the
-       copyediting tool that works on the same text. Each can be shown or
-       hidden on its own; when both are, they stand side by side, and
-       dragging one's head onto the other swaps them. Every pane has a
+  {{/* Beside the editor: the Markdown preview of the page, the
+       copyediting tool that works on the same text, and the help. Each can
+       be shown or hidden on its own; those shown stand side by side, and
+       dragging one's head onto another swaps the two. Every pane has a
        divider on its left that resizes it. app.js sets which are shown, in
        which order (CSS order, so the DOM stays put), and how wide. */ -}}
   <div class="split-divider" id="preview-divider" data-pane="preview" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
   <section class="side-pane preview-pane" id="preview-pane" data-pane="preview">
-    <div class="side-pane-head" draggable="true" title="Drag onto the copyedit pane to swap the two">Preview</div>
+    <div class="side-pane-head" draggable="true" title="Drag onto another pane to swap the two">Preview</div>
     <article class="markdown-preview" id="preview"></article>
     {{/* Below the preview: the two buttons that page through the book, and
          the stylesheet the preview is shown in. Both describe the preview
@@ -436,7 +437,22 @@
   </section>
   <div class="split-divider" id="copyedit-divider" data-pane="copyedit" role="separator" aria-orientation="vertical" title="Drag to resize" hidden></div>
   {{template "copyedit" .Copyedit}}
+  <div class="split-divider" id="help-divider" data-pane="help" role="separator" aria-orientation="vertical" title="Drag to resize" hidden></div>
+  {{template "help"}}
 </div>{{end}}
+
+{{/* The help pane. The pages are Markdown embedded in the binary (web/help);
+     app.js fetches them from /help and renders them with the preview's own
+     renderer, so the pane holds no content of its own until it is shown. */}}
+{{define "help"}}<section class="side-pane help-pane" id="help-pane" data-pane="help" hidden>
+  <div class="side-pane-head" draggable="true" title="Drag onto another pane to swap the two">Help</div>
+  <div class="help-nav">
+    <button type="button" class="help-back" id="help-back" disabled title="The help page shown before this one">◀ Back</button>
+    <button type="button" class="help-home" id="help-home" title="The help's table of contents">Contents</button>
+    <select id="help-topic" class="help-topic" title="Go to a help topic"></select>
+  </div>
+  <article class="markdown-preview help-article" id="help"></article>
+</section>{{end}}
 
 {{/* The copyedit pane. Its head carries the model the tasks are run on --
      the connections are configured once, and which of them answers is a
@@ -444,7 +460,7 @@
      editing tasks or the suggestions the last run came back with; one
      replaces the other, and the Back button brings the list again. */}}
 {{define "copyedit"}}<section class="copyedit side-pane" id="copyedit" data-pane="copyedit" hidden>
-  <div class="side-pane-head" draggable="true" title="Drag onto the preview to swap the two">Copyedit</div>
+  <div class="side-pane-head" draggable="true" title="Drag onto another pane to swap the two">Copyedit</div>
   <div class="copyedit-head">
     {{if .Connections}}<label for="copyedit-connection">Model</label>
     <select id="copyedit-connection" class="copyedit-connection" title="The API connection the editing tasks are run on">
