@@ -18,8 +18,8 @@ qm <object> <subcommand> [flags] [args]
 | --- | --- |
 | `qm render [<topic>…]` | rendert die Matrix aus Thema × Format × Zielgruppe des Projekts |
 | `qm flatten <topic>` | schreibt die Build-Dokumente eines Themas, ohne zu rendern |
-| `qm prepare` | Pre-Render-Hook: prüft die Auswahl und baut das Thema |
-| `qm finalize` | Post-Render-Hook: verschiebt die Ausgabe dorthin, wo die Profile es vorgeben |
+| `qm prepare` | Pre-Render-Hook: prüft die Auswahl, baut das Thema und schreibt den Capture-Filter |
+| `qm finalize` | Post-Render-Hook: verschiebt die Ausgabe dorthin, wo die Profile es vorgeben, und ergänzt PDF und Deckblätter des qm-Renderers |
 | `qm lint [<topic>]` | prüft die `.qmd`-Quellen (derzeit: nicht geschlossene `:::`-Fences) |
 | `qm chapters insert <folder>` | gibt einer neuen Seite ihr `order:` und nummeriert die Geschwisterseiten neu |
 | `qm chapters move <folder> <old> <new>` | verschiebt ein Kapitel an eine andere `order`-Position |

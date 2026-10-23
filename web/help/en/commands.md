@@ -18,8 +18,8 @@ qm <object> <subcommand> [flags] [args]
 | --- | --- |
 | `qm render [<topic>…]` | render the project's topic × format × audience matrix |
 | `qm flatten <topic>` | write the build documents of one topic without rendering |
-| `qm prepare` | pre-render hook: validate the selection, build the topic |
-| `qm finalize` | post-render hook: move the output where the profiles say |
+| `qm prepare` | pre-render hook: validate the selection, build the topic, write the capture filter |
+| `qm finalize` | post-render hook: move the output where the profiles say, add the qm renderer's PDF and covers |
 | `qm lint [<topic>]` | check the `.qmd` sources (currently: unclosed `:::` fences) |
 | `qm chapters insert <folder>` | give a new page its `order:`, renumbering its siblings |
 | `qm chapters move <folder> <old> <new>` | move a chapter to another order position |

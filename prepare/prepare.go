@@ -7,7 +7,7 @@
 //	project:
 //	  pre-render: qm prepare
 //
-// It does the two things Quarto's configuration cannot:
+// It does what Quarto's configuration cannot:
 //
 //  1. It puts the selected topic into `_build/book.qmd` and
 //     `_build/slides.qmd`. Quarto books are flat — one file per chapter, no
@@ -19,6 +19,9 @@
 //     Quarto's format-level keys do not resolve `{{< var >}}` — the PPTX
 //     reference template, whose name depends on the format *and* the
 //     audience.
+//
+//  3. For a `qm: renderer: qm` format, it writes the filter that captures
+//     the document `qm finalize` lays out the PDF from.
 //
 // Before either, it validates the profile selection. This is the more
 // important half: Quarto accepts a misspelled profile without a word (the
@@ -131,6 +134,10 @@ func Run(root string, profiles []string, log bookrender.Logf) error {
 			return err
 		}
 	}
+	native, err := bookrender.LoadNative(root, ps)
+	if err != nil {
+		return err
+	}
 	title, err := ps.Title()
 	if err != nil {
 		return err
@@ -138,6 +145,12 @@ func Run(root string, profiles []string, log bookrender.Logf) error {
 	log("%s", sel)
 	if err := bookrender.WriteBuild(root, folder, title, log); err != nil {
 		return err
+	}
+	if native != nil {
+		if err := native.Prepare(root); err != nil {
+			return err
+		}
+		log("qm renderer: wrote %s", bookrender.CaptureFilterPath)
 	}
 	return copyFiles(root, ps, log)
 }
@@ -171,6 +184,7 @@ func interpolated(ps *qmcore.Profiles) []template {
 		add(p, "book: output-file", p.Book.OutputFile)
 		add(p, "qm: output-file", p.QM.OutputFile)
 		add(p, "qm: output-dir-suffix", p.QM.OutputDirSuffix)
+		add(p, "qm: cover", p.QM.Cover)
 		for target, source := range p.QM.Copy {
 			add(p, "qm: copy: "+target, source)
 		}

@@ -196,6 +196,30 @@ func Run(o Options, log Logf) error {
 // installations replace it.
 var QuartoCommand = "quarto"
 
+// renderSelection checks a selection's qm renderer configuration, so that a
+// broken one fails before Quarto starts, and renders it. The qm renderer
+// needs nothing else from here: the project's hooks carry it out (see
+// native.go), which is what keeps `qm render` and a plain `quarto render`
+// identical.
+func renderSelection(root string, sel qmcore.Selection, dryRun bool, log Logf) error {
+	ps, err := qmcore.LoadSelection(root, sel)
+	if err != nil {
+		return err
+	}
+	native, err := LoadNative(root, ps)
+	if err != nil {
+		return err
+	}
+	if native != nil {
+		cover := "none"
+		if native.Cover != "" {
+			cover = relTo(root, native.Cover)
+		}
+		log("qm renderer: Quarto writes the DOCX; qm finalize adds the PDF and the cover (%s)", cover)
+	}
+	return quarto(root, sel, dryRun, log)
+}
+
 // quarto runs one `quarto render` for a selection.
 //
 // The three profiles go into a single --profile argument: each contributes a

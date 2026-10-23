@@ -442,47 +442,59 @@ same result without qm ever being invoked.
 `prepare/prepare.go`, wired into the project as `project: pre-render: qm
 prepare`.
 
-`ActiveProfiles` (`prepare.go:95`) reads `--profile` or `$QUARTO_PROFILE` —
+`ActiveProfiles` (`prepare.go:98`) reads `--profile` or `$QUARTO_PROFILE` —
 and the environment variable is the *effective* selection, with Quarto's own
 group defaults already appended, which is what makes validating it worth
 doing.
 
-`Run` (`prepare.go:109`) then, in order:
+`Run` (`prepare.go:112`) then, in order:
 
 1. `qmcore.ParseSelection` — one profile per axis (Quarto fact 3).
 2. `qmcore.LoadSelection` — every named profile exists (Quarto fact 4).
-3. `checkVariables` (`prepare.go:148`) — every `{{< var >}}` the selection
-   relies on resolves. `interpolated` (`prepare.go:162`) enumerates the values
+3. `checkVariables` (`prepare.go:161`) — every `{{< var >}}` the selection
+   relies on resolves. `interpolated` (`prepare.go:175`) enumerates the values
    to check: `book: title`, `book: output-file`, and each `qm:` key.
-4. `checkFolder` (`prepare.go:184`) — the topic's content folder is really
+4. `checkFolder` (`prepare.go:199`) — the topic's content folder is really
    there; a typo would otherwise produce an empty book.
-5. `bookrender.WriteBuild` — flatten the topic into `_build/`.
-6. `copyFiles` (`prepare.go:204`) — carry out the `qm: copy:` map, resolving
+5. `bookrender.LoadNative` — for a `qm: renderer: qm` format, the format
+   declares DOCX only and the capture filter, and the topic's cover is a
+   valid PNG.
+6. `bookrender.WriteBuild` — flatten the topic into `_build/`.
+7. `Native.Prepare` — for the qm renderer, write `_build/qm-capture.lua` and
+   remove the document a previous render captured.
+8. `copyFiles` (`prepare.go:221`) — carry out the `qm: copy:` map, resolving
    `{{< var >}}` in the source, so that a template depending on both format and
    audience can be pointed at by a fixed, non-interpolating format key.
 
-Steps 1–4 are the half that matters most: each returns an error, `cli.Guard`
+Steps 1–5 are the half that matters most: each returns an error, `cli.Guard`
 records it, the process exits non-zero, and Quarto stops (Quarto fact 5).
 
 ### 6.3 `qm finalize` — the post-render hook
 
 `finalize/finalize.go`, wired as `project: post-render: qm finalize`. It reads
 `QUARTO_PROJECT_OUTPUT_DIR` and `QUARTO_PROJECT_OUTPUT_FILES` (or the
-equivalent flags — `envOr`, `finalize.go:100`) and applies the two rules a book
+equivalent flags — `envOr`, `finalize.go:109`) and applies the two rules a book
 does not need but everything else does:
 
-- `qm: output-file:` → `renameOutputs` (`finalize.go:196`) moves each produced
+- `qm: output-file:` → `renameOutputs` (`finalize.go:253`) moves each produced
   file to `<output-dir>/<stem><ext>`. The move is to the *top* of the output
   directory on purpose: a `type: default` project mirrors the source layout, so
   a deck built from `_build/slides.qmd` arrives at
   `<output-dir>/_build/slides.pptx`. Emptied source directories are pruned
-  (`pruneEmpty`, `finalize.go:245`).
-- `qm: output-dir-suffix:` → `renameDir` (`finalize.go:226`) renames the output
+  (`pruneEmpty`, `finalize.go:300`).
+- `qm: output-dir-suffix:` → `renameDir` (`finalize.go:281`) renames the output
   directory, which is how an audience-dependent `_output/site-pol` is reached
   given that `project: output-dir` does not interpolate (Quarto fact 2).
 
-A format that declares neither returns immediately (`finalize.go:147`) — the
-usual case for a book, whose `book: output-file` Quarto honours on its own.
+Between the two, it completes a `qm: renderer: qm` format: `finishNative`
+(`finalize.go:206`) hands the DOCX Quarto reported to `Native.Finish`
+(`internal/bookrender/native.go`), which lays out the PDF beside it from
+`_build/qm-document.json` and puts the topic's cover on both. Because this
+happens in the hook, a plain `quarto render` gets the PDF and the covers too.
+
+A format that declares none of the three returns immediately
+(`finalize.go:160`) — the usual case for a book, whose `book: output-file`
+Quarto honours on its own.
 
 ### 6.4 `qm flatten` — the same, without Quarto
 

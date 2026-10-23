@@ -48,8 +48,12 @@ func TestCoverDOCXPreservesBodyAndPackage(t *testing.T) {
 	}
 	zw.Close()
 	f.Close()
+	os.Chmod(path, 0o644)
 	if err = CoverDOCX(path, coverPNG(t)); err != nil {
 		t.Fatal(err)
+	}
+	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o644 {
+		t.Errorf("file mode not preserved: %v %v", info.Mode(), err)
 	}
 	z, err := zip.OpenReader(path)
 	if err != nil {

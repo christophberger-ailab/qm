@@ -40,3 +40,9 @@ constraints:
       5-1: 'This exists because the preview server reads and stamps every rendered file under the path it reported; moving them away aborts the preview with "cannot touch ...: No such file or directory" and a readfile error in ServeRenderManager.fileRenderHash'
       5-2: 'Quarto marks a preview in no environment variable, so the process ancestry is searched for a `quarto preview` (or `quarto serve`) command line'
       5-3: QM_FINALIZE_PREVIEW=1 or =0 overrides the detection
+      6: 'A format with `qm: renderer: qm` is completed here, after any renaming and before the output directory is renamed (see NATIVE in spec-render.yaml)'
+      6-1: The PDF is laid out from `_build/qm-document.json` and written beside the DOCX Quarto reported, under the same name
+      6-2: The topic's `qm: cover:` is prepended to the PDF and the DOCX
+      6-3: A missing captured document is an error; a render that produced no DOCX leaves nothing to do
+      6-4: The captured document is removed on success and kept for diagnosis on failure
+      6-5: 'This exists so that a plain `quarto render` produces the qm renderer''s output, not only qm render'

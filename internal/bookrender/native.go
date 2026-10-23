@@ -5,7 +5,6 @@ import (
 	_ "embed"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -13,6 +12,19 @@ import (
 	"github.com/christophberger-ailab/qm/internal/docrender"
 	"github.com/christophberger-ailab/qm/internal/qmcore"
 )
+
+// The qm renderer is carried out by the project's own hooks, so that a plain
+// `quarto render --profile …` produces exactly what `qm render` does:
+//
+//  1. `qm prepare` writes the capture filter to _build/.
+//  2. Quarto renders the DOCX, its only format. The format profile declares
+//     the capture filter at the post-finalize entry point, which saves the
+//     filtered document to _build/ in the same Pandoc run.
+//  3. `qm finalize` lays out the PDF beside the DOCX from the captured
+//     document and puts the cover on both.
+//
+// LaTeX and Typst are never invoked: the format profile declares no
+// `format: pdf:`, so Quarto never typesets a PDF.
 
 // DefaultPDFTimeout bounds the Go PDF layout. A full handout lays out in
 // seconds; the limit only exists so a layout bug fails the render instead
@@ -38,143 +50,170 @@ func pdfTimeout() (time.Duration, error) {
 //go:embed capture.lua
 var captureFilter []byte
 
-// renderSelection retains Quarto's full preprocessing and mature DOCX writer.
-// A final Pandoc filter captures the same filtered AST for the Go PDF backend.
-func renderSelection(root string, sel qmcore.Selection, dry bool, log Logf) error {
-	ps, err := qmcore.LoadSelection(root, sel)
-	if err != nil {
-		return err
-	}
-	switch ps.Format.QM.Renderer {
+// The capture filter and the document it captures, in BuildDir. The
+// document's name is also fixed in capture.lua.
+const (
+	captureFilterName = "qm-capture.lua"
+	capturedDocName   = "qm-document.json"
+)
+
+// CaptureFilterPath is the filter's project-relative path, the one a format
+// profile declares.
+const CaptureFilterPath = BuildDir + "/" + captureFilterName
+
+// CaptureFilterFile and CapturedDocFile locate the filter and its output.
+func CaptureFilterFile(root string) string {
+	return filepath.Join(BuildDirPath(root), captureFilterName)
+}
+func CapturedDocFile(root string) string { return filepath.Join(BuildDirPath(root), capturedDocName) }
+
+// Native is a selection's qm renderer configuration, resolved and checked.
+type Native struct {
+	// Cover is the absolute path of the cover PNG, or "" for none.
+	Cover string
+	// Title is the resolved book title, the PDF's document title.
+	Title string
+	// TOC adds a contents list to the PDF (`qm: pdf: toc:`).
+	TOC bool
+}
+
+// LoadNative returns the selection's qm renderer configuration, or nil when
+// the format renders with Quarto alone. Every check runs here, so that the
+// pre-render hook fails before Quarto has written anything.
+func LoadNative(root string, ps *qmcore.Profiles) (*Native, error) {
+	f := ps.Format
+	switch f.QM.Renderer {
 	case "", "quarto":
-		return quarto(root, sel, dry, log)
+		return nil, nil
 	case "qm":
 	default:
-		return fmt.Errorf("unknown qm renderer %q", ps.Format.QM.Renderer)
+		return nil, fmt.Errorf("%s: unknown qm: renderer: %q (want qm or quarto)", f.Path, f.QM.Renderer)
 	}
-	if _, ok := ps.Format.Format["docx"]; !ok {
-		return fmt.Errorf("qm: renderer: go requires format: docx")
+	if _, ok := f.Format["pdf"]; ok {
+		return nil, fmt.Errorf("%s: qm: renderer: qm writes the PDF itself; remove format: pdf: "+
+			"(Quarto would typeset it with LaTeX) and set its options under qm: pdf:", f.Path)
 	}
-	if _, ok := ps.Format.Format["pdf"]; !ok {
-		return fmt.Errorf("qm: renderer: go requires format: pdf and docx")
+	if _, ok := f.Format["docx"]; !ok {
+		return nil, fmt.Errorf("%s: qm: renderer: qm requires format: docx", f.Path)
 	}
-	for name := range ps.Format.Format {
-		if name != "pdf" && name != "docx" {
-			return fmt.Errorf("qm: renderer: go supports PDF/DOCX, not %s", name)
+	for name := range f.Format {
+		if name != "docx" {
+			return nil, fmt.Errorf("%s: qm: renderer: qm supports format: docx only, not %s", f.Path, name)
 		}
+	}
+	if !declaresCapture(f) {
+		return nil, fmt.Errorf("%s: qm: renderer: qm requires the capture filter:\n"+
+			"filters:\n  - path: %s\n    at: post-finalize", f.Path, CaptureFilterPath)
 	}
 	cover, err := qmcore.ResolveVars(ps.Topic.QM.Cover, ps.Vars())
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("%s: qm: cover: %w", ps.Topic.Path, err)
 	}
 	if cover != "" {
-		cover, err = qmcore.ProjectPath(root, cover)
-		if err != nil {
-			return err
+		if cover, err = qmcore.ProjectPath(root, cover); err != nil {
+			return nil, fmt.Errorf("%s: qm: cover: %w", ps.Topic.Path, err)
 		}
 		if err = docrender.ValidateCover(cover); err != nil {
-			return err
+			return nil, fmt.Errorf("%s: qm: cover: %w", ps.Topic.Path, err)
 		}
 	}
-	dir, err := qmcore.FormatOutputDir(ps.Format)
+	title, err := ps.Title()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if dir == "" {
-		return fmt.Errorf("Go renderer requires project: output-dir")
-	}
-	suffix, err := qmcore.ResolveVars(ps.Format.QM.OutputDirSuffix, ps.Vars())
-	if err != nil {
-		return err
-	}
-	dir, err = qmcore.ProjectPath(root, dir+suffix)
-	if err != nil {
-		return err
-	}
-	stem := ps.Format.QM.OutputFile
-	if stem == "" {
-		for _, p := range ps.All() {
-			if p.Book.OutputFile != "" {
-				stem = p.Book.OutputFile
-				break
-			}
+	return &Native{Cover: cover, Title: title, TOC: f.QM.PDF.TOC}, nil
+}
+
+// declaresCapture reports whether the format profile runs the capture filter
+// at the post-finalize entry point. Any earlier entry point would capture
+// the document before Quarto's own filters have finished with it.
+func declaresCapture(p *qmcore.Profile) bool {
+	for _, f := range p.Filters {
+		m, ok := f.(map[string]any)
+		if !ok {
+			continue
+		}
+		path, _ := m["path"].(string)
+		at, _ := m["at"].(string)
+		if filepath.ToSlash(filepath.Clean(path)) == CaptureFilterPath && at == "post-finalize" {
+			return true
 		}
 	}
-	stem, err = qmcore.ResolveVars(stem, ps.Vars())
-	if err != nil {
+	return false
+}
+
+// Prepare writes the capture filter and removes the document a previous
+// render captured, so that a capture that does not happen is noticed
+// instead of laying out the previous document.
+func (n *Native) Prepare(root string) error {
+	if err := os.MkdirAll(BuildDirPath(root), 0o755); err != nil {
 		return err
 	}
-	if stem == "" || filepath.Base(stem) != stem || strings.ContainsAny(stem, `/\`) || stem == "." || stem == ".." {
-		return fmt.Errorf("Go renderer requires a filename stem in book: output-file or qm: output-file")
-	}
-	docx := filepath.Join(dir, stem+".docx")
-	pdf := filepath.Join(dir, stem+".pdf")
-	log("$ %s render --profile %s --no-clean --to docx [capture filtered AST]", QuartoCommand, sel)
-	log("Go renderer: %s + %s (cover: %s)", pdf, docx, cover)
-	if dry {
-		return nil
-	}
-	if err = os.MkdirAll(BuildDirPath(root), 0755); err != nil {
+	if err := os.Remove(CapturedDocFile(root)); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	scratch, err := os.MkdirTemp(BuildDirPath(root), "native-")
-	if err != nil {
-		return err
-	}
-	complete := false
+	return os.WriteFile(CaptureFilterFile(root), captureFilter, 0o644)
+}
+
+// Finish turns the DOCX Quarto wrote into the qm renderer's output: the PDF
+// beside it, under the same name, and the cover on both. The captured
+// document is removed on success and kept for diagnosis otherwise.
+func (n *Native) Finish(root, docx string, log Logf) (err error) {
+	log = log.or()
+	captured := CapturedDocFile(root)
 	defer func() {
-		if complete {
-			os.RemoveAll(scratch)
-		} else {
-			log("intermediates retained for diagnosis: %s", scratch)
+		if err == nil {
+			os.Remove(captured)
+		} else if _, statErr := os.Stat(captured); statErr == nil {
+			log("captured document retained for diagnosis: %s", captured)
 		}
 	}()
-	filter := filepath.Join(scratch, "capture.lua")
-	ast := filepath.Join(scratch, "document.json")
-	if err = os.WriteFile(filter, captureFilter, 0644); err != nil {
-		return err
-	}
-	cmd := exec.Command(QuartoCommand, "render", "--profile", sel.String(), "--no-clean", "--to", "docx", "--lua-filter", filter)
-	cmd.Dir = root
-	cmd.Env = append(os.Environ(), "QM_CAPTURE_AST="+ast)
-	w := &lineWriter{log: log}
-	cmd.Stdout, cmd.Stderr = w, w
-	err = cmd.Run()
-	w.flush()
+	f, err := os.Open(captured)
 	if err != nil {
-		return fmt.Errorf("Quarto DOCX preprocessing: %w", err)
-	}
-	f, err := os.Open(ast)
-	if err != nil {
-		return fmt.Errorf("filtered document was not captured: %w", err)
+		return fmt.Errorf("the filtered document was not captured (%w); "+
+			"is %s declared at post-finalize in the format profile?", err, CaptureFilterPath)
 	}
 	doc, err := docrender.Read(f)
 	f.Close()
 	if err != nil {
-		return err
+		return fmt.Errorf("%s: %w", captured, err)
 	}
-	title, err := ps.Title()
-	if err != nil {
-		return err
-	}
-	options := docrender.Options{Root: root, Cover: cover, Title: title, TOC: ps.Format.Format["pdf"].TOC}
-	tmpPDF := filepath.Join(scratch, "document.pdf")
 	timeout, err := pdfTimeout()
 	if err != nil {
 		return err
 	}
-	if err = docrender.RunPDF(context.Background(), timeout, tmpPDF, doc, options); err != nil {
+	pdf := strings.TrimSuffix(docx, filepath.Ext(docx)) + ".pdf"
+	tmp, err := os.CreateTemp(filepath.Dir(pdf), ".qm-*.pdf")
+	if err != nil {
+		return err
+	}
+	tmp.Close()
+	defer os.Remove(tmp.Name())
+	options := docrender.Options{Root: root, Cover: n.Cover, Title: n.Title, TOC: n.TOC}
+	if err = docrender.RunPDF(context.Background(), timeout, tmp.Name(), doc, options); err != nil {
 		return fmt.Errorf("PDF: %w", err)
 	}
-	if cover != "" {
-		if err = docrender.CoverDOCX(docx, cover); err != nil {
+	if n.Cover != "" {
+		if err = docrender.CoverDOCX(docx, n.Cover); err != nil {
 			return fmt.Errorf("DOCX cover: %w", err)
 		}
 	}
-	if err = os.Rename(tmpPDF, pdf); err != nil {
+	if err = os.Chmod(tmp.Name(), 0o644); err != nil {
 		return err
 	}
-	log("created %s and %s", pdf, docx)
-	complete = true
+	if err = os.Rename(tmp.Name(), pdf); err != nil {
+		return err
+	}
+	if n.Cover != "" {
+		log("cover %s added to %s", relTo(root, n.Cover), relTo(root, docx))
+	}
+	log("created %s", relTo(root, pdf))
 	return nil
+}
+
+func relTo(root, p string) string {
+	if rel, err := filepath.Rel(root, p); err == nil {
+		return filepath.ToSlash(rel)
+	}
+	return p
 }

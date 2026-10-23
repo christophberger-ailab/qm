@@ -27,6 +27,10 @@
 //     project has no interpolating key to name it with. The format profile
 //     declares `qm: output-file:` and the deck is renamed here.
 //
+// It also completes a `qm: renderer: qm` format: Quarto has written the
+// DOCX, and the PDF is laid out here from the document the capture filter
+// saved, and the topic's cover is put on both. See bookrender/native.go.
+//
 // Everything is driven by the environment Quarto sets for a post-render
 // hook: QUARTO_PROFILE, QUARTO_PROJECT_OUTPUT_DIR and
 // QUARTO_PROJECT_OUTPUT_FILES.
@@ -70,9 +74,10 @@ func Register(projectFlag, profileFlagPtr *string) {
 
 	start.Add(&start.Command{
 		Name:  "finalize",
-		Short: "Post-render hook: move the output where the profiles say it belongs",
+		Short: "Post-render hook: place the output, add the qm renderer's PDF and cover",
 		Long: "Apply the active format profile's `qm: output-file:` and " +
-			"`qm: output-dir-suffix:` to what Quarto just produced. Usage: " +
+			"`qm: output-dir-suffix:` to what Quarto just produced, and for " +
+			"`qm: renderer: qm` lay out the PDF and add the topic's cover. Usage: " +
 			"qm finalize [--profile <t>,<f>,<a>]. Without flags everything is " +
 			"read from the environment Quarto sets for a project post-render " +
 			"hook.",
@@ -148,7 +153,11 @@ func Run(root string, profiles []string, outDir string, files []string, log book
 	if err != nil {
 		return fmt.Errorf("%s: qm: output-dir-suffix: %w", ps.Format.Path, err)
 	}
-	if stem == "" && suffix == "" {
+	native, err := bookrender.LoadNative(root, ps)
+	if err != nil {
+		return err
+	}
+	if stem == "" && suffix == "" && native == nil {
 		return nil // the format needs no fixing up; a book usually does not
 	}
 	// A preview server keeps reading the files it just rendered, under the
@@ -159,12 +168,27 @@ func Run(root string, profiles []string, outDir string, files []string, log book
 		return nil
 	}
 
-	dir, err := resolveOutputDir(root, outDir, ps)
-	if err != nil {
-		return err
+	abs := make([]string, 0, len(files))
+	for _, rel := range files {
+		p, err := qmcore.ProjectPath(root, rel)
+		if err != nil {
+			return err
+		}
+		abs = append(abs, p)
+	}
+	var dir string
+	if stem != "" || suffix != "" {
+		if dir, err = resolveOutputDir(root, outDir, ps); err != nil {
+			return err
+		}
 	}
 	if stem != "" {
-		if err := renameOutputs(root, dir, stem, files, log); err != nil {
+		if abs, err = renameOutputs(root, dir, stem, abs, log); err != nil {
+			return err
+		}
+	}
+	if native != nil {
+		if err := finishNative(root, native, abs, log); err != nil {
 			return err
 		}
 	}
@@ -174,6 +198,27 @@ func Run(root string, profiles []string, outDir string, files []string, log book
 		}
 	}
 	return nil
+}
+
+// finishNative completes the qm renderer's output from the DOCX Quarto
+// wrote: the PDF and the covers. A render that produced no DOCX — one with
+// a --to of another format — leaves nothing to complete.
+func finishNative(root string, native *bookrender.Native, files []string, log bookrender.Logf) error {
+	var docx []string
+	for _, f := range files {
+		if strings.EqualFold(filepath.Ext(f), ".docx") {
+			docx = append(docx, f)
+		}
+	}
+	switch len(docx) {
+	case 0:
+		log("qm renderer: Quarto produced no DOCX; nothing to do")
+		return nil
+	case 1:
+		return native.Finish(root, docx[0], log)
+	default:
+		return fmt.Errorf("qm renderer: Quarto produced %d DOCX files, expected one", len(docx))
+	}
 }
 
 // resolveOutputDir returns the absolute output directory, preferring what
@@ -198,38 +243,37 @@ func resolveOutputDir(root, reported string, ps *qmcore.Profiles) (string, error
 	return qmcore.ProjectPath(root, rel)
 }
 
-// renameOutputs moves every produced file to `<output-dir>/<stem><ext>`.
+// renameOutputs moves every produced file to `<output-dir>/<stem><ext>` and
+// returns the files' new paths. files are absolute.
 //
 // The move is to the top of the output directory on purpose: a `type:
 // default` project mirrors the source layout, so the slide deck built from
 // `_build/slides.qmd` arrives at `<output-dir>/_build/slides.pptx`. The
 // source directories it leaves behind are removed if they end up empty.
-func renameOutputs(root, dir, stem string, files []string, log bookrender.Logf) error {
+func renameOutputs(root, dir, stem string, files []string, log bookrender.Logf) ([]string, error) {
 	if len(files) == 0 {
-		return fmt.Errorf("qm: output-file: is set but Quarto reported no output files")
+		return nil, fmt.Errorf("qm: output-file: is set but Quarto reported no output files")
 	}
-	for _, rel := range files {
-		src, err := qmcore.ProjectPath(root, rel)
-		if err != nil {
-			return err
-		}
+	moved := make([]string, 0, len(files))
+	for _, src := range files {
 		dst := filepath.Join(dir, stem+filepath.Ext(src))
+		moved = append(moved, dst)
 		if src == dst {
 			continue
 		}
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
+			return nil, err
 		}
 		if err := os.RemoveAll(dst); err != nil {
-			return err
+			return nil, err
 		}
 		if err := os.Rename(src, dst); err != nil {
-			return fmt.Errorf("cannot move %s: %w", rel, err)
+			return nil, fmt.Errorf("cannot move %s: %w", mustRel(root, src), err)
 		}
-		log("%s -> %s", rel, mustRel(root, dst))
+		log("%s -> %s", mustRel(root, src), mustRel(root, dst))
 		pruneEmpty(filepath.Dir(src), dir)
 	}
-	return nil
+	return moved, nil
 }
 
 // renameDir moves the output directory to its audience-specific name,

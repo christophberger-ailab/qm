@@ -63,8 +63,8 @@ Global flags apply to every command:
 | --- | --- |
 | `qm render [<topic>…]` | render the project's topic × format × audience matrix |
 | `qm flatten <topic>` | write the build documents of one topic without rendering |
-| `qm prepare` | pre-render hook: validate the selection, build the topic |
-| `qm finalize` | post-render hook: move the output where the profiles say |
+| `qm prepare` | pre-render hook: validate the selection, build the topic, write the capture filter |
+| `qm finalize` | post-render hook: move the output where the profiles say, add the qm renderer's PDF and covers |
 | `qm lint [<topic>]` | check the `.qmd` sources (currently: unclosed `:::` fences) |
 | `qm chapters insert <folder>` | give a new page its `order:`, renumbering its siblings |
 | `qm chapters move <folder> <old> <new>` | move a chapter to another order position |
@@ -94,15 +94,18 @@ Enable the Go-backed document pipeline in a **format profile**:
 
 ```yaml
 qm:
-  renderer: go
+  renderer: qm
+  pdf:
+    toc: true
+filters:
+  - path: _build/qm-capture.lua
+    at: post-finalize
 project:
   type: book
   output-dir: _output/handout
 book:
   output-file: "{{< var topic >}}{{< var audience >}}"
 format:
-  pdf:
-    toc: true
   docx:
     toc: true
     reference-doc: assets/templates/reference.docx
@@ -116,39 +119,45 @@ qm:
   cover: "assets/templates/coverpage_schulung_calltaker{{< var audience-template >}}.png"
 ```
 
-Run `qm render calltaker --format handout --audience pol`, or use **qm web**.
-Both use the same pipeline:
+The pipeline runs in the project's hooks, so `quarto render --profile …`,
+`qm render`, and **qm web** all produce the same PDF and DOCX:
 
-1. Quarto renders **only DOCX**, preserving project hooks, includes, variables,
-   audience filters, and the existing Word reference styles. An embedded Lua
-   filter captures the processed Pandoc JSON during that same invocation.
-2. Go lays out an A4 PDF using `signintech/gopdf`, with embedded Go fonts,
-   headings, paragraphs, lists, ordinary tables, raster images, links,
-   bookmarks, page numbers, and a linked contents list.
-3. Go prepends the PNG to the DOCX in a dedicated zero-margin section. The image
-   is anchored at the page origin and fills the page edge to edge. The body's
-   original section properties, styles, headers, and footers are preserved.
+1. `qm prepare` (pre-render) checks the configuration and writes the capture
+   filter to `_build/qm-capture.lua`.
+2. Quarto renders **only DOCX**, with the project's includes, variables,
+   audience filters, and Word reference styles. The capture filter runs at
+   Quarto's last filter entry point and saves the processed Pandoc JSON to
+   `_build/qm-document.json` in the same run.
+3. `qm finalize` (post-render) uses Go and `signintech/gopdf` to lay out an A4
+   PDF next to the DOCX. The PDF has embedded Go fonts, headings, paragraphs,
+   lists, ordinary tables, raster images, links, bookmarks, page numbers, and a
+   linked contents list. `qm finalize` then puts the cover on both files.
 
-Both covers preserve the image's aspect ratio and **crop centrally to fill**
-the page; use artwork matching the page ratio to avoid cropping. PDF is A4;
-the DOCX cover uses the document's page dimensions. No header/footer is added
-to the cover. Omit `qm: cover:` to render without one.
+The PDF options belong under `qm: pdf:`, not `format: pdf:`, because Quarto
+would typeset a `format: pdf:` itself with LaTeX. `qm prepare` rejects a
+`qm: renderer: qm` format profile that declares `format: pdf:`, lacks
+`format: docx:`, or does not declare the capture filter at `post-finalize`.
 
-This backend requires both `pdf` and `docx` in the format profile and a filename
-stem in `book: output-file:` or `qm: output-file:`. The backend uses
-Quarto/Pandoc; neither LaTeX nor Typst is invoked. Content-specific Quarto
-dependencies still apply (for example, Chrome for rendering Mermaid diagrams).
-Use **qm render / qm web** for this pipeline: a direct `quarto render` still
-uses Quarto's configured writers. Set `qm: renderer: quarto` to select the
-original pipeline explicitly.
+Both covers keep the image's aspect ratio and are anchored at the
+bottom-right corner of the page, where the brand graphic ends. The PDF cover
+(A4) fills the page and crops any overflow at the top or left. The DOCX cover
+uses the document's page size, shrinks to fit, and never crops. It sits in a
+dedicated zero-margin section, and the body's original section properties,
+styles, headers, and footers are preserved. No header or footer is added to
+either cover. Omit `qm: cover:` to render without one.
+
+Neither LaTeX nor Typst is invoked. Content-specific Quarto dependencies still
+apply (for example, Chrome for rendering Mermaid diagrams). Under
+`quarto preview`, `qm finalize` does nothing, so no PDF is written. Set
+`qm: renderer: quarto` (or omit it) to use Quarto's own writers.
 
 The PDF backend has its own layout; it does not reproduce the Word template
 or interpret LaTeX/CSS styling. Callout content is retained with simplified
 formatting. Advanced constructs such as mathematical typesetting, footnotes,
 merged table cells, and images inside table cells currently report an error
-rather than silently losing content. Failed runs retain their captured AST
-under `_build/native-*/` for diagnosis. Word computes its DOCX table of contents
-when fields are updated.
+rather than silently losing content. When a PDF layout fails, the captured
+document stays in `_build/qm-document.json` for diagnosis. Word computes its
+DOCX table of contents when fields are updated.
 
 Library research and rationale: [docs/native-rendering.md](docs/native-rendering.md).
 
@@ -362,6 +371,9 @@ project:
 topic into `_build/book.qmd` and `_build/slides.qmd`, and copies the files a
 format's `qm: copy:` map asks for. `qm finalize` applies the format's
 `qm: output-file:` and `qm: output-dir-suffix:` to what Quarto produced.
+For a `qm: renderer: qm` format, `qm prepare` also writes the capture filter,
+and `qm finalize` lays out the PDF and adds the covers (see
+[PDF and DOCX without LaTeX or Typst](#pdf-and-docx-without-latex-or-typst)).
 
 Under `quarto preview`, `qm finalize` does nothing. The preview server reads
 and stamps the files it just rendered under the path it reported, so moving

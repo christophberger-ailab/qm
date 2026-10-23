@@ -42,14 +42,17 @@ constraints:
       5: A failing combination does not stop the remaining ones; the command reports how many failed and exits with an error
 
   NATIVE:
-    description: Optional Go PDF backend with Pandoc DOCX and full-page PNG covers
+    description: >
+      Optional Go PDF backend with Pandoc DOCX and full-page PNG covers. It
+      runs in the project's hooks (`qm prepare`, `qm finalize`), so a plain
+      `quarto render` produces the same PDF and DOCX as qm render and qm web.
     requirements:
-      1: 'A format profile with qm: renderer: go selects the native pipeline in qm render and qm web; absent or quarto uses the original pipeline'
-      2: 'Native profiles declare PDF and DOCX, an output directory, and an interpolated output filename stem'
-      3: Quarto is invoked once with --to docx and a final embedded Lua filter that captures the filtered Pandoc JSON; LaTeX and Typst are never invoked
+      1: 'A format profile with qm: renderer: qm selects the native pipeline; absent or quarto uses Quarto''s own writers'
+      2: 'Native profiles declare format: docx only, PDF options under qm: pdf:, and the capture filter `_build/qm-capture.lua` at the post-finalize entry point; anything else fails in qm render and in qm prepare before Quarto renders'
+      3: 'qm render and qm web invoke Quarto exactly as for any other format; qm prepare writes the capture filter, which saves the filtered Pandoc JSON to `_build/qm-document.json` during the DOCX render; LaTeX and Typst are never invoked'
       4: 'A topic may declare qm: cover: as a project-relative PNG path supporting profile variables; missing or invalid covers fail before rendering'
       5: Go generates an A4 PDF with embedded fonts, pagination, contents, links, headings, lists, ordinary tables and local raster images
-      6: Both outputs prepend a full-page PNG with preserved aspect ratio and centered crop-to-fill
+      6: qm finalize writes the PDF beside the DOCX Quarto reported, under the same name, and prepends a full-page PNG cover with preserved aspect ratio to both
       7: DOCX cover uses its own zero-margin section and page-relative image; original body section properties, styles, headers and footers are preserved
       8: Unsupported PDF constructs produce actionable errors rather than silently discarding content
-      9: Dry runs print the selected pipeline and create no build artifacts; failed native runs retain diagnostic intermediates
+      9: Dry runs print the selected pipeline and create no build artifacts; a failed PDF layout retains the captured document for diagnosis

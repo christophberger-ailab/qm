@@ -1,6 +1,10 @@
 package finalize
 
 import (
+	"archive/zip"
+	"image"
+	"image/png"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -137,6 +141,83 @@ func TestRunDoesNothingForABook(t *testing.T) {
 	}
 	if !exists(root, "_output/handout/calltaker-pol.docx") {
 		t.Error("the book output was touched")
+	}
+}
+
+// The qm renderer: Quarto wrote the DOCX and the capture filter saved the
+// document; finalize lays out the PDF beside the DOCX and adds the covers.
+func TestRunCompletesTheQMRenderer(t *testing.T) {
+	root := fixture(t)
+	write(t, root, "_quarto-format-handbook.yml", "project:\n  type: book\n  output-dir: _output/handbook\n"+
+		"book:\n  output-file: \"{{< var topic >}}{{< var audience >}}\"\n"+
+		"qm:\n  renderer: qm\n"+
+		"filters:\n  - path: _build/qm-capture.lua\n    at: post-finalize\n"+
+		"format:\n  docx: default\n")
+	write(t, root, "_quarto-topic-calltaker.yml", "_quarto-vars:\n  topic: calltaker\nqm:\n  cover: cover.png\n")
+	cover, err := os.Create(filepath.Join(root, "cover.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	png.Encode(cover, image.NewRGBA(image.Rect(0, 0, 100, 140)))
+	cover.Close()
+	write(t, root, "_build/qm-document.json",
+		`{"pandoc-api-version":[1,23,1],"meta":{},"blocks":[{"t":"Para","c":[{"t":"Str","c":"Hello"}]}]}`)
+	docx := filepath.Join(root, "_output/handbook/calltaker-pol.docx")
+	os.MkdirAll(filepath.Dir(docx), 0o755)
+	f, err := os.Create(docx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	for name, body := range map[string]string{
+		"word/document.xml":            `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p/><w:sectPr/></w:body></w:document>`,
+		"word/_rels/document.xml.rels": `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>`,
+		"[Content_Types].xml":          `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"></Types>`,
+	} {
+		w, _ := zw.Create(name)
+		io.WriteString(w, body)
+	}
+	zw.Close()
+	f.Close()
+
+	err = Run(root, []string{"topic-calltaker", "format-handbook", "audience-pol"},
+		filepath.Join(root, "_output/handbook"),
+		[]string{"_output/handbook/calltaker-pol.docx"}, nil)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if info, err := os.Stat(filepath.Join(root, "_output/handbook/calltaker-pol.pdf")); err != nil || info.Size() < 1000 {
+		t.Errorf("PDF missing or empty: %v", err)
+	}
+	z, err := zip.OpenReader(docx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer z.Close()
+	covered := false
+	for _, f := range z.File {
+		covered = covered || f.Name == "word/media/qm-cover.png"
+	}
+	if !covered {
+		t.Error("the DOCX has no cover")
+	}
+	if exists(root, "_build/qm-document.json") {
+		t.Error("the captured document was left behind")
+	}
+}
+
+// Without a captured document there is nothing to lay out the PDF from.
+func TestRunFailsWithoutACapture(t *testing.T) {
+	root := fixture(t)
+	write(t, root, "_quarto-format-handbook.yml", "project:\n  type: book\n  output-dir: _output/handbook\n"+
+		"qm:\n  renderer: qm\n"+
+		"filters:\n  - path: _build/qm-capture.lua\n    at: post-finalize\n"+
+		"format:\n  docx: default\n")
+	write(t, root, "_output/handbook/x.docx", "")
+	err := Run(root, []string{"topic-calltaker", "format-handbook", "audience-pol"},
+		filepath.Join(root, "_output/handbook"), []string{"_output/handbook/x.docx"}, nil)
+	if err == nil || !strings.Contains(err.Error(), "not captured") {
+		t.Errorf("error = %v, want a missing-capture error", err)
 	}
 }
 

@@ -19,21 +19,30 @@ implements the narrow cover insertion step.
 
 Quarto book projects reject `--to json`. Rendering Markdown and parsing it again
 would also lose structure and require another interpretation of attributes.
-Instead, `qm render` selects `--to docx` and adds a final Lua filter which writes
-the filtered Pandoc AST to a unique build directory. Quarto's existing audience
+Instead, the format profile renders DOCX only and declares a Lua filter at
+Quarto's last entry point, `post-finalize`. The filter, written to `_build/` by
+`qm prepare`, saves the filtered Pandoc AST to `_build/qm-document.json`, and
+`qm finalize` lays out the PDF from it. Quarto's existing audience
 filter, includes, variables and book assembly run normally once. The final AST
 contains some DOCX-specific callout layout fragments: these are accepted only
 when they contain known layout elements, while content-bearing unsupported
 raw XML reports an error.
 
-`internal/bookrender` owns orchestration; `internal/docrender` owns PDF layout
-and DOCX cover insertion. `qm web` shares the same orchestration.
+Because the whole pipeline runs in the project's pre- and post-render hooks, a
+plain `quarto render --profile …` produces the same PDF and DOCX as `qm render`.
+The AST captured at `post-finalize` differs from one captured by a command-line
+`--lua-filter` only by Quarto's empty, hidden file-metadata `Div`. The filter
+drops that `Div`, so the two captures are byte-identical.
+
+`internal/bookrender` owns the pipeline; `internal/docrender` owns PDF layout
+and DOCX cover insertion. `qm prepare`, `qm finalize`, `qm render` and `qm web`
+share it.
 
 ## Cover packaging
 
-The DOCX cover uses a page-relative anchored DrawingML image, zero offsets,
-page-sized extents and a separate zero-margin section. Aspect-ratio mismatches
-use symmetric source cropping. The original body and final section XML are
+The DOCX cover uses a page-relative anchored DrawingML image in a separate
+zero-margin section. The image keeps its aspect ratio, shrinks to fit the page
+and is anchored at the bottom-right corner; it is never cropped. The original body and final section XML are
 preserved, and existing ZIP parts remain intact. A unique image relationship
 and media part are added. The ZIP is staged before replacing the document.
 
@@ -49,7 +58,8 @@ go vet ./...
 QM_TEST_QUARTO=1 go test ./internal/bookrender -run TestNativeQuartoIntegration -v
 ```
 
-The integration test exercises a real Quarto book, audience filtering, table,
+The integration test builds qm, wires it into a real Quarto book's hooks and
+runs a plain `quarto render`. It covers audience filtering, a table,
 Unicode text, PDF generation and full-page DOCX cover insertion. Unit tests
 verify DOCX package preservation, XML geometry, PDF pagination and refusal to
 silently discard unsupported document content.

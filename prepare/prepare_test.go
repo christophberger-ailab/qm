@@ -118,6 +118,31 @@ func TestRunCopiesTheAudiencesTemplate(t *testing.T) {
 	}
 }
 
+// The qm renderer's PDF is laid out from the document a filter captures
+// during Quarto's DOCX render. The hook writes that filter, and checks the
+// renderer's configuration before Quarto writes anything.
+func TestRunWritesTheCaptureFilter(t *testing.T) {
+	root := fixture(t)
+	format := filepath.Join(root, "_quarto-format-handbook.yml")
+	body := "project:\n  type: book\n  output-dir: _output/handbook\n" +
+		"qm:\n  renderer: qm\n" +
+		"filters:\n  - path: _build/qm-capture.lua\n    at: post-finalize\n" +
+		"format:\n  docx: default\n"
+	os.WriteFile(format, []byte(body), 0o644)
+	if err := Run(root, []string{"topic-calltaker", "format-handbook", "audience-pol"}, nil); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if _, err := os.Stat(bookrender.CaptureFilterFile(root)); err != nil {
+		t.Errorf("the capture filter was not written: %v", err)
+	}
+
+	os.WriteFile(format, []byte(strings.Replace(body, "format:\n", "format:\n  pdf: default\n", 1)), 0o644)
+	if err := Run(root, []string{"topic-calltaker", "format-handbook", "audience-pol"}, nil); err == nil ||
+		!strings.Contains(err.Error(), "remove format: pdf") {
+		t.Errorf("error = %v, want a format: pdf error", err)
+	}
+}
+
 // The hook is the project's validation gate: a failing pre-render aborts
 // the whole render, which is the only thing standing between a typo and a
 // wrongly named — or wrongly targeted — artefact.

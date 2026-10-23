@@ -100,6 +100,13 @@ func CoverDOCX(path, cover string) error {
 	}
 	name := tmp.Name()
 	defer os.Remove(name)
+	if info, err := os.Stat(path); err == nil {
+		// CreateTemp creates the file private; keep the document's own mode.
+		if err := tmp.Chmod(info.Mode().Perm()); err != nil {
+			tmp.Close()
+			return err
+		}
+	}
 	zw := zip.NewWriter(tmp)
 	for _, f := range z.File {
 		header := f.FileHeader

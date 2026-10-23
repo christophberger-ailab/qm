@@ -37,8 +37,14 @@ import (
 
 // QM is the `qm:` section of a profile.
 type QM struct {
-	// Renderer "qm" uses Pandoc DOCX plus the native Go PDF/cover backend.
+	// Renderer "qm" uses Pandoc DOCX plus the native Go PDF/cover backend,
+	// run by the project's hooks (format axis). See bookrender.LoadNative.
 	Renderer string `yaml:"renderer"`
+	// PDF holds the options of the PDF the qm renderer writes. They cannot
+	// live under `format: pdf:`: Quarto would typeset that PDF itself.
+	PDF struct {
+		TOC bool `yaml:"toc"`
+	} `yaml:"pdf"`
 	// Cover is a project-relative PNG, with profile variable interpolation.
 	Cover string `yaml:"cover"`
 	// Folder is the content folder a topic profile renders (topic axis).
@@ -95,6 +101,7 @@ type Profile struct {
 
 	Vars    map[string]string `yaml:"_quarto-vars"`
 	Format  OutputFormats     `yaml:"format"`
+	Filters []any             `yaml:"filters"`
 	QM      QM                `yaml:"qm"`
 	Project struct {
 		OutputDir string `yaml:"output-dir"`

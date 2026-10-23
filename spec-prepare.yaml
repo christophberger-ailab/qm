@@ -37,3 +37,4 @@ constraints:
       2: 'Carry out the active profiles'' `qm: copy:` map, a target→source list of files copied into place before Quarto runs'
       2-1: The target is a fixed path a format-level key can point at; the source may contain `{{< var >}}` and may therefore vary along any axis
       2-2: 'This exists because format-level keys do not interpolate: a PPTX reference template that depends on the format (dark or not) and the audience (POL, FW) cannot be named in `format: pptx: reference-doc:`'
+      3: 'For a format with `qm: renderer: qm`, validate its configuration and the topic''s cover, write the capture filter to `_build/qm-capture.lua`, and remove a previously captured `_build/qm-document.json` (see NATIVE in spec-render.yaml)'
