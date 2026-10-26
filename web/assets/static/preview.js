@@ -102,17 +102,27 @@ function targetGroupOf(pagePath) {
 
 // parseAttrs reads the attribute text of a fenced div or bracketed span --
 // both spellings Pandoc accepts are handled: the shorthand `::: slide` /
-// `[text]{.slide}` and the explicit `::: {#id .slide key="value"}`. Key/value
-// attributes are dropped -- the preview only needs the classes to style by.
+// `[text]{.slide}` and the explicit `::: {#id .slide key="value"}`.
+// Key/value attributes are collected in keys, a value in quotes keeping its
+// spaces (`title="Mind the gap"`); the preview styles by the classes and
+// reads only the few keys a callout takes (see calloutAttrs).
 // Every match gets the `quarto` class, marking it as one of these
 // Quarto-specific constructs regardless of which named class(es) follow.
+var attrToken = /([^\s=]+)=(?:"([^"]*)"|'([^']*)'|(\S*))|(\S+)/g;
+
 function parseAttrs(attrs) {
   var classes = ['quarto'];
   var id = '';
-  attrs.replace(/^\{|\}$/g, '').split(/\s+/).forEach(function (token) {
-    if (token === '' || token.indexOf('=') >= 0) {
-      return;
+  var keys = {};
+  var text = attrs.replace(/^\{|\}$/g, '');
+  var m;
+  attrToken.lastIndex = 0;
+  while ((m = attrToken.exec(text)) !== null) {
+    if (m[1] !== undefined) {
+      keys[m[1]] = m[2] !== undefined ? m[2] : m[3] !== undefined ? m[3] : m[4];
+      continue;
     }
+    var token = m[5];
     if (token.charAt(0) === '#') {
       id = token.slice(1);
     } else if (token.charAt(0) === '.') {
@@ -120,8 +130,8 @@ function parseAttrs(attrs) {
     } else {
       classes.push(token); // shorthand: the bare word is the class
     }
-  });
-  return { classes: classes, id: id };
+  }
+  return { classes: classes, id: id, keys: keys };
 }
 
 // attrsToHTML renders the attribute text of a fenced div or bracketed span
@@ -136,9 +146,17 @@ function attrsToHTML(attrs) {
 }
 
 // divAttrs turns the attribute text of an opening div fence into HTML
-// attributes.
+// attributes. A callout also carries the keys that shape it, as data
+// attributes for buildCallouts to read once the page is rendered.
 function divAttrs(attrs) {
-  return attrsToHTML(attrs);
+  var out = attrsToHTML(attrs);
+  var keys = parseAttrs(attrs).keys;
+  calloutKeys.forEach(function (key) {
+    if (keys[key] !== undefined) {
+      out += ' data-callout-' + key + '="' + escapeHTML(keys[key]) + '"';
+    }
+  });
+  return out;
 }
 
 // stripHeadingAttrs removes the Pandoc attribute block from every ATX
@@ -603,6 +621,151 @@ function registerImageExtension() {
   });
 }
 
+// Callouts
+//
+// A Quarto callout (`::: {.callout-note}`) renders as a box in its type's
+// color: a header on the type's shaded color with an icon and a title, and
+// the body below it. buildCallouts gives the rendered div that shape, after
+// the Markdown inside it has been rendered like any other. The colors are
+// the ones Quarto gives each type, the same the native PDF draws with (see
+// internal/docrender); app.css holds them.
+//
+// calloutKeys are the attributes of a callout's fence the preview reads:
+//
+//   - title, the header's text; without it a level-one-to-six heading
+//     opening the callout becomes the title, and failing that the type's
+//     name ("Note") does, as in Quarto,
+//   - appearance: "default" (the shaded header), "simple" (no shading, the
+//     icon beside the body when there is no title), or "minimal" (no
+//     shading and no icon),
+//   - icon="false", which leaves the icon out,
+//   - collapse: "true" or "false" make the callout fold up under its header
+//     at a click, folded or open to begin with.
+var calloutKeys = ['title', 'appearance', 'icon', 'collapse'];
+
+var calloutTypes = {
+  note: 'Note',
+  tip: 'Tip',
+  warning: 'Warning',
+  important: 'Important',
+  caution: 'Caution'
+};
+
+// calloutType returns the type of the callout el, or "" when el is no
+// callout.
+function calloutType(el) {
+  for (var type in calloutTypes) {
+    if (el.classList.contains('callout-' + type)) {
+      return type;
+    }
+  }
+  return '';
+}
+
+// buildCallouts lays out every callout in root as Quarto does: the div
+// gets a header and a body, and the classes the stylesheet draws it by.
+// The innermost callouts go first, so an outer one moves finished boxes.
+function buildCallouts(root) {
+  var divs = Array.prototype.slice.call(root.querySelectorAll('div.quarto')).reverse();
+  divs.forEach(function (div) {
+    var type = calloutType(div);
+    if (type === '') {
+      return;
+    }
+    var appearance = div.getAttribute('data-callout-appearance') || 'default';
+    if (appearance !== 'simple' && appearance !== 'minimal') {
+      appearance = 'default';
+    }
+    var icon = appearance !== 'minimal' && div.getAttribute('data-callout-icon') !== 'false';
+    var collapse = div.getAttribute('data-callout-collapse');
+    var foldable = collapse === 'true' || collapse === 'false';
+
+    // The title: the fence's, else an opening heading's, else the type's
+    // name -- the last only for the default appearance, which always has
+    // a header.
+    var title = document.createElement('div');
+    title.className = 'callout-title';
+    var given = div.getAttribute('data-callout-title');
+    var first = div.firstElementChild;
+    if (given !== null) {
+      // textContent, not innerHTML: the title is the page's text.
+      title.textContent = given;
+    } else if (first && /^H[1-6]$/.test(first.tagName)) {
+      if (first.hasAttribute('data-line')) {
+        title.setAttribute('data-line', first.getAttribute('data-line'));
+      }
+      while (first.firstChild) {
+        title.appendChild(first.firstChild);
+      }
+      first.remove();
+    } else if (appearance === 'default' || foldable) {
+      title.textContent = calloutTypes[type];
+    } else {
+      title = null;
+    }
+
+    var body = document.createElement('div');
+    body.className = 'callout-body';
+    while (div.firstChild) {
+      body.appendChild(div.firstChild);
+    }
+
+    var header = null;
+    if (title !== null) {
+      header = document.createElement(foldable ? 'summary' : 'div');
+      header.className = 'callout-header';
+      if (icon) {
+        header.appendChild(calloutIcon());
+      }
+      header.appendChild(title);
+    } else if (icon) {
+      div.appendChild(calloutIcon()); // simple, untitled: the icon beside the body
+    }
+
+    if (foldable) {
+      var fold = document.createElement('details');
+      fold.className = 'callout-fold';
+      fold.open = collapse !== 'true';
+      fold.appendChild(header);
+      fold.appendChild(body);
+      div.appendChild(fold);
+    } else {
+      if (header !== null) {
+        div.appendChild(header);
+      }
+      div.appendChild(body);
+    }
+
+    div.classList.add('callout', 'callout-style-' + appearance);
+    div.classList.toggle('callout-titled', title !== null);
+  });
+}
+
+function calloutIcon() {
+  var icon = document.createElement('span');
+  icon.className = 'callout-icon';
+  return icon;
+}
+
+// foldStates and restoreFolds carry the callouts a user opened or folded
+// across a render: the preview renders anew as the user types, and a
+// callout that snapped back to its fence's state at every keystroke could
+// not be kept open while its text is edited. Callouts are told apart by
+// their order on the page.
+function foldStates(root) {
+  return Array.prototype.map.call(root.querySelectorAll('details.callout-fold'), function (fold) {
+    return fold.open;
+  });
+}
+
+function restoreFolds(root, states) {
+  root.querySelectorAll('details.callout-fold').forEach(function (fold, i) {
+    if (i < states.length) {
+      fold.open = states[i];
+    }
+  });
+}
+
 // Source lines
 //
 // The editor and the preview scroll together, and for that the preview has
@@ -682,6 +845,7 @@ function renderPreview(el, text, pagePath) {
     // is not content the group's div would hold.
     body = '<div class="quarto ' + escapeHTML(group) + '">' + body + '</div>';
   }
+  var folds = foldStates(el);
   el.innerHTML = html + body;
   // Order matters: sanitize drops the sources that must never be fetched,
   // and only what survives is worth pointing at /media or captioning.
@@ -689,4 +853,8 @@ function renderPreview(el, text, pagePath) {
   resolveMedia(el, pagePath);
   captionFigures(el);
   markSourceLines(el); // after the figures, so a figure carries its line
+  // After the source lines, so that the line marks are attributes that
+  // move along with the blocks into a callout's body.
+  buildCallouts(el);
+  restoreFolds(el, folds);
 }

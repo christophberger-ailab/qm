@@ -1840,34 +1840,150 @@ li.CodeMirror-hint-active {
   margin: 0 0 1rem;
 }
 
-/* Pandoc fenced divs (::: blocks) and bracketed spans ([text]{.class}),
-   callouts among them. */
+/* Pandoc fenced divs (::: blocks) and bracketed spans ([text]{.class}). */
 .markdown-preview .quarto {
   margin: 0.8em 0;
   padding: 0.1rem 0.7rem;
 }
 
-.markdown-preview .callout-note,
-.markdown-preview .callout-tip {
-  border-left: 3px solid var(--border);
-  border-left-color: var(--accent);
-  margin: 0.8em 0;
-  padding: 0.1rem 0.7rem;
+/* Quarto callouts, laid out by buildCallouts in preview.js: a box in the
+   type's color with a thick left bar, a header with the type's icon and the
+   title on the type's shaded color, and the body below it. The colors are
+   Quarto's own, the ones the native PDF draws with; the icons are the
+   Bootstrap Icons Quarto shows (MIT licensed). */
+.markdown-preview .callout {
+  --callout-color: #909090;
+  --callout-header: #f0f0f0;
+  margin: 1.25em 0;
+  padding: 0;
+  border: 1px solid var(--callout-color);
+  border-left-width: 5px;
+  border-radius: 0.25rem;
+  overflow-wrap: break-word;
 }
 
-.markdown-preview .callout-warning,
-.markdown-preview .callout-caution {
-  border-left: 3px solid var(--border);
-  border-left-color: var(--warn);
-  margin: 0.8em 0;
-  padding: 0.1rem 0.7rem;
+.markdown-preview .callout-note {
+  --callout-color: #0758E5;
+  --callout-header: #dae6fb;
+  --callout-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m.93-9.412-1 4.705c-.07.34.029.533.304.533.194 0 .487-.07.686-.246l-.088.416c-.287.346-.92.598-1.465.598-.703 0-1.002-.422-.808-1.319l.738-3.468c.064-.293.006-.399-.287-.47l-.451-.081.082-.381 2.29-.287zM8 5.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2'/%3E%3C/svg%3E");
+}
+
+.markdown-preview .callout-tip {
+  --callout-color: #00A047;
+  --callout-header: #ccf1e3;
+  --callout-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M2 6a6 6 0 1 1 10.174 4.31c-.203.196-.359.4-.453.619l-.762 1.769A.5.5 0 0 1 10.5 13a.5.5 0 0 1 0 1 .5.5 0 0 1 0 1l-.224.447a1 1 0 0 1-.894.553H6.618a1 1 0 0 1-.894-.553L5.5 15a.5.5 0 0 1 0-1 .5.5 0 0 1 0-1 .5.5 0 0 1-.46-.302l-.761-1.77a2 2 0 0 0-.453-.618A5.98 5.98 0 0 1 2 6m6-5a5 5 0 0 0-3.479 8.592c.263.254.514.564.676.941L5.83 12h4.342l.632-1.467c.162-.377.413-.687.676-.941A5 5 0 0 0 8 1'/%3E%3C/svg%3E");
+}
+
+.markdown-preview .callout-warning {
+  --callout-color: #EB9113;
+  --callout-header: #fcefdc;
+  --callout-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5m.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2'/%3E%3C/svg%3E");
 }
 
 .markdown-preview .callout-important {
-  border-left: 3px solid var(--border);
-  border-left-color: var(--danger);
-  margin: 0.8em 0;
+  --callout-color: #CC1914;
+  --callout-header: #f7dddc;
+  --callout-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0M8 4a.905.905 0 0 0-.9.995l.35 3.507a.552.552 0 0 0 1.1 0l.35-3.507A.905.905 0 0 0 8 4m.002 6a1 1 0 1 0 0 2 1 1 0 0 0 0-2'/%3E%3C/svg%3E");
+}
+
+.markdown-preview .callout-caution {
+  --callout-color: #FC5300;
+  --callout-header: #ffe5d0;
+  --callout-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m9.97 4.88.953 3.811C10.159 8.878 9.14 9 8 9s-2.158-.122-2.923-.309L6.03 4.88C6.635 4.957 7.3 5 8 5s1.365-.043 1.97-.12m-.245-.978L8.97.88C8.718-.13 7.282-.13 7.03.88L6.275 3.9C6.8 3.965 7.382 4 8 4s1.2-.036 1.725-.098m4.396 8.613a.5.5 0 0 1 .037.96l-6 2a.5.5 0 0 1-.316 0l-6-2a.5.5 0 0 1 .037-.96l2.391-.598.565-2.257c.862.212 1.964.339 3.165.339s2.303-.127 3.165-.339l.565 2.257z'/%3E%3C/svg%3E");
+}
+
+/* The header's shade is a light tint, made for a light page; on a dark one
+   the same tint of the page's background takes its place. */
+@media (prefers-color-scheme: dark) {
+  .markdown-preview .callout {
+    --callout-header: color-mix(in srgb, var(--callout-color) 22%, var(--bg));
+  }
+}
+
+.markdown-preview .callout-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.7rem;
+  font-weight: 600;
+  font-size: 0.95em;
+}
+
+.markdown-preview .callout-style-default > .callout-header,
+.markdown-preview .callout-style-default > .callout-fold > .callout-header {
+  background: var(--callout-header);
+}
+
+.markdown-preview .callout-style-default > .callout-header + .callout-body,
+.markdown-preview .callout-style-default > .callout-fold > .callout-header + .callout-body {
+  border-top: 1px solid var(--callout-color);
+}
+
+/* Without the shading, the title reads as the body's first line. */
+.markdown-preview .callout-style-simple > .callout-header,
+.markdown-preview .callout-style-simple > .callout-fold > .callout-header,
+.markdown-preview .callout-style-minimal > .callout-header,
+.markdown-preview .callout-style-minimal > .callout-fold > .callout-header {
+  padding-bottom: 0;
+}
+
+.markdown-preview .callout-title {
+  flex: 1;
+}
+
+.markdown-preview .callout-icon {
+  flex: none;
+  width: 1em;
+  height: 1em;
+  background-color: var(--callout-color);
+  -webkit-mask: var(--callout-icon) center / contain no-repeat;
+  mask: var(--callout-icon) center / contain no-repeat;
+}
+
+.markdown-preview .callout-body {
   padding: 0.1rem 0.7rem;
+  min-width: 0;
+}
+
+/* A simple callout without a title: the icon stands beside the body. */
+.markdown-preview .callout-style-simple:not(.callout-titled) {
+  display: flex;
+  align-items: flex-start;
+}
+
+.markdown-preview .callout-style-simple:not(.callout-titled) > .callout-icon {
+  margin: 1em 0 0 0.7rem;
+}
+
+.markdown-preview .callout-style-simple:not(.callout-titled) > .callout-body {
+  flex: 1;
+}
+
+/* A callout that folds: its header is the switch, with a chevron at the
+   end pointing down while it is open. */
+.markdown-preview summary.callout-header {
+  cursor: pointer;
+  list-style: none;
+}
+
+.markdown-preview summary.callout-header::-webkit-details-marker {
+  display: none;
+}
+
+.markdown-preview summary.callout-header::after {
+  content: "";
+  flex: none;
+  width: 0.45em;
+  height: 0.45em;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  margin-right: 0.2em;
+  transition: transform 0.15s;
+}
+
+.markdown-preview .callout-fold[open] > summary.callout-header::after {
+  transform: rotate(45deg);
 }
 /* The external editor button, and what it has to say when the editor did
    not start. */
