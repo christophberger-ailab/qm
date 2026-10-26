@@ -75,6 +75,10 @@ type Native struct {
 	Title string
 	// TOC adds a contents list to the PDF (`qm: pdf: toc:`).
 	TOC bool
+	// Fonts are the TrueType files from _brand.yml by docrender.FontRoles;
+	// FontNotes say which brand fonts the PDF cannot use.
+	Fonts     map[string]string
+	FontNotes []string
 }
 
 // LoadNative returns the selection's qm renderer configuration, or nil when
@@ -121,7 +125,11 @@ func LoadNative(root string, ps *qmcore.Profiles) (*Native, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Native{Cover: cover, Title: title, TOC: f.QM.PDF.TOC}, nil
+	fonts, notes, err := brandFonts(root)
+	if err != nil {
+		return nil, err
+	}
+	return &Native{Cover: cover, Title: title, TOC: f.QM.PDF.TOC, Fonts: fonts, FontNotes: notes}, nil
 }
 
 // declaresCapture reports whether the format profile runs the capture filter
@@ -189,7 +197,10 @@ func (n *Native) Finish(root, docx string, log Logf) (err error) {
 	}
 	tmp.Close()
 	defer os.Remove(tmp.Name())
-	options := docrender.Options{Root: root, Cover: n.Cover, Title: n.Title, TOC: n.TOC}
+	for _, note := range n.FontNotes {
+		log("%s", note)
+	}
+	options := docrender.Options{Root: root, Cover: n.Cover, Title: n.Title, TOC: n.TOC, Fonts: n.Fonts}
 	if err = docrender.RunPDF(context.Background(), timeout, tmp.Name(), doc, options); err != nil {
 		return fmt.Errorf("PDF: %w", err)
 	}

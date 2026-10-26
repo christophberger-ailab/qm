@@ -22,6 +22,7 @@ type pdfWriter struct {
 	root     string
 	headings []tocEntry
 	ctx      context.Context
+	fonts    fontSet
 	// trace, if set, receives each paragraph line as it is drawn (tests).
 	trace func([]piece)
 }
@@ -38,10 +39,6 @@ type piece struct {
 	width, height float64
 }
 
-// textAscent is the distance from the top of a text cell to the baseline,
-// relative to the font size (the Go fonts' typographic ascender).
-const textAscent = 1579.0 / 2048
-
 // PDF uses embedded Unicode fonts and measured, paginated text. It never invokes
 // a typesetting process. Unsupported AST constructs are errors, not lost text.
 func PDF(path string, doc *Document, o Options) error {
@@ -57,14 +54,16 @@ func PDFContext(ctx context.Context, path string, doc *Document, o Options) erro
 	if err != nil {
 		return err
 	}
+	fonts, err := loadFonts(o.Fonts)
+	if err != nil {
+		return err
+	}
 	p := &gopdf.GoPdf{}
 	p.Start(gopdf.Config{PageSize: gopdf.Rect{W: pageW, H: pageH}})
-	for name, data := range fontData {
-		if err = p.AddTTFFontData(name, data); err != nil {
-			return err
-		}
+	if err = fonts.register(p); err != nil {
+		return err
 	}
-	w := &pdfWriter{p: p, root: o.Root, ctx: ctx}
+	w := &pdfWriter{p: p, root: o.Root, ctx: ctx, fonts: fonts}
 	if o.Cover != "" {
 		if err = ValidateCover(o.Cover); err != nil {
 			return err
@@ -95,7 +94,7 @@ func PDFContext(ctx context.Context, path string, doc *Document, o Options) erro
 	if o.TOC && len(entries) > 0 {
 		w.newPage()
 		tocStart = w.page
-		if err = w.paragraph([]Run{{Text: "Inhalt", Bold: true}}, 22, margin, pageW-2*margin); err != nil {
+		if err = w.paragraph([]Run{{Text: "Inhalt", Heading: true}}, 22, margin, pageW-2*margin); err != nil {
 			return err
 		}
 		for i := range entries {
@@ -110,7 +109,7 @@ func PDFContext(ctx context.Context, path string, doc *Document, o Options) erro
 	}
 	w.newPage()
 	if o.Title != "" && o.Cover == "" {
-		if err = w.paragraph([]Run{{Text: o.Title, Bold: true}}, 24, margin, pageW-2*margin); err != nil {
+		if err = w.paragraph([]Run{{Text: o.Title, Heading: true}}, 24, margin, pageW-2*margin); err != nil {
 			return err
 		}
 		w.y += 12
@@ -142,7 +141,7 @@ func PDFContext(ctx context.Context, path string, doc *Document, o Options) erro
 			p.AddOutline(text(b.Runs))
 			w.headings = append(w.headings, tocEntry{title: text(b.Runs), id: b.ID, level: b.Level, page: w.page})
 			for i := range b.Runs {
-				b.Runs[i].Bold = true
+				b.Runs[i].Heading = true
 			}
 		}
 		if b.Code {
@@ -165,7 +164,7 @@ func PDFContext(ctx context.Context, path string, doc *Document, o Options) erro
 			if err = p.SetPage(e.page); err != nil {
 				return err
 			}
-			if err = p.SetFont("regular", "", 10); err != nil {
+			if err = p.SetFont(fonts["regular"].name, "", 10); err != nil {
 				return err
 			}
 			p.SetXY(pageW-margin-25, e.y)
@@ -186,7 +185,7 @@ func PDFContext(ctx context.Context, path string, doc *Document, o Options) erro
 		if err = p.SetPage(page); err != nil {
 			return err
 		}
-		p.SetFont("regular", "", 9)
+		p.SetFont(fonts["regular"].name, "", 9)
 		p.SetXY(pageW-margin-25, pageH-28)
 		if err = p.Cell(nil, fmt.Sprint(page)); err != nil {
 			return err
@@ -200,9 +199,13 @@ func (w *pdfWriter) ensure(h float64) {
 		w.newPage()
 	}
 }
-func fontName(r Run) string {
+
+// fontRole returns the role of r's font in FontRoles.
+func fontRole(r Run) string {
 	f := "regular"
-	if r.Bold && r.Italic {
+	if r.Heading {
+		f = "heading"
+	} else if r.Bold && r.Italic {
 		f = "bolditalic"
 	} else if r.Bold {
 		f = "bold"
@@ -218,13 +221,9 @@ func fontName(r Run) string {
 // measure returns the width of r.Text in r's font, with emoji in the emoji
 // font.
 func (w *pdfWriter) measure(r Run, size float64) (float64, error) {
-	segs, err := segments(r.Text, fontName(r))
-	if err != nil {
-		return 0, err
-	}
 	width := 0.0
-	for _, s := range segs {
-		if err = w.p.SetFont(s.font, "", size); err != nil {
+	for _, s := range w.fonts.segments(r.Text, fontRole(r)) {
+		if err := w.p.SetFont(s.font.name, "", size); err != nil {
 			return 0, err
 		}
 		sw, err := w.p.MeasureTextWidth(s.text)
@@ -236,22 +235,24 @@ func (w *pdfWriter) measure(r Run, size float64) (float64, error) {
 	return width, nil
 }
 
-// draw writes r.Text at x, y like measure lays it out. The caller sets the
-// text color.
-func (w *pdfWriter) draw(r Run, size, x, y float64) error {
-	segs, err := segments(r.Text, fontName(r))
-	if err != nil {
-		return err
-	}
-	for _, s := range segs {
-		if err = w.p.SetFont(s.font, "", size); err != nil {
+// ascent is the distance from the top of a line of r to its baseline.
+func (w *pdfWriter) ascent(r Run, size float64) float64 {
+	return w.fonts[fontRole(r)].ascent * size
+}
+
+// draw writes r.Text with its baseline at x, baseline like measure lays it
+// out. Faces differ in ascent, so each segment is placed by its own. The
+// caller sets the text color.
+func (w *pdfWriter) draw(r Run, size, x, baseline float64) error {
+	for _, s := range w.fonts.segments(r.Text, fontRole(r)) {
+		if err := w.p.SetFont(s.font.name, "", size); err != nil {
 			return err
 		}
 		sw, err := w.p.MeasureTextWidth(s.text)
 		if err != nil {
 			return err
 		}
-		w.p.SetXY(x, y)
+		w.p.SetXY(x, baseline-s.font.ascent*size)
 		if err = w.p.Cell(nil, s.text); err != nil {
 			return err
 		}
@@ -264,7 +265,17 @@ func (w *pdfWriter) paragraph(runs []Run, size, left, width float64) error {
 	var line []piece
 	used := 0.0
 	lh := size * 1.35
-	ascent := size * textAscent
+	// The baseline sits below the line's top by the largest ascent among
+	// the paragraph's faces, so that runs in different faces share it.
+	ascent := 0.0
+	for _, r := range runs {
+		if r.Image == "" {
+			ascent = max(ascent, w.ascent(r, size))
+		}
+	}
+	if ascent == 0 {
+		ascent = w.ascent(Run{}, size)
+	}
 	flush := func() error {
 		if len(line) == 0 {
 			return nil
@@ -293,7 +304,7 @@ func (w *pdfWriter) paragraph(runs []Run, size, left, width float64) error {
 				if s.Link != "" {
 					w.p.SetTextColor(24, 84, 139)
 				}
-				if err := w.draw(s.Run, size, x, y); err != nil {
+				if err := w.draw(s.Run, size, x, w.y+above); err != nil {
 					return err
 				}
 			}
@@ -608,7 +619,8 @@ func (w *pdfWriter) table(b Block) error {
 						}
 					case it.text != "":
 						w.p.SetTextColor(30, 35, 42)
-						if err := w.draw(Run{Text: it.text, Bold: rowIndex == 0}, 9, x+5, y); err != nil {
+						r := Run{Text: it.text, Bold: rowIndex == 0}
+						if err := w.draw(r, 9, x+5, y+w.ascent(r, 9)); err != nil {
 							return err
 						}
 					}

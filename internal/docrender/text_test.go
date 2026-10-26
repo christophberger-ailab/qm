@@ -53,13 +53,9 @@ func TestEmphasisTouchingTextIsOneWord(t *testing.T) {
 }
 
 func TestEmojiUseEmojiFont(t *testing.T) {
-	segs, err := segments("ok 👍🏽 ❤️ 👨‍👩‍👧", "regular")
-	if err != nil {
-		t.Fatal(err)
-	}
 	var got []string
-	for _, s := range segs {
-		got = append(got, s.font+":"+s.text)
+	for _, s := range testWriter(t).fonts.segments("ok 👍🏽 ❤️ 👨‍👩‍👧", "regular") {
+		got = append(got, s.font.name+":"+s.text)
 	}
 	want := []string{"regular:ok ", "emoji:👍", "regular: ", "emoji:❤", "regular: ", "emoji:👨👩👧"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {

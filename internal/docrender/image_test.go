@@ -39,7 +39,7 @@ func TestInlineImageFlowsWithText(t *testing.T) {
 		t.Fatalf("lines %q", got)
 	}
 	// 12pt is above the text's ascent, so the line grows by the difference.
-	if want := 12 + 11*1.35 - 11*textAscent + 7; math.Abs(h-want) > 1e-9 {
+	if want := 12 + 11*1.35 - 11*testWriter(t).fonts["regular"].ascent + 7; math.Abs(h-want) > 1e-9 {
 		t.Errorf("height %v, want %v", h, want)
 	}
 }

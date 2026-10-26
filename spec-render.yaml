@@ -54,6 +54,7 @@ constraints:
       5: Go generates an A4 PDF with embedded fonts, pagination, contents, links, headings, lists, ordinary tables and local raster images; emoji render in a monochrome emoji font, and a line never breaks inside a word that spans quote marks, emphasis or links
       5-1: An image among text in a paragraph is drawn inline on the text's baseline, and a line with a tall image grows to hold it; an image alone in its paragraph stays a block of its own
       5-2: Image width and height attributes are honoured in cm, mm, in, pt, px, em, per cent of the available width, and bare numbers as pixels; with one of the two given the other follows the aspect ratio, and an image too large for the text width or the page shrinks to fit
+      5-3: 'With a `_brand.yml` at the project root, the PDF sets body text, headings and code in the typography base, headings and monospace fonts, choosing the closest weight and style among the family''s TrueType files; fonts it cannot embed (other formats, or not from local files) are reported and leave that text in the Go fonts, and emoji still fall back to the emoji font'
       6: qm finalize writes the PDF beside the DOCX Quarto reported, under the same name, and prepends a full-page PNG cover with preserved aspect ratio to both
       7: DOCX cover uses its own zero-margin section and page-relative image; original body section properties, styles, headers and footers are preserved
       8: Unsupported PDF constructs produce actionable errors rather than silently discarding content
