@@ -27,6 +27,9 @@ filter, includes, variables and book assembly run normally once. The final AST
 contains some DOCX-specific callout layout fragments: these are accepted only
 when they contain known layout elements, while content-bearing unsupported
 raw XML reports an error.
+The PDF reads the colors of such a callout from Quarto's markup (the left
+border color and the title cell's shading), so it uses Quarto's own values for
+note, tip, warning, important and caution, and draws the callout as a box.
 
 Because the whole pipeline runs in the project's pre- and post-render hooks, a
 plain `quarto render --profile …` produces the same PDF and DOCX as `qm render`.
