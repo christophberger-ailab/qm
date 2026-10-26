@@ -28,9 +28,9 @@ type Options struct {
 	TOC                bool
 }
 type Run struct {
-	Text, Link, Image  string
-	ImageWidth         string
-	Bold, Italic, Code bool
+	Text, Link, Image       string
+	ImageWidth, ImageHeight string
+	Bold, Italic, Code      bool
 }
 
 // Cell is a table cell's content in reading order: text runs (lines joined
@@ -108,8 +108,14 @@ func inlines(nodes []Node, style Run) ([]Run, error) {
 			r.Image = decode[[]string](p[2])[0]
 			attrs := decode[[]json.RawMessage](p[0])
 			for _, pair := range decode[[][]string](attrs[2]) {
-				if len(pair) == 2 && pair[0] == "width" {
+				if len(pair) != 2 {
+					continue
+				}
+				switch pair[0] {
+				case "width":
 					r.ImageWidth = pair[1]
+				case "height":
+					r.ImageHeight = pair[1]
 				}
 			}
 		case "RawInline":
@@ -334,7 +340,7 @@ func cellContent(bb []Block) Cell {
 			}
 			line.Reset()
 			flush()
-			cell = append(cell, Run{Image: r.Image, ImageWidth: r.ImageWidth})
+			cell = append(cell, Run{Image: r.Image, ImageWidth: r.ImageWidth, ImageHeight: r.ImageHeight})
 		}
 		// An empty block still occupies a line, as before images were
 		// allowed; a block that held only an image does not.
