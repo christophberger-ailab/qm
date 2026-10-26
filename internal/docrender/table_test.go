@@ -10,15 +10,13 @@ import (
 	"time"
 
 	"github.com/signintech/gopdf"
-	"golang.org/x/image/font/gofont/gobold"
-	"golang.org/x/image/font/gofont/goregular"
 )
 
 func testWriter(t *testing.T) *pdfWriter {
 	t.Helper()
 	p := &gopdf.GoPdf{}
 	p.Start(gopdf.Config{PageSize: gopdf.Rect{W: pageW, H: pageH}})
-	for name, data := range map[string][]byte{"regular": goregular.TTF, "bold": gobold.TTF} {
+	for name, data := range fontData {
 		if err := p.AddTTFFontData(name, data); err != nil {
 			t.Fatal(err)
 		}
@@ -128,10 +126,9 @@ func TestTableImageScaledToColumn(t *testing.T) {
 
 func TestWrapNarrowerThanGlyph(t *testing.T) {
 	w := testWriter(t)
-	w.font(Run{Bold: true}, 9)
 	var lines []string
 	err := within(t, 5*time.Second, func() (err error) {
-		lines, err = w.wrap("Nr. 1", 1.26)
+		lines, err = w.wrap("Nr. 1", Run{Bold: true}, 9, 1.26)
 		return err
 	})
 	if err != nil {

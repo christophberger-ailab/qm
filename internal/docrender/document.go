@@ -94,9 +94,13 @@ func inlines(nodes []Node, style Run) ([]Run, error) {
 		case "Span", "Cite":
 			children = decode[[]Node](p[1])
 		case "Quoted":
+			lq, rq := `"“"`, `"”"`
+			if decode[Node](p[0]).T == "SingleQuote" {
+				lq, rq = `"‘"`, `"’"`
+			}
 			children = decode[[]Node](p[1])
-			children = append([]Node{{T: "Str", C: json.RawMessage(`"“"`)}}, children...)
-			children = append(children, Node{T: "Str", C: json.RawMessage(`"”"`)})
+			children = append([]Node{{T: "Str", C: json.RawMessage(lq)}}, children...)
+			children = append(children, Node{T: "Str", C: json.RawMessage(rq)})
 		case "Link":
 			children = decode[[]Node](p[1])
 			r.Link = decode[[]string](p[2])[0]
