@@ -32,11 +32,16 @@ type Run struct {
 	ImageWidth         string
 	Bold, Italic, Code bool
 }
+
+// Cell is a table cell's content in reading order: text runs (lines joined
+// by "\n") and image runs.
+type Cell []Run
+
 type Block struct {
 	Runs          []Run
 	Level, Indent int
 	ID            string
-	Rows          [][]string
+	Rows          [][]Cell
 	Widths        []float64
 	Break         bool
 	Code          bool
@@ -234,7 +239,7 @@ func blocks(nodes []Node, indent int) ([]Block, error) {
 			rows = append(rows, decode[[]json.RawMessage](foot[1])...)
 			for _, row := range rows {
 				fields := decode[[]json.RawMessage](row)
-				var cells []string
+				var cells []Cell
 				for _, cell := range decode[[][]json.RawMessage](fields[1]) {
 					if decode[int](cell[2]) != 1 || decode[int](cell[3]) != 1 {
 						return nil, fmt.Errorf("PDF tables with merged cells are not supported")
@@ -243,16 +248,7 @@ func blocks(nodes []Node, indent int) ([]Block, error) {
 					if err != nil {
 						return nil, err
 					}
-					var lines []string
-					for _, cb := range bb {
-						for _, r := range cb.Runs {
-							if r.Image != "" {
-								return nil, fmt.Errorf("PDF images inside tables are not supported")
-							}
-						}
-						lines = append(lines, text(cb.Runs))
-					}
-					cells = append(cells, strings.Join(lines, "\n"))
+					cells = append(cells, cellContent(bb))
 				}
 				b.Rows = append(b.Rows, cells)
 			}
@@ -307,6 +303,46 @@ func layoutOnlyXML(raw string) bool {
 			}
 		}
 	}
+}
+
+// cellContent flattens a cell's blocks to text lines, keeping images in
+// place between them. Each block starts a new line.
+func cellContent(bb []Block) Cell {
+	var cell Cell
+	var lines []string
+	var line strings.Builder
+	flush := func() {
+		if len(lines) > 0 {
+			cell = append(cell, Run{Text: strings.Join(lines, "\n")})
+			lines = nil
+		}
+	}
+	for _, b := range bb {
+		hasImage := false
+		for _, r := range b.Runs {
+			if r.Image == "" {
+				line.WriteString(r.Text)
+				continue
+			}
+			hasImage = true
+			if t := strings.TrimSpace(line.String()); t != "" {
+				lines = append(lines, t)
+			}
+			line.Reset()
+			flush()
+			cell = append(cell, Run{Image: r.Image, ImageWidth: r.ImageWidth})
+		}
+		// An empty block still occupies a line, as before images were
+		// allowed; a block that held only an image does not.
+		if !hasImage {
+			lines = append(lines, line.String())
+		} else if t := strings.TrimSpace(line.String()); t != "" {
+			lines = append(lines, t)
+		}
+		line.Reset()
+	}
+	flush()
+	return cell
 }
 
 func imageSize(path string) (image.Config, error) {

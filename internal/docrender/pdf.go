@@ -250,20 +250,10 @@ func (w *pdfWriter) paragraph(runs []Run, size, left, width float64) error {
 			if err := flush(); err != nil {
 				return err
 			}
-			path, err := resource(w.root, r.Image)
+			path, iw, ih, err := w.fitImage(r, width)
 			if err != nil {
 				return err
 			}
-			c, err := imageSize(path)
-			if err != nil {
-				return fmt.Errorf("image %s: %w", r.Image, err)
-			}
-			scale := math.Min(width/float64(c.Width), (pageH-2*margin-20)/float64(c.Height))
-			scale = math.Min(scale, 0.75)
-			if desired := imageWidth(r.ImageWidth, width); desired > 0 {
-				scale = math.Min(desired/float64(c.Width), math.Min(width/float64(c.Width), (pageH-2*margin-20)/float64(c.Height)))
-			}
-			iw, ih := float64(c.Width)*scale, float64(c.Height)*scale
 			w.ensure(ih + 10)
 			if err = w.p.Image(path, left, w.y, &gopdf.Rect{W: iw, H: ih}); err != nil {
 				return err
@@ -349,6 +339,13 @@ func (w *pdfWriter) paragraph(runs []Run, size, left, width float64) error {
 	return nil
 }
 
+// cellItem is one laid-out piece of a table cell: a wrapped text line or
+// an image, with the vertical space it takes.
+type cellItem struct {
+	text, image string
+	w, h        float64
+}
+
 func (w *pdfWriter) table(b Block) error {
 	n := len(b.Rows[0])
 	if n == 0 {
@@ -377,8 +374,8 @@ func (w *pdfWriter) table(b Block) error {
 		if err := w.font(Run{Bold: rowIndex == 0}, 9); err != nil {
 			return err
 		}
-		for i, s := range row {
-			g, err := w.widestRune(s)
+		for i, cell := range row {
+			g, err := w.widestRune(text(cell))
 			if err != nil {
 				return err
 			}
@@ -390,60 +387,134 @@ func (w *pdfWriter) table(b Block) error {
 		if err := w.checkDeadline(); err != nil {
 			return err
 		}
-		lines := make([][]string, n)
-		maxLines := 0
-		for i, s := range row {
-			r := Run{Bold: rowIndex == 0}
-			w.font(r, 9)
-			for _, part := range strings.Split(s, "\n") {
-				if part == "" {
-					lines[i] = append(lines[i], "")
+		items := make([][]cellItem, n)
+		rowH := 0.0
+		hasImage := false
+		for i, cell := range row {
+			if len(cell) == 0 {
+				cell = Cell{{}}
+			}
+			for _, r := range cell {
+				if r.Image != "" {
+					path, iw, ih, err := w.fitImage(r, widths[i]-2*cellPadding)
+					if err != nil {
+						return err
+					}
+					items[i] = append(items[i], cellItem{image: path, w: iw, h: ih + 4})
+					hasImage = true
 					continue
 				}
-				ll, err := w.wrap(part, widths[i]-2*cellPadding)
-				if err != nil {
-					return err
+				w.font(Run{Bold: rowIndex == 0}, 9)
+				for _, part := range strings.Split(r.Text, "\n") {
+					if part == "" {
+						items[i] = append(items[i], cellItem{h: 12})
+						continue
+					}
+					ll, err := w.wrap(part, widths[i]-2*cellPadding)
+					if err != nil {
+						return err
+					}
+					for _, l := range ll {
+						items[i] = append(items[i], cellItem{text: l, h: 12})
+					}
 				}
-				lines[i] = append(lines[i], ll...)
 			}
-			maxLines = max(maxLines, len(lines[i]))
+			total := 0.0
+			for _, it := range items[i] {
+				total += it.h
+			}
+			rowH = max(rowH, total)
+		}
+		// A row with an image moves to the next page whole when it fits
+		// there; text-only rows split across pages as before.
+		if hasImage && w.y+rowH+8 > pageH-margin && rowH+8 <= pageH-2*margin {
+			w.newPage()
 		}
 		// Split tall rows across pages rather than clipping their contents.
-		for offset := 0; offset < maxLines; {
+		next := make([]int, n)
+		for {
 			w.ensure(22)
-			count := min(maxLines-offset, int((pageH-margin-w.y-8)/12))
-			if count < 1 {
+			avail := pageH - margin - w.y - 8
+			take := make([]int, n)
+			used := 0.0
+			pending := false
+			for i := range items {
+				h := 0.0
+				for next[i]+take[i] < len(items[i]) && h+items[i][next[i]+take[i]].h <= avail {
+					h += items[i][next[i]+take[i]].h
+					take[i]++
+				}
+				// Nothing fits even on an empty page: draw one item anyway
+				// so the layout always progresses.
+				if take[i] == 0 && next[i] < len(items[i]) && w.y == margin {
+					h = items[i][next[i]].h
+					take[i] = 1
+				}
+				used = max(used, h)
+				pending = pending || next[i]+take[i] < len(items[i])
+			}
+			if used == 0 {
+				if !pending {
+					break
+				}
 				w.newPage()
 				continue
 			}
-			h := float64(count)*12 + 8
+			h := used + 8
 			x := margin
-			for i, ll := range lines {
+			for i := range items {
 				w.p.SetStrokeColor(175, 185, 195)
 				w.p.SetLineWidth(.4)
 				w.p.RectFromUpperLeftWithStyle(x, w.y, widths[i], h, "D")
-				for j := 0; j < count && offset+j < len(ll); j++ {
-					w.font(Run{Bold: rowIndex == 0}, 9)
-					w.p.SetTextColor(30, 35, 42)
-					w.p.SetXY(x+5, w.y+4+float64(j)*12)
-					if ll[offset+j] == "" {
-						continue
+				y := w.y + 4
+				for _, it := range items[i][next[i] : next[i]+take[i]] {
+					switch {
+					case it.image != "":
+						if err := w.p.Image(it.image, x+cellPadding, y, &gopdf.Rect{W: it.w, H: it.h - 4}); err != nil {
+							return err
+						}
+					case it.text != "":
+						w.font(Run{Bold: rowIndex == 0}, 9)
+						w.p.SetTextColor(30, 35, 42)
+						w.p.SetXY(x+5, y)
+						if err := w.p.Cell(nil, it.text); err != nil {
+							return err
+						}
 					}
-					if err := w.p.Cell(nil, ll[offset+j]); err != nil {
-						return err
-					}
+					y += it.h
 				}
+				next[i] += take[i]
 				x += widths[i]
 			}
 			w.y += h
-			offset += count
-			if offset < maxLines {
-				w.newPage()
+			if !pending {
+				break
 			}
+			w.newPage()
 		}
 	}
 	w.y += 10
 	return nil
+}
+
+// fitImage resolves an image run and scales it to the available width and
+// page height, honouring an explicit width attribute.
+func (w *pdfWriter) fitImage(r Run, width float64) (path string, iw, ih float64, err error) {
+	path, err = resource(w.root, r.Image)
+	if err != nil {
+		return "", 0, 0, err
+	}
+	c, err := imageSize(path)
+	if err != nil {
+		return "", 0, 0, fmt.Errorf("image %s: %w", r.Image, err)
+	}
+	scale := math.Min(width/float64(c.Width), (pageH-2*margin-20)/float64(c.Height))
+	if desired := imageWidth(r.ImageWidth, width); desired > 0 {
+		scale = math.Min(desired/float64(c.Width), scale)
+	} else {
+		scale = math.Min(scale, 0.75)
+	}
+	return path, float64(c.Width) * scale, float64(c.Height) * scale, nil
 }
 
 func imageWidth(value string, available float64) float64 {
