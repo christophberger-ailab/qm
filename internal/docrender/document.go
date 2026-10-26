@@ -26,11 +26,14 @@ type Document struct {
 type Options struct {
 	Root, Cover, Title string
 	TOC                bool
+	// Fonts maps roles in FontRoles to TrueType files that replace the Go
+	// fonts there.
+	Fonts map[string]string
 }
 type Run struct {
-	Text, Link, Image       string
-	ImageWidth, ImageHeight string
-	Bold, Italic, Code      bool
+	Text, Link, Image           string
+	ImageWidth, ImageHeight     string
+	Bold, Italic, Code, Heading bool
 }
 
 // Cell is a table cell's content in reading order: text runs (lines joined

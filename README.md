@@ -129,10 +129,37 @@ The pipeline runs in the project's hooks, so `quarto render --profile …`,
    Quarto's last filter entry point and saves the processed Pandoc JSON to
    `_build/qm-document.json` in the same run.
 3. `qm finalize` (post-render) uses Go and `signintech/gopdf` to lay out an A4
-   PDF next to the DOCX. The PDF has embedded Go fonts (with monochrome Noto
-   Emoji for emoji the Go fonts lack), headings, paragraphs,
+   PDF next to the DOCX. The PDF has embedded fonts (with monochrome Noto
+   Emoji for emoji the text fonts lack), headings, paragraphs,
    lists, ordinary tables, raster images, links, bookmarks, page numbers, and a
    linked contents list. `qm finalize` then puts the cover on both files.
+
+The PDF sets its text in the Go fonts, unless the project root has a
+[`_brand.yml`](https://posit-dev.github.io/brand-yml/) whose `typography`
+names fonts with local files. Then body text uses `base` (regular, bold,
+italic and bold italic, each the closest weight and style the family
+offers), headings use `headings` (default weight bold), and code uses
+`monospace`. Only TrueType files (`.ttf`) can be embedded; `.otf`, WOFF
+files and fonts from Google, Bunny or the system are skipped with a note
+in the `qm finalize` output, and their text keeps the Go fonts. Font sizes,
+colors and line heights from the brand file do not apply to the PDF.
+
+```yaml
+typography:
+  fonts:
+    - family: Source Sans 3
+      source: file
+      files:
+        - path: fonts/SourceSans3-Regular.ttf
+        - path: fonts/SourceSans3-Bold.ttf
+          weight: bold
+        - path: fonts/SourceSans3-Italic.ttf
+          style: italic
+  base: Source Sans 3
+  headings:
+    family: Source Sans 3
+    weight: semi-bold
+```
 
 The PDF options belong under `qm: pdf:`, not `format: pdf:`, because Quarto
 would typeset a `format: pdf:` itself with LaTeX. `qm prepare` rejects a

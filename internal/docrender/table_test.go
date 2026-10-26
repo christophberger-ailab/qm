@@ -16,12 +16,14 @@ func testWriter(t *testing.T) *pdfWriter {
 	t.Helper()
 	p := &gopdf.GoPdf{}
 	p.Start(gopdf.Config{PageSize: gopdf.Rect{W: pageW, H: pageH}})
-	for name, data := range fontData {
-		if err := p.AddTTFFontData(name, data); err != nil {
-			t.Fatal(err)
-		}
+	fonts, err := goFonts()
+	if err != nil {
+		t.Fatal(err)
 	}
-	w := &pdfWriter{p: p}
+	if err = fonts.register(p); err != nil {
+		t.Fatal(err)
+	}
+	w := &pdfWriter{p: p, fonts: fonts}
 	w.newPage()
 	return w
 }
