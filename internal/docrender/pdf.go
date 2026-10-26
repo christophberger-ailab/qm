@@ -30,10 +30,17 @@ type tocEntry struct {
 	level, page int
 	y           float64
 }
+
+// piece is a measured part of a line: text, or an inline image whose Image
+// is the resolved path and height is its drawn height.
 type piece struct {
 	Run
-	width float64
+	width, height float64
 }
+
+// textAscent is the distance from the top of a text cell to the baseline,
+// relative to the font size (the Go fonts' typographic ascender).
+const textAscent = 1579.0 / 2048
 
 // PDF uses embedded Unicode fonts and measured, paginated text. It never invokes
 // a typesetting process. Unsupported AST constructs are errors, not lost text.
@@ -257,31 +264,47 @@ func (w *pdfWriter) paragraph(runs []Run, size, left, width float64) error {
 	var line []piece
 	used := 0.0
 	lh := size * 1.35
+	ascent := size * textAscent
 	flush := func() error {
 		if len(line) == 0 {
 			return nil
 		}
-		w.ensure(lh)
+		// Inline images sit on the baseline; a tall one makes its line
+		// taller above the baseline.
+		above := ascent
+		for _, s := range line {
+			above = max(above, s.height)
+		}
+		lineH := above + lh - ascent
+		w.ensure(lineH)
 		if w.trace != nil {
 			w.trace(line)
 		}
 		x := left
 		for _, s := range line {
-			w.p.SetTextColor(30, 35, 42)
-			if s.Link != "" {
-				w.p.SetTextColor(24, 84, 139)
-			}
-			if err := w.draw(s.Run, size, x, w.y); err != nil {
-				return err
+			y, h := w.y+above-ascent, lh
+			if s.Image != "" {
+				y, h = w.y+above-s.height, s.height
+				if err := w.p.Image(s.Image, x, y, &gopdf.Rect{W: s.width, H: s.height}); err != nil {
+					return err
+				}
+			} else {
+				w.p.SetTextColor(30, 35, 42)
+				if s.Link != "" {
+					w.p.SetTextColor(24, 84, 139)
+				}
+				if err := w.draw(s.Run, size, x, y); err != nil {
+					return err
+				}
 			}
 			if strings.HasPrefix(s.Link, "#") {
-				w.p.AddInternalLink(strings.TrimPrefix(s.Link, "#"), x, w.y, s.width, lh)
+				w.p.AddInternalLink(strings.TrimPrefix(s.Link, "#"), x, y, s.width, h)
 			} else if s.Link != "" {
-				w.p.AddExternalLink(s.Link, x, w.y, s.width, lh)
+				w.p.AddExternalLink(s.Link, x, y, s.width, h)
 			}
 			x += s.width
 		}
-		w.y += lh
+		w.y += lineH
 		line = nil
 		used = 0
 		return nil
@@ -309,6 +332,16 @@ func (w *pdfWriter) paragraph(runs []Run, size, left, width float64) error {
 		// Oversized words are split by rune, so long URLs and identifiers
 		// cannot escape the page.
 		for _, p := range word {
+			if p.Image != "" {
+				if used+p.width > width && len(line) > 0 {
+					if err := flush(); err != nil {
+						return err
+					}
+				}
+				line = append(line, p)
+				used += p.width
+				continue
+			}
 			for _, c := range p.Text {
 				s := p.Run
 				s.Text = string(c)
@@ -321,13 +354,27 @@ func (w *pdfWriter) paragraph(runs []Run, size, left, width float64) error {
 						return err
 					}
 				}
-				line = append(line, piece{s, cw})
+				line = append(line, piece{Run: s, width: cw})
 				used += cw
 			}
 		}
 		return nil
 	}
+	// An image alone in its paragraph is a picture of its own; images among
+	// text flow with it, like a word.
+	alone := soleImage(runs)
 	for _, r := range runs {
+		if r.Image != "" && !alone {
+			path, iw, ih, err := w.fitImage(r, size, width)
+			if err != nil {
+				return err
+			}
+			s := r
+			s.Image = path
+			word = append(word, piece{Run: s, width: iw, height: ih})
+			wordW += iw
+			continue
+		}
 		if r.Image != "" {
 			if err := place(); err != nil {
 				return err
@@ -335,7 +382,7 @@ func (w *pdfWriter) paragraph(runs []Run, size, left, width float64) error {
 			if err := flush(); err != nil {
 				return err
 			}
-			path, iw, ih, err := w.fitImage(r, width)
+			path, iw, ih, err := w.fitImage(r, size, width)
 			if err != nil {
 				return err
 			}
@@ -358,7 +405,7 @@ func (w *pdfWriter) paragraph(runs []Run, size, left, width float64) error {
 			if err != nil {
 				return err
 			}
-			word = append(word, piece{s, tw})
+			word = append(word, piece{Run: s, width: tw})
 			wordW += tw
 			return nil
 		}
@@ -398,7 +445,7 @@ func (w *pdfWriter) paragraph(runs []Run, size, left, width float64) error {
 				}
 				continue
 			}
-			line = append(line, piece{s, tw})
+			line = append(line, piece{Run: s, width: tw})
 			used += tw
 		}
 		if err := addText(); err != nil {
@@ -413,6 +460,20 @@ func (w *pdfWriter) paragraph(runs []Run, size, left, width float64) error {
 	}
 	w.y += 7
 	return nil
+}
+
+// soleImage reports whether runs hold one image and otherwise only blank
+// text.
+func soleImage(runs []Run) bool {
+	images := 0
+	for _, r := range runs {
+		if r.Image != "" {
+			images++
+		} else if strings.TrimSpace(r.Text) != "" {
+			return false
+		}
+	}
+	return images == 1
 }
 
 // cellItem is one laid-out piece of a table cell: a wrapped text line or
@@ -469,7 +530,7 @@ func (w *pdfWriter) table(b Block) error {
 			}
 			for _, r := range cell {
 				if r.Image != "" {
-					path, iw, ih, err := w.fitImage(r, widths[i]-2*cellPadding)
+					path, iw, ih, err := w.fitImage(r, 9, widths[i]-2*cellPadding)
 					if err != nil {
 						return err
 					}
@@ -568,8 +629,11 @@ func (w *pdfWriter) table(b Block) error {
 }
 
 // fitImage resolves an image run and scales it to the available width and
-// page height, honouring an explicit width attribute.
-func (w *pdfWriter) fitImage(r Run, width float64) (path string, iw, ih float64, err error) {
+// page height, honouring explicit width and height attributes. With only one
+// of them the other follows the aspect ratio; with both the image takes
+// exactly that size, unless it must shrink to fit. An em is the font size of
+// the surrounding text.
+func (w *pdfWriter) fitImage(r Run, size, width float64) (path string, iw, ih float64, err error) {
 	path, err = resource(w.root, r.Image)
 	if err != nil {
 		return "", 0, 0, err
@@ -578,20 +642,32 @@ func (w *pdfWriter) fitImage(r Run, width float64) (path string, iw, ih float64,
 	if err != nil {
 		return "", 0, 0, fmt.Errorf("image %s: %w", r.Image, err)
 	}
-	scale := math.Min(width/float64(c.Width), (pageH-2*margin-20)/float64(c.Height))
-	if desired := imageWidth(r.ImageWidth, width); desired > 0 {
-		scale = math.Min(desired/float64(c.Width), scale)
-	} else {
-		scale = math.Min(scale, 0.75)
+	maxH := pageH - 2*margin - 20
+	cw, ch := float64(c.Width), float64(c.Height)
+	dw, dh := imageLength(r.ImageWidth, size, width), imageLength(r.ImageHeight, size, maxH)
+	switch {
+	case dw > 0 && dh > 0:
+		iw, ih = dw, dh
+	case dw > 0:
+		iw, ih = dw, ch*dw/cw
+	case dh > 0:
+		iw, ih = cw*dh/ch, dh
+	default:
+		iw, ih = cw*0.75, ch*0.75
 	}
-	return path, float64(c.Width) * scale, float64(c.Height) * scale, nil
+	if scale := math.Min(width/iw, maxH/ih); scale < 1 {
+		iw, ih = iw*scale, ih*scale
+	}
+	return path, iw, ih, nil
 }
 
-func imageWidth(value string, available float64) float64 {
+// imageLength converts a Pandoc image dimension to points. A bare number
+// is pixels, as in Pandoc; percentages are of available.
+func imageLength(value string, em, available float64) float64 {
 	for _, unit := range []struct {
 		suffix string
 		factor float64
-	}{{"cm", 72 / 2.54}, {"mm", 72 / 25.4}, {"in", 72}, {"pt", 1}, {"px", .75}, {"%", available / 100}} {
+	}{{"cm", 72 / 2.54}, {"mm", 72 / 25.4}, {"in", 72}, {"pt", 1}, {"px", .75}, {"em", em}, {"%", available / 100}} {
 		if strings.HasSuffix(value, unit.suffix) {
 			n, err := strconv.ParseFloat(strings.TrimSuffix(value, unit.suffix), 64)
 			if err == nil {
@@ -599,6 +675,9 @@ func imageWidth(value string, available float64) float64 {
 			}
 			return 0
 		}
+	}
+	if n, err := strconv.ParseFloat(value, 64); err == nil {
+		return n * .75
 	}
 	return 0
 }
