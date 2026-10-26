@@ -23,7 +23,7 @@ func testWriter(t *testing.T) *pdfWriter {
 	if err = fonts.register(p); err != nil {
 		t.Fatal(err)
 	}
-	w := &pdfWriter{p: p, fonts: fonts}
+	w := &pdfWriter{p: p, fonts: fonts, left: margin, right: pageW - margin}
 	w.newPage()
 	return w
 }

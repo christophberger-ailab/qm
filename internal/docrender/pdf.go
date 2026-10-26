@@ -25,6 +25,11 @@ type pdfWriter struct {
 	fonts    fontSet
 	// trace, if set, receives each paragraph line as it is drawn (tests).
 	trace func([]piece)
+	// left and right bound the text column; inset keeps text clear of the
+	// top and bottom page margins further, inside a callout box.
+	left, right, inset float64
+	// dry lays text out without drawing it or breaking pages, to measure.
+	dry bool
 }
 type tocEntry struct {
 	title, id   string
@@ -63,7 +68,7 @@ func PDFContext(ctx context.Context, path string, doc *Document, o Options) erro
 	if err = fonts.register(p); err != nil {
 		return err
 	}
-	w := &pdfWriter{p: p, root: o.Root, ctx: ctx, fonts: fonts}
+	w := &pdfWriter{p: p, root: o.Root, ctx: ctx, fonts: fonts, left: margin, right: pageW - margin}
 	if o.Cover != "" {
 		if err = ValidateCover(o.Cover); err != nil {
 			return err
@@ -85,11 +90,19 @@ func PDFContext(ctx context.Context, path string, doc *Document, o Options) erro
 	// Reserve a measured contents section, then fill in its page numbers after
 	// laying out the body. Long titles wrap without colliding with page numbers.
 	var entries []tocEntry
-	for _, b := range bb {
-		if b.Level > 0 && b.Level <= 3 && strings.TrimSpace(text(b.Runs)) != "" {
-			entries = append(entries, tocEntry{title: text(b.Runs), id: b.ID, level: b.Level})
+	var collect func([]Block)
+	collect = func(bb []Block) {
+		for _, b := range bb {
+			if b.Callout != nil {
+				collect(b.Callout.Title)
+				collect(b.Callout.Body)
+			}
+			if b.Level > 0 && b.Level <= 3 && strings.TrimSpace(text(b.Runs)) != "" {
+				entries = append(entries, tocEntry{title: text(b.Runs), id: b.ID, level: b.Level})
+			}
 		}
 	}
+	collect(bb)
 	tocStart, tocPages := 0, 0
 	if o.TOC && len(entries) > 0 {
 		w.newPage()
@@ -114,42 +127,8 @@ func PDFContext(ctx context.Context, path string, doc *Document, o Options) erro
 		}
 		w.y += 12
 	}
-	for _, b := range bb {
-		if err = w.checkDeadline(); err != nil {
-			return err
-		}
-		if b.Break {
-			w.newPage()
-			continue
-		}
-		if len(b.Rows) > 0 {
-			if err = w.table(b); err != nil {
-				return err
-			}
-			continue
-		}
-		size := 11.0
-		left := margin + float64(b.Indent)*15
-		if b.Level > 0 {
-			size = math.Max(12, 23-float64(b.Level)*2)
-			w.y += 12
-			w.ensure(size * 2.8)
-			p.SetXY(left, w.y)
-			if b.ID != "" {
-				p.SetAnchor(b.ID)
-			}
-			p.AddOutline(text(b.Runs))
-			w.headings = append(w.headings, tocEntry{title: text(b.Runs), id: b.ID, level: b.Level, page: w.page})
-			for i := range b.Runs {
-				b.Runs[i].Heading = true
-			}
-		}
-		if b.Code {
-			size = 9
-		}
-		if err = w.paragraph(b.Runs, size, left, pageW-margin-left); err != nil {
-			return err
-		}
+	if err = w.body(bb); err != nil {
+		return err
 	}
 	last := w.page
 	if tocPages > 0 {
@@ -193,11 +172,142 @@ func PDFContext(ctx context.Context, path string, doc *Document, o Options) erro
 	}
 	return p.WritePdf(path)
 }
-func (w *pdfWriter) newPage() { w.p.AddPage(); w.page++; w.y = margin }
+func (w *pdfWriter) newPage() { w.p.AddPage(); w.page++; w.y = w.top() }
 func (w *pdfWriter) ensure(h float64) {
-	if w.y+h > pageH-margin {
+	if !w.dry && w.y+h > w.bottom() {
 		w.newPage()
 	}
+}
+
+// top and bottom bound the text on a page.
+func (w *pdfWriter) top() float64    { return margin + w.inset }
+func (w *pdfWriter) bottom() float64 { return pageH - margin - w.inset }
+
+// body lays out blocks in the text column.
+func (w *pdfWriter) body(bb []Block) error {
+	p := w.p
+	for _, b := range bb {
+		if err := w.checkDeadline(); err != nil {
+			return err
+		}
+		if b.Break {
+			w.newPage()
+			continue
+		}
+		if b.Callout != nil {
+			if err := w.callout(b); err != nil {
+				return err
+			}
+			continue
+		}
+		if len(b.Rows) > 0 {
+			if err := w.table(b); err != nil {
+				return err
+			}
+			continue
+		}
+		size := 11.0
+		left := w.left + float64(b.Indent)*15
+		if b.Level > 0 {
+			size = math.Max(12, 23-float64(b.Level)*2)
+			w.y += 12
+			w.ensure(size * 2.8)
+			p.SetXY(left, w.y)
+			if b.ID != "" {
+				p.SetAnchor(b.ID)
+			}
+			p.AddOutline(text(b.Runs))
+			w.headings = append(w.headings, tocEntry{title: text(b.Runs), id: b.ID, level: b.Level, page: w.page})
+			for i := range b.Runs {
+				b.Runs[i].Heading = true
+			}
+		}
+		if b.Code {
+			size = 9
+		}
+		if err := w.paragraph(b.Runs, size, left, w.right-left); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+const (
+	calloutPad = 6.0
+	calloutBar = 3.0
+)
+
+// callout draws a box around a callout, in its border color with a thick
+// left bar like Quarto's, so that it is clear where the callout ends. The
+// title sits on the shaded header and stays on the page of the body's
+// first lines. A body that runs over pages keeps its sides open there.
+func (w *pdfWriter) callout(b Block) error {
+	c := b.Callout
+	left, right := w.left+float64(b.Indent)*15, w.right
+	oldLeft, oldRight, oldInset := w.left, w.right, w.inset
+	defer func() { w.left, w.right, w.inset = oldLeft, oldRight, oldInset }()
+	w.left, w.right = left+calloutBar+calloutPad, right-calloutPad
+	headerH := 0.0
+	if len(c.Title) > 0 {
+		y := w.y
+		w.dry = true
+		for _, t := range c.Title {
+			if err := w.paragraph(t.Runs, 11, w.left, w.right-w.left); err != nil {
+				w.dry = false
+				return err
+			}
+		}
+		w.dry = false
+		// paragraph leaves 7pt below; the header pads its text evenly.
+		headerH = w.y - y - 7 + 2*calloutPad
+		w.y = y
+	}
+	w.y += 3
+	w.ensure(headerH + 2*calloutPad + 11*1.35)
+	top, first := w.y, w.page
+	if headerH > 0 {
+		w.p.SetFillColor(c.Fill[0], c.Fill[1], c.Fill[2])
+		w.p.RectFromUpperLeftWithStyle(left, top, right-left, headerH, "F")
+		w.y += calloutPad
+		for _, t := range c.Title {
+			if err := w.paragraph(t.Runs, 11, w.left, w.right-w.left); err != nil {
+				return err
+			}
+		}
+		w.y = top + headerH
+	}
+	w.y += calloutPad
+	w.inset = calloutPad
+	if err := w.body(c.Body); err != nil {
+		return err
+	}
+	// The last block's spacing below closes the box.
+	end, last := w.y, w.page
+	for page := first; page <= last; page++ {
+		if err := w.p.SetPage(page); err != nil {
+			return err
+		}
+		y0, y1 := margin, pageH-margin
+		if page == first {
+			y0 = top
+		}
+		if page == last {
+			y1 = end
+		}
+		w.p.SetStrokeColor(c.Border[0], c.Border[1], c.Border[2])
+		w.p.SetLineWidth(.5)
+		if page == first {
+			w.p.Line(left, y0, right, y0)
+		}
+		if page == last {
+			w.p.Line(left, y1, right, y1)
+		}
+		w.p.Line(right, y0, right, y1)
+		w.p.SetFillColor(c.Border[0], c.Border[1], c.Border[2])
+		w.p.RectFromUpperLeftWithStyle(left, y0, calloutBar, y1-y0, "F")
+	}
+	w.y = end + 7
+	return nil
 }
 
 // fontRole returns the role of r's font in FontRoles.
@@ -288,11 +398,14 @@ func (w *pdfWriter) paragraph(runs []Run, size, left, width float64) error {
 		}
 		lineH := above + lh - ascent
 		w.ensure(lineH)
-		if w.trace != nil {
+		if w.trace != nil && !w.dry {
 			w.trace(line)
 		}
 		x := left
 		for _, s := range line {
+			if w.dry {
+				break
+			}
 			y, h := w.y+above-ascent, lh
 			if s.Image != "" {
 				y, h = w.y+above-s.height, s.height
@@ -398,8 +511,10 @@ func (w *pdfWriter) paragraph(runs []Run, size, left, width float64) error {
 				return err
 			}
 			w.ensure(ih + 10)
-			if err = w.p.Image(path, left, w.y, &gopdf.Rect{W: iw, H: ih}); err != nil {
-				return err
+			if !w.dry {
+				if err = w.p.Image(path, left, w.y, &gopdf.Rect{W: iw, H: ih}); err != nil {
+					return err
+				}
 			}
 			w.y += ih + 10
 			continue
@@ -499,7 +614,7 @@ func (w *pdfWriter) table(b Block) error {
 	if n == 0 {
 		return nil
 	}
-	width := pageW - 2*margin
+	width := w.right - w.left
 	widths := make([]float64, n)
 	sum := 0.0
 	for _, v := range b.Widths {
@@ -571,14 +686,14 @@ func (w *pdfWriter) table(b Block) error {
 		}
 		// A row with an image moves to the next page whole when it fits
 		// there; text-only rows split across pages as before.
-		if hasImage && w.y+rowH+8 > pageH-margin && rowH+8 <= pageH-2*margin {
+		if hasImage && w.y+rowH+8 > w.bottom() && rowH+8 <= w.bottom()-w.top() {
 			w.newPage()
 		}
 		// Split tall rows across pages rather than clipping their contents.
 		next := make([]int, n)
 		for {
 			w.ensure(22)
-			avail := pageH - margin - w.y - 8
+			avail := w.bottom() - w.y - 8
 			take := make([]int, n)
 			used := 0.0
 			pending := false
@@ -590,7 +705,7 @@ func (w *pdfWriter) table(b Block) error {
 				}
 				// Nothing fits even on an empty page: draw one item anyway
 				// so the layout always progresses.
-				if take[i] == 0 && next[i] < len(items[i]) && w.y == margin {
+				if take[i] == 0 && next[i] < len(items[i]) && w.y == w.top() {
 					h = items[i][next[i]].h
 					take[i] = 1
 				}
@@ -605,7 +720,7 @@ func (w *pdfWriter) table(b Block) error {
 				continue
 			}
 			h := used + 8
-			x := margin
+			x := w.left
 			for i := range items {
 				w.p.SetStrokeColor(175, 185, 195)
 				w.p.SetLineWidth(.4)
@@ -654,7 +769,7 @@ func (w *pdfWriter) fitImage(r Run, size, width float64) (path string, iw, ih fl
 	if err != nil {
 		return "", 0, 0, fmt.Errorf("image %s: %w", r.Image, err)
 	}
-	maxH := pageH - 2*margin - 20
+	maxH := w.bottom() - w.top() - 20
 	cw, ch := float64(c.Width), float64(c.Height)
 	dw, dh := imageLength(r.ImageWidth, size, width), imageLength(r.ImageHeight, size, maxH)
 	switch {

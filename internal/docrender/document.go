@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -48,6 +50,16 @@ type Block struct {
 	Widths        []float64
 	Break         bool
 	Code          bool
+	Callout       *Callout
+}
+
+// Callout is a Quarto callout: a box in Border with a left bar, and Title
+// on a Fill background above Body. Quarto's own per-type colors are read
+// from its DOCX markup; a simple or minimal callout has no fill or title.
+type Callout struct {
+	Border, Fill [3]uint8
+	HasFill      bool
+	Title, Body  []Block
 }
 
 func Read(r io.Reader) (*Document, error) {
@@ -169,6 +181,15 @@ func blocks(nodes []Node, indent int) ([]Block, error) {
 			inline = decode[[]Node](p[2])
 		case "Div":
 			children = decode[[]Node](p[1])
+			if hasClass(p[0], "docx-callout") {
+				c, err := callout(children)
+				if err != nil {
+					return nil, err
+				}
+				b.Callout = c
+				out = append(out, b)
+				continue
+			}
 		case "BlockQuote":
 			children = decode[[]Node](n.C)
 			b.Indent++
@@ -288,13 +309,98 @@ func blocks(nodes []Node, indent int) ([]Block, error) {
 	return out, nil
 }
 
+func hasClass(attr json.RawMessage, class string) bool {
+	fields := decode[[]json.RawMessage](attr)
+	if len(fields) < 2 {
+		return false
+	}
+	for _, c := range decode[[]string](fields[1]) {
+		if c == class {
+			return true
+		}
+	}
+	return false
+}
+
+var (
+	calloutBorder = regexp.MustCompile(`<w:left\b[^>]*\bw:color="([0-9A-Fa-f]{6})"`)
+	calloutFill   = regexp.MustCompile(`<w:shd\b[^>]*\bw:fill="([0-9A-Fa-f]{6})"`)
+)
+
+// callout reads the blocks of Quarto's DOCX callout Div. The default
+// appearance opens with a title row on a shaded cell, and its body row
+// starts in a Div that holds only table markup; the simple and minimal
+// appearances have one row and no shading.
+func callout(children []Node) (*Callout, error) {
+	c := &Callout{Border: [3]uint8{0x90, 0x90, 0x90}}
+	if len(children) > 0 && children[0].T == "RawBlock" {
+		raw := decode[string](parts(children[0])[1])
+		if m := calloutBorder.FindStringSubmatch(raw); m != nil {
+			c.Border = hexColor(m[1])
+		}
+		if m := calloutFill.FindStringSubmatch(raw); m != nil {
+			c.Fill, c.HasFill = hexColor(m[1]), true
+		}
+	}
+	split := -1
+	if c.HasFill {
+		for i, n := range children {
+			if n.T == "Div" && rawOnly(decode[[]Node](parts(n)[1])) {
+				split = i
+				break
+			}
+		}
+	}
+	var err error
+	if split >= 0 {
+		if c.Title, err = blocks(children[:split], 0); err != nil {
+			return nil, err
+		}
+		for i := range c.Title {
+			for j := range c.Title[i].Runs {
+				c.Title[i].Runs[j].Bold = true
+			}
+		}
+		children = children[split+1:]
+	}
+	if c.Body, err = blocks(children, 0); err != nil {
+		return nil, err
+	}
+	// The simple appearance puts its icon in a paragraph of its own; it
+	// belongs before the first line.
+	if len(c.Body) > 1 && soleImage(c.Body[0].Runs) && len(c.Body[1].Rows) == 0 {
+		icon := append(c.Body[0].Runs, Run{Text: "  "})
+		c.Body[1].Runs = append(icon, c.Body[1].Runs...)
+		c.Body = c.Body[1:]
+	}
+	return c, nil
+}
+
+func rawOnly(nodes []Node) bool {
+	for _, n := range nodes {
+		if n.T != "RawBlock" {
+			return false
+		}
+	}
+	return len(nodes) > 0
+}
+
+func hexColor(s string) [3]uint8 {
+	var c [3]uint8
+	for i := range c {
+		v, _ := strconv.ParseUint(s[2*i:2*i+2], 16, 8)
+		c[i] = uint8(v)
+	}
+	return c
+}
+
 func layoutOnlyXML(raw string) bool {
 	// Fragments can open/close a table across intervening Pandoc blocks, so
 	// permit unbalanced tags, but only a closed list of layout elements.
 	d := xml.NewDecoder(strings.NewReader(raw))
 	d.Strict = false
 	allowed := map[string]bool{}
-	for _, name := range strings.Fields("tbl tblPr tblStyle tblLook tblBorders top left bottom right tblCellMar tr trPr cantSplit tc tcPr shd tcMar p spacing pPr rPr sz color b i jc textAlignment") {
+	for _, name := range strings.Fields("tbl tblPr tblStyle tblLook tblInd tblW tblGrid gridCol tblBorders top left bottom right tblCellMar tr trPr cantSplit tc tcPr shd tcMar p spacing pPr rPr sz color b i jc textAlignment") {
 		allowed[name] = true
 	}
 	for {
