@@ -11,11 +11,6 @@ import (
 	"unicode"
 
 	"github.com/signintech/gopdf"
-	"golang.org/x/image/font/gofont/gobold"
-	"golang.org/x/image/font/gofont/gobolditalic"
-	"golang.org/x/image/font/gofont/goitalic"
-	"golang.org/x/image/font/gofont/gomono"
-	"golang.org/x/image/font/gofont/goregular"
 )
 
 const pageW, pageH, margin = 595.28, 841.89, 48.0
@@ -27,6 +22,8 @@ type pdfWriter struct {
 	root     string
 	headings []tocEntry
 	ctx      context.Context
+	// trace, if set, receives each paragraph line as it is drawn (tests).
+	trace func([]piece)
 }
 type tocEntry struct {
 	title, id   string
@@ -55,7 +52,7 @@ func PDFContext(ctx context.Context, path string, doc *Document, o Options) erro
 	}
 	p := &gopdf.GoPdf{}
 	p.Start(gopdf.Config{PageSize: gopdf.Rect{W: pageW, H: pageH}})
-	for name, data := range map[string][]byte{"regular": goregular.TTF, "bold": gobold.TTF, "italic": goitalic.TTF, "bolditalic": gobolditalic.TTF, "mono": gomono.TTF} {
+	for name, data := range fontData {
 		if err = p.AddTTFFontData(name, data); err != nil {
 			return err
 		}
@@ -196,7 +193,7 @@ func (w *pdfWriter) ensure(h float64) {
 		w.newPage()
 	}
 }
-func (w *pdfWriter) font(r Run, size float64) error {
+func fontName(r Run) string {
 	f := "regular"
 	if r.Bold && r.Italic {
 		f = "bolditalic"
@@ -208,7 +205,52 @@ func (w *pdfWriter) font(r Run, size float64) error {
 	if r.Code {
 		f = "mono"
 	}
-	return w.p.SetFont(f, "", size)
+	return f
+}
+
+// measure returns the width of r.Text in r's font, with emoji in the emoji
+// font.
+func (w *pdfWriter) measure(r Run, size float64) (float64, error) {
+	segs, err := segments(r.Text, fontName(r))
+	if err != nil {
+		return 0, err
+	}
+	width := 0.0
+	for _, s := range segs {
+		if err = w.p.SetFont(s.font, "", size); err != nil {
+			return 0, err
+		}
+		sw, err := w.p.MeasureTextWidth(s.text)
+		if err != nil {
+			return 0, err
+		}
+		width += sw
+	}
+	return width, nil
+}
+
+// draw writes r.Text at x, y like measure lays it out. The caller sets the
+// text color.
+func (w *pdfWriter) draw(r Run, size, x, y float64) error {
+	segs, err := segments(r.Text, fontName(r))
+	if err != nil {
+		return err
+	}
+	for _, s := range segs {
+		if err = w.p.SetFont(s.font, "", size); err != nil {
+			return err
+		}
+		sw, err := w.p.MeasureTextWidth(s.text)
+		if err != nil {
+			return err
+		}
+		w.p.SetXY(x, y)
+		if err = w.p.Cell(nil, s.text); err != nil {
+			return err
+		}
+		x += sw
+	}
+	return nil
 }
 
 func (w *pdfWriter) paragraph(runs []Run, size, left, width float64) error {
@@ -220,17 +262,16 @@ func (w *pdfWriter) paragraph(runs []Run, size, left, width float64) error {
 			return nil
 		}
 		w.ensure(lh)
+		if w.trace != nil {
+			w.trace(line)
+		}
 		x := left
 		for _, s := range line {
-			if err := w.font(s.Run, size); err != nil {
-				return err
-			}
-			w.p.SetXY(x, w.y)
 			w.p.SetTextColor(30, 35, 42)
 			if s.Link != "" {
 				w.p.SetTextColor(24, 84, 139)
 			}
-			if err := w.p.Cell(nil, s.Text); err != nil {
+			if err := w.draw(s.Run, size, x, w.y); err != nil {
 				return err
 			}
 			if strings.HasPrefix(s.Link, "#") {
@@ -245,8 +286,52 @@ func (w *pdfWriter) paragraph(runs []Run, size, left, width float64) error {
 		used = 0
 		return nil
 	}
+	// A word may span runs: a quote mark, emphasis or a link that touches
+	// the text beside it must not open a line break, so pieces collect in
+	// word until a space or the end and are placed as one unit.
+	var word []piece
+	wordW := 0.0
+	place := func() error {
+		defer func() { word, wordW = nil, 0 }()
+		if len(word) == 0 {
+			return nil
+		}
+		if used+wordW > width && len(line) > 0 {
+			if err := flush(); err != nil {
+				return err
+			}
+		}
+		if wordW <= width {
+			line = append(line, word...)
+			used += wordW
+			return nil
+		}
+		// Oversized words are split by rune, so long URLs and identifiers
+		// cannot escape the page.
+		for _, p := range word {
+			for _, c := range p.Text {
+				s := p.Run
+				s.Text = string(c)
+				cw, err := w.measure(s, size)
+				if err != nil {
+					return err
+				}
+				if used+cw > width && len(line) > 0 {
+					if err = flush(); err != nil {
+						return err
+					}
+				}
+				line = append(line, piece{s, cw})
+				used += cw
+			}
+		}
+		return nil
+	}
 	for _, r := range runs {
 		if r.Image != "" {
+			if err := place(); err != nil {
+				return err
+			}
 			if err := flush(); err != nil {
 				return err
 			}
@@ -261,29 +346,35 @@ func (w *pdfWriter) paragraph(runs []Run, size, left, width float64) error {
 			w.y += ih + 10
 			continue
 		}
-		if err := w.font(r, size); err != nil {
-			return err
-		}
-		// Tokens preserve spaces and explicit breaks; oversized words are split
-		// by rune, so long URLs and identifiers cannot escape the page.
-		var tokens []string
-		var word strings.Builder
-		for _, c := range r.Text {
-			if unicode.IsSpace(c) {
-				if word.Len() > 0 {
-					tokens = append(tokens, word.String())
-					word.Reset()
-				}
-				tokens = append(tokens, string(c))
-			} else {
-				word.WriteRune(c)
+		var text strings.Builder
+		addText := func() error {
+			if text.Len() == 0 {
+				return nil
 			}
+			s := r
+			s.Text = text.String()
+			text.Reset()
+			tw, err := w.measure(s, size)
+			if err != nil {
+				return err
+			}
+			word = append(word, piece{s, tw})
+			wordW += tw
+			return nil
 		}
-		if word.Len() > 0 {
-			tokens = append(tokens, word.String())
-		}
-		for _, token := range tokens {
-			if token == "\n" {
+		// Spaces and explicit breaks are kept; leading spaces are dropped.
+		for _, c := range r.Text {
+			if !unicode.IsSpace(c) {
+				text.WriteRune(c)
+				continue
+			}
+			if err := addText(); err != nil {
+				return err
+			}
+			if err := place(); err != nil {
+				return err
+			}
+			if c == '\n' {
 				if len(line) == 0 {
 					w.ensure(lh)
 					w.y += lh
@@ -292,45 +383,30 @@ func (w *pdfWriter) paragraph(runs []Run, size, left, width float64) error {
 				}
 				continue
 			}
-			if err := w.font(r, size); err != nil {
-				return err
-			}
-			tw, err := w.p.MeasureTextWidth(token)
-			if err != nil {
-				return err
-			}
-			if used+tw > width && len(line) > 0 {
-				if err = flush(); err != nil {
-					return err
-				}
-			}
-			if strings.TrimSpace(token) == "" && len(line) == 0 {
-				continue
-			}
-			if tw > width {
-				for _, c := range token {
-					s := r
-					s.Text = string(c)
-					w.font(r, size)
-					cw, err := w.p.MeasureTextWidth(s.Text)
-					if err != nil {
-						return err
-					}
-					if used+cw > width {
-						if err = flush(); err != nil {
-							return err
-						}
-					}
-					line = append(line, piece{s, cw})
-					used += cw
-				}
+			if len(line) == 0 {
 				continue
 			}
 			s := r
-			s.Text = token
+			s.Text = string(c)
+			tw, err := w.measure(s, size)
+			if err != nil {
+				return err
+			}
+			if used+tw > width {
+				if err = flush(); err != nil {
+					return err
+				}
+				continue
+			}
 			line = append(line, piece{s, tw})
 			used += tw
 		}
+		if err := addText(); err != nil {
+			return err
+		}
+	}
+	if err := place(); err != nil {
+		return err
 	}
 	if err := flush(); err != nil {
 		return err
@@ -371,11 +447,8 @@ func (w *pdfWriter) table(b Block) error {
 		if len(row) != n {
 			return fmt.Errorf("inconsistent PDF table column count")
 		}
-		if err := w.font(Run{Bold: rowIndex == 0}, 9); err != nil {
-			return err
-		}
 		for i, cell := range row {
-			g, err := w.widestRune(text(cell))
+			g, err := w.widestRune(text(cell), Run{Bold: rowIndex == 0}, 9)
 			if err != nil {
 				return err
 			}
@@ -404,13 +477,12 @@ func (w *pdfWriter) table(b Block) error {
 					hasImage = true
 					continue
 				}
-				w.font(Run{Bold: rowIndex == 0}, 9)
 				for _, part := range strings.Split(r.Text, "\n") {
 					if part == "" {
 						items[i] = append(items[i], cellItem{h: 12})
 						continue
 					}
-					ll, err := w.wrap(part, widths[i]-2*cellPadding)
+					ll, err := w.wrap(part, Run{Bold: rowIndex == 0}, 9, widths[i]-2*cellPadding)
 					if err != nil {
 						return err
 					}
@@ -474,10 +546,8 @@ func (w *pdfWriter) table(b Block) error {
 							return err
 						}
 					case it.text != "":
-						w.font(Run{Bold: rowIndex == 0}, 9)
 						w.p.SetTextColor(30, 35, 42)
-						w.p.SetXY(x+5, y)
-						if err := w.p.Cell(nil, it.text); err != nil {
+						if err := w.draw(Run{Text: it.text, Bold: rowIndex == 0}, 9, x+5, y); err != nil {
 							return err
 						}
 					}
@@ -547,8 +617,8 @@ func (w *pdfWriter) checkDeadline() error {
 	return nil
 }
 
-// widestRune measures the widest single character of s in the current font.
-func (w *pdfWriter) widestRune(s string) (float64, error) {
+// widestRune measures the widest single character of s in r's font.
+func (w *pdfWriter) widestRune(s string, r Run, size float64) (float64, error) {
 	widest := 0.0
 	seen := map[rune]bool{}
 	for _, c := range s {
@@ -556,7 +626,8 @@ func (w *pdfWriter) widestRune(s string) (float64, error) {
 			continue
 		}
 		seen[c] = true
-		cw, err := w.p.MeasureTextWidth(string(c))
+		r.Text = string(c)
+		cw, err := w.measure(r, size)
 		if err != nil {
 			return 0, err
 		}
@@ -565,24 +636,59 @@ func (w *pdfWriter) widestRune(s string) (float64, error) {
 	return widest, nil
 }
 
-// wrap word-wraps text in the current font. gopdf's SplitTextWithWordWrap
-// (v0.38.1) never returns when a single character is wider than the width:
-// it emits an empty line and retries the same character forever, growing
-// memory until the process is killed. Such text is broken one character
-// per line here instead.
-func (w *pdfWriter) wrap(text string, width float64) ([]string, error) {
-	g, err := w.widestRune(text)
+// wrap word-wraps text in r's font. Words wider than the width are broken
+// by character, and a character wider than the width gets a line of its
+// own, so wrapping always progresses. (gopdf's SplitTextWithWordWrap
+// v0.38.1 loops forever on such a character, and it knows no emoji font.)
+func (w *pdfWriter) wrap(text string, r Run, size, width float64) ([]string, error) {
+	var lines []string
+	var line strings.Builder
+	used := 0.0
+	measure := func(s string) (float64, error) {
+		r.Text = s
+		return w.measure(r, size)
+	}
+	push := func() {
+		lines = append(lines, line.String())
+		line.Reset()
+		used = 0
+	}
+	space, err := measure(" ")
 	if err != nil {
 		return nil, err
 	}
-	if width > 0 && g <= width {
-		return w.p.SplitTextWithWordWrap(text, width)
-	}
-	var lines []string
-	for _, c := range text {
-		if !unicode.IsSpace(c) {
-			lines = append(lines, string(c))
+	for _, word := range strings.Fields(text) {
+		ww, err := measure(word)
+		if err != nil {
+			return nil, err
 		}
+		if line.Len() > 0 && used+space+ww <= width {
+			line.WriteString(" " + word)
+			used += space + ww
+			continue
+		}
+		if line.Len() > 0 {
+			push()
+		}
+		if ww <= width {
+			line.WriteString(word)
+			used = ww
+			continue
+		}
+		for _, c := range word {
+			cw, err := measure(string(c))
+			if err != nil {
+				return nil, err
+			}
+			if line.Len() > 0 && used+cw > width {
+				push()
+			}
+			line.WriteRune(c)
+			used += cw
+		}
+	}
+	if line.Len() > 0 {
+		push()
 	}
 	return lines, nil
 }

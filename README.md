@@ -129,7 +129,8 @@ The pipeline runs in the project's hooks, so `quarto render --profile …`,
    Quarto's last filter entry point and saves the processed Pandoc JSON to
    `_build/qm-document.json` in the same run.
 3. `qm finalize` (post-render) uses Go and `signintech/gopdf` to lay out an A4
-   PDF next to the DOCX. The PDF has embedded Go fonts, headings, paragraphs,
+   PDF next to the DOCX. The PDF has embedded Go fonts (with monochrome Noto
+   Emoji for emoji the Go fonts lack), headings, paragraphs,
    lists, ordinary tables, raster images, links, bookmarks, page numbers, and a
    linked contents list. `qm finalize` then puts the cover on both files.
 
