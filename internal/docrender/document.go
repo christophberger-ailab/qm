@@ -210,12 +210,18 @@ func blocks(nodes []Node, indent int) ([]Block, error) {
 				if err != nil {
 					return nil, err
 				}
-				if len(bb) > 0 {
+				// The marker goes on the item's first content, not on a
+				// page break that opens it.
+				first := 0
+				for first < len(bb)-1 && bb[first].Break {
+					first++
+				}
+				if len(bb) > 0 && !bb[first].Break {
 					prefix := "• "
 					if n.T == "OrderedList" {
 						prefix = fmt.Sprintf("%d. ", start+i)
 					}
-					bb[0].Runs = append([]Run{{Text: prefix}}, bb[0].Runs...)
+					bb[first].Runs = append([]Run{{Text: prefix}}, bb[first].Runs...)
 				}
 				out = append(out, bb...)
 			}
@@ -248,6 +254,7 @@ func blocks(nodes []Node, indent int) ([]Block, error) {
 				continue
 			}
 			if format == "openxml" && strings.Contains(raw, `w:type="page"`) {
+				// Quarto's {{< pagebreak >}} shortcode in DOCX output.
 				b.Break = true
 			} else if format == "openxml" && layoutOnlyXML(raw) {
 				// Quarto surrounds callout title/body blocks with raw DOCX table
@@ -437,6 +444,11 @@ func cellContent(bb []Block) Cell {
 		}
 	}
 	for _, b := range bb {
+		if b.Break {
+			// A cell flows with its row; a page break inside it is ignored,
+			// rather than leaving an empty line.
+			continue
+		}
 		hasImage := false
 		for _, r := range b.Runs {
 			if r.Image == "" {

@@ -191,7 +191,11 @@ func (w *pdfWriter) body(bb []Block) error {
 			return err
 		}
 		if b.Break {
-			w.newPage()
+			// Like LaTeX's \newpage, a break on a page that holds nothing yet
+			// does not add a blank page.
+			if w.y > w.top() {
+				w.newPage()
+			}
 			continue
 		}
 		if b.Callout != nil {

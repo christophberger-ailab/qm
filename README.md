@@ -181,7 +181,8 @@ apply (for example, Chrome for rendering Mermaid diagrams). Under
 
 The PDF backend has its own layout; it does not reproduce the Word template
 or interpret LaTeX/CSS styling. Callout content is retained with simplified
-formatting. Images inside table cells are scaled to the column width; a row
+formatting. Quarto's `{{< pagebreak >}}` starts a new page, but never leaves a
+blank one. Images inside table cells are scaled to the column width; a row
 containing an image moves to the next page whole when it does not fit. Advanced
 constructs such as mathematical typesetting, footnotes, and merged table cells
 currently report an error rather than silently losing content. When a PDF layout fails, the captured
