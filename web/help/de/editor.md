@@ -8,6 +8,15 @@ Deine Änderungen werden automatisch kurz nach dem Tippen gespeichert. Wenn du e
 
 Schlägt das Speichern fehl, erscheint der Grund als Fehler neben der Seitenüberschrift.
 
+## Die Datei umbenennen
+
+Die Überschrift über dem Editor zeigt den Pfad der Seite. Die Schaltfläche `✎` dahinter macht den Dateinamen, und nur ihn, zu einem Eingabefeld: Die Seite bleibt in ihrem Ordner. Tippe den neuen Namen und drücke `Enter`; fehlt `.qmd`, wird es angehängt. `Esc` oder ein Klick daneben bricht ab.
+
+- Hat die Seite Unterseiten in einem gleichnamigen Ordner, wird dieser Ordner mit umbenannt, damit die Unterseiten bei ihr bleiben.
+- Ein schon vergebener Name wird abgelehnt, und das Feld bleibt offen, damit du ihn korrigieren kannst.
+- Der Editor folgt der Datei zu ihrem neuen Namen. Dein ungespeicherter Text bleibt unberührt, und Autosave schreibt weiter in die richtige Datei.
+- Die `index.qmd` eines Abschnitts steht für ihren Ordner und lässt sich hier nicht umbenennen.
+
 ## Verschiebungen während der Bearbeitung
 
 Wenn du im Baum Seiten verschiebst oder anlegst, während eine Seite geöffnet ist, ändert der Baum `order:` und Überschriftenebenen in dieser Datei. Dein nächstes Autosave behält Text und Verschiebung. Ein `order:`, das du selbst ins Frontmatter geschrieben hast, hat Vorrang vor dem, das der Baum geschrieben hat. In diesem Fall wirst du benachrichtigt, und `↻ Reload` bringt den Editor wieder mit der Datei in Einklang.

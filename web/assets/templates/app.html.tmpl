@@ -376,7 +376,10 @@
 {{define "search-results"}}<span class="search-summary"{{if .Indexing}} data-indexing="1"{{end}}>{{.Summary}}</span>
 <ul class="search-hits" hidden>{{range .Hits}}<li data-path="{{.Path}}" data-count="{{.Count}}"></li>{{end}}</ul>{{end}}
 
-{{define "content-heading"}}{{.Title}} <span class="path">{{.Path}}</span>{{end}}
+{{/* The pencil after the path renames the page's file: app.js turns the
+     file name, and only that, into a field in place of the text. */}}
+{{define "content-heading"}}{{.Title}} <span class="path" data-path="{{.Path}}">{{.Path}}</span>
+{{- if renamable .Path}}<button type="button" class="rename-file" title="Rename the file" aria-label="Rename the file">✎</button>{{end}}{{end}}
 
 {{/* content-path-oob re-points the open editor at a page whose file has
      just been renamed under it — a move into another book does that. Only

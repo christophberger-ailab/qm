@@ -80,6 +80,11 @@ func newServer(configFile string) (*server, error) {
 				Pages  []*project.Page
 			}{parent, pages}
 		},
+		// renamable says whether the editor's heading offers to rename
+		// the page's file: index.qmd stands for its section instead.
+		"renamable": func(p string) bool {
+			return p != "index.qmd" && !strings.HasSuffix(p, "/index.qmd")
+		},
 	}
 	tmpl, err := template.New("").Funcs(funcs).ParseFS(assets, "assets/templates/*.tmpl")
 	if err != nil {
@@ -134,6 +139,7 @@ func newServer(configFile string) (*server, error) {
 	s.mux.HandleFunc("GET /tree", s.treeHandler)
 	s.mux.HandleFunc("GET /watch", s.watch)
 	s.mux.HandleFunc("POST /move", s.move)
+	s.mux.HandleFunc("POST /rename", s.rename)
 	s.mux.HandleFunc("POST /create", s.create)
 	s.mux.HandleFunc("POST /delete", s.delete)
 	s.mux.HandleFunc("GET /content", s.content)
@@ -752,6 +758,13 @@ func (s *server) move(w http.ResponseWriter, r *http.Request) {
 	// Renames may have happened even when Move then failed part-way, so
 	// the editor is re-pointed on what actually moved rather than on
 	// whether the whole move succeeded.
+	s.repoint(w, open, renames)
+}
+
+// repoint follows the page the editor has open, open, through renames and,
+// if it moved, re-points the editor at its new path. The caller must hold
+// s.mu.
+func (s *server) repoint(w http.ResponseWriter, open string, renames []project.Rename) {
 	if open == "" || len(renames) == 0 {
 		return
 	}
@@ -766,6 +779,26 @@ func (s *server) move(w http.ResponseWriter, r *http.Request) {
 		s.base.path = moved
 	}
 	s.renderPathOOB(w, moved)
+}
+
+// rename gives a page a new file name in the directory it is in. The
+// editor's heading offers it for the page the editor has open, so the
+// editor is re-pointed at the new path the same way a move re-points it.
+func (s *server) rename(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rel := r.FormValue("path")
+	open := r.FormValue("open")
+	if open == "" {
+		open = s.prefsFor(s.root).Page
+	}
+	var renames []project.Rename
+	s.apply(w, func(t *project.Tree) error {
+		var err error
+		renames, err = t.RenamePage(rel, r.FormValue("name"))
+		return err
+	})
+	s.repoint(w, open, renames)
 }
 
 // renderPathOOB re-points the open editor at rel: the hidden field

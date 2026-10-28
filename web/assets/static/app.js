@@ -956,6 +956,20 @@ function editorPagePath() {
   return input ? input.value : '';
 }
 
+// moveStash keeps the suggestions put aside for a page whose file was
+// renamed under the name the page has now.
+function moveStash(from, to) {
+  if (!from || !to || from === to) {
+    return;
+  }
+  var stash = loadStash();
+  if (stash[from] !== undefined) {
+    stash[to] = stash[from];
+    delete stash[from];
+    saveStash(stash);
+  }
+}
+
 // stashSuggestions puts the suggestions now on screen aside for the page
 // the editor holds, or forgets what was kept for it when the pane shows the
 // task list: going back to the tasks is how a run is put away.
@@ -1751,9 +1765,12 @@ document.body.addEventListener('htmx:oobAfterSwap', function (evt) {
     refreshHits();
   }
   if (id === 'content-path') {
-    // A move renamed the open page's file; the editor now posts to the new
-    // path, so the tree entry to keep selected is the new one too.
+    // A move or a rename renamed the open page's file; the editor now posts
+    // to the new path, so the tree entry to keep selected is the new one
+    // too, and the copyedit suggestions kept for the page go along with it.
+    var before = currentPath;
     syncCurrentPath();
+    moveStash(before, currentPath);
     applySelection();
     // An autosave that the rename had already broken is retried at the new
     // path right away -- its text exists nowhere else. A save that was
@@ -1785,6 +1802,13 @@ document.body.addEventListener('click', function (evt) {
   var flip = evt.target.closest('#page-prev, #page-next');
   if (flip) {
     flipPage(flip.id === 'page-prev' ? -1 : 1);
+    return;
+  }
+
+  // The pencil after the path in the editor's heading.
+  var renameButton = evt.target.closest('#content-title .rename-file');
+  if (renameButton) {
+    startRename(renameButton);
     return;
   }
 
@@ -1969,6 +1993,87 @@ function saveNow(force) {
     values.force = '1';
   }
   htmx.ajax('POST', '/save', { source: form, swap: 'none', values: values });
+}
+
+// File renaming
+//
+// The pencil after the path in the editor's heading turns the file name,
+// and only that, into a field; the directory stays text, since a rename
+// never moves a page out of its directory. Enter renames the file; Esc, or
+// leaving the field, gives up and puts the path back as it was. The server
+// re-points the editor at the new path the way a move does, and answers a
+// name it cannot take -- one already taken above all -- with the tree's
+// error, which also opens the field again on the name typed, so it can be
+// corrected rather than typed anew.
+function startRename(button, typed, problem) {
+  var span = button.parentElement.querySelector('.path');
+  if (!span || span.querySelector('input')) {
+    return;
+  }
+  var full = span.dataset.path;
+  var cut = full.lastIndexOf('/') + 1;
+  var name = full.slice(cut);
+  var input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'rename-input';
+  input.value = typed || name;
+  input.spellcheck = false;
+  input.setAttribute('aria-label', 'File name');
+  input.size = Math.max(input.value.length + 2, 12);
+  if (problem) {
+    input.classList.add('invalid');
+    input.title = problem;
+  }
+  span.textContent = full.slice(0, cut);
+  span.appendChild(input);
+  button.hidden = true;
+  input.focus();
+  // The name without its extension is selected, so typing replaces the
+  // name and leaves .qmd in place.
+  var stem = input.value.lastIndexOf('.qmd');
+  input.setSelectionRange(0, stem > 0 ? stem : input.value.length);
+
+  var done = false;
+  function finish(commit) {
+    if (done) {
+      return;
+    }
+    done = true;
+    var next = input.value.trim();
+    span.textContent = full;
+    button.hidden = false;
+    if (!commit || next === '' || next === name) {
+      return;
+    }
+    htmx.ajax('POST', '/rename', {
+      target: '#tree',
+      swap: 'innerHTML',
+      values: { path: full, name: next, open: currentPath || '' }
+    }).then(function () {
+      var error = document.querySelector('#tree > .error');
+      var again = document.querySelector('#content-title .rename-file');
+      if (error && again && editorPagePath() === full) {
+        startRename(again, next, error.textContent);
+      }
+    });
+  }
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      finish(true);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      finish(false);
+    }
+  });
+  input.addEventListener('input', function () {
+    input.size = Math.max(input.value.length + 2, 12);
+    input.classList.remove('invalid');
+  });
+  input.addEventListener('blur', function () {
+    finish(false);
+  });
 }
 
 // The page the editor holds was written on top of the page as it stood when

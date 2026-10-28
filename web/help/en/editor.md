@@ -8,6 +8,15 @@ Your changes are saved automatically a moment after you stop typing. Leaving a p
 
 If a save fails, the reason is shown as an error next to the page heading.
 
+## Renaming the file
+
+The heading above the editor shows the page's path. The `✎` button after it turns the file name, and only the file name, into a field: the page stays in its folder. Type the new name and press `Enter`; `.qmd` is added if you leave it out. `Esc`, or clicking elsewhere, cancels.
+
+- If the page has child pages in a folder of the same name, that folder is renamed too, so the children stay with it.
+- A name that is already taken is refused, and the field stays open so you can correct it.
+- The editor follows the file to its new name. Your unsaved text stays untouched, and autosave keeps writing to the right file.
+- A section's `index.qmd` stands for its folder and cannot be renamed here.
+
 ## Moves while you edit
 
 If you move or create pages in the tree while a page is open, the tree changes `order:` and heading levels in that file. Your next autosave keeps both your text and the move. An `order:` that you typed into the frontmatter yourself is kept over the one the tree wrote. When this happens you are told, and `↻ Reload` brings the editor in line with the file.

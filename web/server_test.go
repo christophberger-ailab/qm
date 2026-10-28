@@ -1104,3 +1104,73 @@ func writeFile(t *testing.T, root, rel, content string) {
 		t.Fatal(err)
 	}
 }
+
+// Renaming the open page's file from the editor's heading re-points the
+// editor at the new path, as a move that renames it does.
+func TestRenameRepointsOpenEditor(t *testing.T) {
+	srv, _ := testServer(t)
+	get(t, srv, "/content?path=chapter2/second.qmd")
+	rec := post(t, srv, "/rename", url.Values{
+		"path": {"chapter2/second.qmd"}, "name": {"zweite.qmd"},
+		"open": {"chapter2/second.qmd"},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("rename: status %d: %s", rec.Code, rec.Body)
+	}
+	for _, want := range []string{
+		`data-path="chapter2/zweite.qmd"`, // the tree
+		`<input type="hidden" id="content-path" name="path" value="chapter2/zweite.qmd" hx-swap-oob="true">`,
+		`hx-get="/content?path=chapter2/zweite.qmd&reload=1"`,
+	} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("rename response is missing %q:\n%s", want, rec.Body)
+		}
+	}
+	if strings.Contains(rec.Body.String(), "file-content") {
+		t.Error("rename response replaces the editor's textarea, discarding unsaved edits")
+	}
+	if got := srv.prefsFor(srv.root).Page; got != "chapter2/zweite.qmd" {
+		t.Errorf("remembered page = %q", got)
+	}
+	rec = post(t, srv, "/save", url.Values{
+		"path": {"chapter2/zweite.qmd"}, "body": {"---\ntitle: Second\norder: 1\n---\nEDITED\n"},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("save after rename: status %d: %s", rec.Code, rec.Body)
+	}
+	if body := read(t, srv.root, "chapter2/zweite.qmd"); !strings.Contains(body, "EDITED") {
+		t.Errorf("edit not on disk: %q", body)
+	}
+}
+
+// A name that is taken is refused with the tree's error, and the editor
+// is left on the file it has.
+func TestRenameRefusesTakenName(t *testing.T) {
+	srv, _ := testServer(t)
+	get(t, srv, "/content?path=chapter2/second.qmd")
+	rec := post(t, srv, "/rename", url.Values{
+		"path": {"chapter2/second.qmd"}, "name": {"third.qmd"},
+		"open": {"chapter2/second.qmd"},
+	})
+	if !strings.Contains(rec.Body.String(), `class="error"`) || !strings.Contains(rec.Body.String(), "already exists") {
+		t.Errorf("rename onto a taken name is not refused:\n%s", rec.Body)
+	}
+	if strings.Contains(rec.Body.String(), "hx-swap-oob") {
+		t.Errorf("a refused rename re-pointed the editor:\n%s", rec.Body)
+	}
+	if body := read(t, srv.root, "chapter2/second.qmd"); body == "" {
+		t.Error("the page is gone")
+	}
+}
+
+// The heading offers the rename for a page with a name of its own, and not
+// for a section's index.qmd.
+func TestHeadingOffersRename(t *testing.T) {
+	srv, _ := testServer(t)
+	if rec := get(t, srv, "/content?path=chapter2/second.qmd"); !strings.Contains(rec.Body.String(), `class="rename-file"`) {
+		t.Errorf("no rename button for a page:\n%s", rec.Body)
+	}
+	if rec := get(t, srv, "/content?path=chapter2/index.qmd"); strings.Contains(rec.Body.String(), `class="rename-file"`) {
+		t.Error("rename button offered for a section's index.qmd")
+	}
+}

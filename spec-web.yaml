@@ -56,6 +56,12 @@ constraints:
       2: Dragging a page updates the `order` frontmatter of the affected pages and the Markdown heading levels of the moved page
       2-1: A drag that moves a page to another parent renames its file on disk; if the page open in the editor is the moved one, or sits inside a moved section, the editor is re-pointed at the new path, so autosave keeps writing to the file instead of to a path that no longer exists
       2-2: The re-pointing replaces the editor's path, heading, and reload button only, never its text, which may hold edits that are not on disk yet; an autosave that the rename had already broken is retried at the new path
+      2-3: A pencil button after the path in the editor's heading turns the page's file name -- and only the file name, the directory staying text -- into a field; Enter renames the file on disk within its directory, Esc or leaving the field cancels and puts the path back
+      2-3-1: A name typed without the .qmd extension gets it; a name that is not a plain file name, starts with "_" or ".", or is index.qmd is refused
+      2-3-2: The page's children directory (name/ beside name.qmd) is renamed with it, so its children stay its children; the page's frontmatter and headings are left as they are
+      2-3-3: A name already taken -- by a file, or by a directory the renamed page would become the section of -- is refused with the tree's error, and the field opens again on the name typed so it can be corrected; a rename that changes only the case is not a collision
+      2-3-4: A section's index.qmd stands for its directory and is not offered for renaming
+      2-3-5: The editor is re-pointed at the new path as a move re-points it (2-1, 2-2), and the copyedit suggestions kept for the page follow it
       3: Pages can be created, deleted, and edited in place
       3-0: A failed save is shown as an error next to the heading, naming why it failed, and leaving the page -- opening another one, reloading, closing the tab -- asks for confirmation while an edit is unsaved
       3-0-1: A save is replayed onto the writes the tree made to the same file since the editor opened it -- the `order:` a move or a create renumbered, and the heading levels a move to another depth shifted -- so an autosave after a move keeps both the user's text and the move
