@@ -131,6 +131,22 @@ func TestGitStageAndUnstage(t *testing.T) {
 	}
 }
 
+// A panel with changes offers the filter, and every row carries the path
+// the script matches it against; a clean tree has nothing to filter.
+func TestGitFilter(t *testing.T) {
+	srv, root := gitProject(t)
+	if body := get(t, srv, "/git").Body.String(); strings.Contains(body, `id="git-filter"`) {
+		t.Errorf("filter offered for a clean tree:\n%s", body)
+	}
+	writeFile(t, root, "chapter2/second.qmd", "---\ntitle: Second\norder: 1\n---\n# Edited\n")
+	body := get(t, srv, "/git").Body.String()
+	for _, want := range []string{`id="git-filter"`, `data-path="chapter2/second.qmd"`, `class="empty git-nomatch" hidden`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("panel missing %q:\n%s", want, body)
+		}
+	}
+}
+
 // A commit takes the staged changes; the panel then reports a clean tree.
 func TestGitCommit(t *testing.T) {
 	srv, root := gitProject(t)
