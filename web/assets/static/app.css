@@ -1116,6 +1116,38 @@ li.selected>.row {
   margin-left: 0.5rem;
 }
 
+/* The pencil that renames the open page's file, and the field it turns
+   the file name into. Both sit in the path's small type, so the heading
+   keeps its height while the name is edited. */
+.content-title .rename-file {
+  margin-left: 0.3rem;
+  padding: 0 0.3rem;
+  font-size: 0.8rem;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--muted);
+  background: none;
+  border: 1px solid transparent;
+  vertical-align: baseline;
+}
+
+.content-title .rename-file:hover,
+.content-title .rename-file:focus-visible {
+  color: inherit;
+  border-color: var(--border);
+}
+
+.content-title .rename-input {
+  font: inherit;
+  padding: 0 0.2rem;
+  color: var(--fg);
+}
+
+.content-title .rename-input.invalid {
+  border-color: #b00020;
+  outline-color: #b00020;
+}
+
 pre.file-content {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.85rem;

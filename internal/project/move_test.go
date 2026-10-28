@@ -329,3 +329,71 @@ func TestMoveWithinGroupRenamesNothing(t *testing.T) {
 		t.Errorf("renames = %v, want none", renames)
 	}
 }
+
+// Renaming a page changes its file name only: it stays in its directory,
+// keeps its text, and keeps its place among its siblings.
+func TestRenamePage(t *testing.T) {
+	root := writeFixture(t)
+	before := readFile(t, root, "chapter2/second.qmd")
+	renames, err := load(t, root).RenamePage("chapter2/second.qmd", "zweite")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := Remap(renames, "chapter2/second.qmd"); got != "chapter2/zweite.qmd" {
+		t.Errorf("Remap of the renamed page = %q, want %q", got, "chapter2/zweite.qmd")
+	}
+	if _, err := os.Stat(filepath.Join(root, "chapter2", "second.qmd")); !os.IsNotExist(err) {
+		t.Error("the old file is still there")
+	}
+	if got := readFile(t, root, "chapter2/zweite.qmd"); got != before {
+		t.Errorf("text changed by the rename:\n%s", got)
+	}
+	tree := load(t, root)
+	if p := tree.Find("chapter2/zweite.qmd"); p == nil || order(t, p) != 1 {
+		t.Errorf("renamed page lost its place: %+v", p)
+	}
+}
+
+// A page with children takes its children's directory along.
+func TestRenamePageTakesChildrenAlong(t *testing.T) {
+	root := writeFixture(t)
+	renames, err := load(t, root).RenamePage("chapter3.qmd", "kapitel3.qmd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := Remap(renames, "chapter3/deep/leaf.qmd"); got != "kapitel3/deep/leaf.qmd" {
+		t.Errorf("Remap of a page below = %q", got)
+	}
+	p := load(t, root).Find("kapitel3.qmd")
+	if p == nil || len(p.Children) != 3 {
+		t.Fatalf("renamed page lost its children: %+v", p)
+	}
+}
+
+func TestRenamePageRefuses(t *testing.T) {
+	for _, tc := range []struct{ page, name string }{
+		{"chapter2/second.qmd", "third.qmd"},   // taken
+		{"chapter2/second.qmd", "third"},       // taken, extension added
+		{"chapter3/another.qmd", "deep"},       // its directory is taken
+		{"chapter2/second.qmd", "sub/x.qmd"},   // not a file name
+		{"chapter2/second.qmd", "_hidden.qmd"}, // the tree skips it
+		{"chapter2/second.qmd", ".qmd"},        // no name
+		{"chapter2/second.qmd", "index.qmd"},   // a section's own page
+		{"chapter2/index.qmd", "zwei.qmd"},     // a section's own page
+		{"chapter2/nope.qmd", "zwei.qmd"},      // no such page
+	} {
+		root := writeFixture(t)
+		if _, err := load(t, root).RenamePage(tc.page, tc.name); err == nil {
+			t.Errorf("RenamePage(%q, %q) succeeded, want an error", tc.page, tc.name)
+		}
+	}
+}
+
+// The name the page has already is no rename at all.
+func TestRenamePageToItsOwnName(t *testing.T) {
+	root := writeFixture(t)
+	renames, err := load(t, root).RenamePage("chapter2/second.qmd", "second.qmd")
+	if err != nil || len(renames) != 0 {
+		t.Errorf("renames = %v, err = %v; want none and no error", renames, err)
+	}
+}

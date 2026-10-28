@@ -245,6 +245,66 @@ func (t *Tree) DeletePage(p string) error {
 	return trash(t.Root, victims)
 }
 
+// RenamePage gives the page at p the file name name, in the directory it
+// is in. A missing .qmd extension is added. A page's children directory
+// (name/ next to name.qmd) is renamed along with it, so the children stay
+// with their page. index.qmd stands for its directory's section rather
+// than for a name of its own, so it is neither renamed nor a name a page
+// can take. The page's frontmatter and headings are left as they are: the
+// page keeps its place in the tree.
+//
+// It returns the renames it performed, like Move; renaming a page to the
+// name it has renames nothing.
+func (t *Tree) RenamePage(p, name string) ([]Rename, error) {
+	sp := t.Find(p)
+	if sp == nil {
+		return nil, fmt.Errorf("page %s not found", p)
+	}
+	if path.Base(p) == "index.qmd" {
+		return nil, fmt.Errorf("%s stands for its section and cannot be renamed", p)
+	}
+	name = strings.TrimSpace(name)
+	if !strings.HasSuffix(name, ".qmd") {
+		name += ".qmd"
+	}
+	stem := strings.TrimSuffix(name, ".qmd")
+	if stem == "" || strings.ContainsAny(name, `/\`) || strings.HasPrefix(name, "_") || strings.HasPrefix(name, ".") {
+		return nil, fmt.Errorf("invalid file name %q", name)
+	}
+	if name == "index.qmd" {
+		return nil, fmt.Errorf("index.qmd is reserved for a section's own page")
+	}
+	dir := path.Dir(p)
+	newPath := join(dir, name)
+	if newPath == p {
+		return nil, nil
+	}
+
+	renames := []Rename{{p, newPath}}
+	if fi, err := os.Stat(t.abs(sp.Dir)); err == nil && fi.IsDir() {
+		renames = append(renames, Rename{sp.Dir, join(dir, stem)})
+	}
+	// The children directory the new name implies is checked even when the
+	// page has none to bring: one already there would make the renamed
+	// page the section of pages that are not its children.
+	taken := []Rename{renames[0], {sp.Dir, join(dir, stem)}}
+	for _, r := range taken {
+		// A rename that changes only the case finds the file itself on a
+		// case-insensitive file system; that is not a collision.
+		if to, err := os.Stat(t.abs(r.To)); err == nil {
+			if from, err := os.Stat(t.abs(r.From)); err != nil || !os.SameFile(from, to) {
+				return nil, fmt.Errorf("%s already exists", r.To)
+			}
+		}
+	}
+	for i, r := range renames {
+		if err := os.Rename(t.abs(r.From), t.abs(r.To)); err != nil {
+			return renames[:i], err
+		}
+	}
+	return renames, nil
+}
+
 // TrashCommands are tried in order to reach the system trash. Set the
 // list to nil to force the in-project _trash fallback (tests do).
 var TrashCommands = [][]string{{"gio", "trash"}, {"trash-put"}, {"trash"}}
