@@ -71,3 +71,55 @@ func TestPagebreakInTableCellIgnored(t *testing.T) {
 		t.Errorf("cell = %+v", c)
 	}
 }
+
+// An empty heading (`# ` in a chapter that only pulls in an include) is laid
+// out like any other heading. At the foot of a page it opens a page of its
+// own and the break after it another, which leaves the first of them blank.
+// That blank page must still count: gopdf's SetPage counts pages with
+// content, so every page after it would be addressed one too early.
+func TestBlankPageKeepsPageCount(t *testing.T) {
+	bb, err := blocks([]Node{
+		node("Header", []any{1, []any{"", []string{}, [][]string{}}, []Node{}}),
+		raw(quartoPagebreak),
+		paraOf(str("Next chapter.")),
+	}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := testWriter(t)
+	w.y = w.bottom() - 5
+	var pages []int
+	w.trace = func(line []piece) { pages = append(pages, w.page) }
+	if err = w.body(bb); err != nil {
+		t.Fatal(err)
+	}
+	// Page 1: the foot. Page 2: the heading, nothing drawn. Page 3: text.
+	if len(pages) != 1 || pages[0] != 3 {
+		t.Errorf("pages of the lines = %v, want [3]", pages)
+	}
+	assertPagesAddressable(t, w)
+}
+
+// Page numbers, contents entries and callout boxes address pages with
+// SetPage, which must find a page even if nothing was drawn on it.
+func TestEveryPageCanBeAddressed(t *testing.T) {
+	w := testWriter(t)
+	w.newPage()
+	w.newPage()
+	w.newPage()
+	assertPagesAddressable(t, w)
+}
+
+// assertPagesAddressable checks that gopdf knows exactly the w.page pages
+// that the writer has opened.
+func assertPagesAddressable(t *testing.T, w *pdfWriter) {
+	t.Helper()
+	for page := 1; page <= w.page; page++ {
+		if err := w.p.SetPage(page); err != nil {
+			t.Errorf("SetPage(%d) of %d pages: %v", page, w.page, err)
+		}
+	}
+	if err := w.p.SetPage(w.page + 1); err == nil {
+		t.Errorf("SetPage(%d) found a page beyond the %d that were opened", w.page+1, w.page)
+	}
+}

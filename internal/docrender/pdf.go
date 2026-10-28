@@ -172,7 +172,17 @@ func PDFContext(ctx context.Context, path string, doc *Document, o Options) erro
 	}
 	return p.WritePdf(path)
 }
-func (w *pdfWriter) newPage() { w.p.AddPage(); w.page++; w.y = w.top() }
+func (w *pdfWriter) newPage() {
+	w.p.AddPage()
+	// gopdf creates a page's content only when something is drawn, and
+	// SetPage counts content, not pages: one page left blank would shift
+	// every later page number, and fail on the last. An empty save/restore
+	// makes each page addressable whatever is drawn on it.
+	w.p.SaveGraphicsState()
+	w.p.RestoreGraphicsState()
+	w.page++
+	w.y = w.top()
+}
 func (w *pdfWriter) ensure(h float64) {
 	if !w.dry && w.y+h > w.bottom() {
 		w.newPage()
