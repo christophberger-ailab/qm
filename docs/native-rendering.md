@@ -74,3 +74,56 @@ read-back. Visual DOCX verification remains outstanding: the locally extracted
 LibreOffice build could not start in the test environment. The sysadmin render
 stopped during Quarto preprocessing because Chrome (needed for diagrams) was
 not installed; this dependency is independent of PDF typesetting.
+
+## Without Quarto: `qm: renderer: pandoc` (2026-10-28)
+
+The pipeline above runs Pandoc *inside* Quarto: Quarto reads the book, runs
+its filters, and writes the DOCX, and the project's hooks capture the document
+and lay out the PDF. A format with `qm: renderer: pandoc` takes Quarto out of
+the loop. `qm` flattens the topic itself, resolves the few shortcodes the
+content uses, runs Pandoc with the project's own filter chain, and lays out
+the PDF from the document that chain captures. See
+[the README](../README.md#documents-without-quarto-qm-renderer-pandoc).
+
+Why this is safe to rely on. The renderer was checked against Quarto's output
+for the same selections:
+
+- **DOCX** — for 9 selections (calltaker, dispatcher, Einführung,
+  Führungskräfte, Spickzettel, Fachadmin and Auswertung; handouts and
+  handbooks; both agencies; the largest with 182 tables and 265 images) every
+  part of the package is identical to Quarto's: `document.xml`, styles,
+  numbering, settings, footer, fonts and media. What was ignored is cosmetic:
+  XML whitespace, a duplicated `tblLook` element Quarto writes, the timestamps
+  and custom properties, and the trailing space Quarto leaves in a title whose
+  audience label is empty.
+- **PDF** — laid out by the same Go code from the same document. For the
+  calltaker handout the captured document is identical to Quarto's, and the
+  page counts of four large PDFs match Quarto's exactly.
+- **PPTX** — three decks (calltaker, dispatcher dark, sysadmin): slides,
+  notes and media match; every part is identical except one link in the
+  calltaker deck that Quarto rewrites relative to `_build/`.
+
+What the comparison turned up, and the renderer therefore does as Quarto does:
+
+- Quarto reads the content with Pandoc's own Markdown (minus
+  `table_attributes`), not with a dialect of its own. A list that directly
+  follows a paragraph is not a list, in both.
+- A callout is, in a DOCX, a table assembled from raw XML spread over the
+  blocks around it. The first body paragraph gets space above, the last one
+  below. Word merges tables that touch, so a callout after a table or another
+  callout is preceded by an empty paragraph. A callout without a type is a
+  bare gray bar whose first line is the callout's title, when it has one
+  (`## Heading` as the first line of a `::: {.callout}` is that title).
+- For slides, Quarto drops empty paragraphs and block-level HTML comments
+  (they change the layout Pandoc picks for a slide), and a callout becomes a
+  block quote headed by its title in bold.
+
+Known gaps: Mermaid diagrams (only Quarto, with a headless Chrome, draws
+them) stay code blocks; shortcodes other than `include`, `pagebreak` and
+`var` are not resolved; a `filters:` entry with a Quarto entry point (`at:`)
+is rejected.
+
+One defect of the *generated decks* shows in both renderers and is left as it
+is: `qm` writes an HTML comment before a deck's front matter, so Pandoc does
+not read the front matter, and the deck gets a slide titled
+`title: 'Calltaker Polizei'` after its real title slide.

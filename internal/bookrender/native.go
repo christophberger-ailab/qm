@@ -81,17 +81,47 @@ type Native struct {
 	FontNotes []string
 }
 
+// The values of `qm: renderer:` in a format profile.
+const (
+	RendererQuarto = "quarto"
+	RendererQM     = "qm"
+	RendererPandoc = "pandoc"
+)
+
+// RendererOf returns who builds the output of a format profile: Quarto
+// (the default), Quarto with the Go PDF added by the project's hooks, or
+// qm driving Pandoc itself.
+func RendererOf(p *qmcore.Profile) (string, error) {
+	switch p.QM.Renderer {
+	case "", RendererQuarto:
+		return RendererQuarto, nil
+	case RendererQM, RendererPandoc:
+		return p.QM.Renderer, nil
+	}
+	return "", fmt.Errorf("%s: unknown qm: renderer: %q (want %s, %s or %s)",
+		p.Path, p.QM.Renderer, RendererQuarto, RendererQM, RendererPandoc)
+}
+
 // LoadNative returns the selection's qm renderer configuration, or nil when
 // the format renders with Quarto alone. Every check runs here, so that the
 // pre-render hook fails before Quarto has written anything.
+//
+// It is the hook's view: a format that `qm: renderer: pandoc` selects is not
+// Quarto's to render, and the hook says so rather than letting Quarto
+// produce a DOCX without a PDF.
 func LoadNative(root string, ps *qmcore.Profiles) (*Native, error) {
 	f := ps.Format
-	switch f.QM.Renderer {
-	case "", "quarto":
+	renderer, err := RendererOf(f)
+	if err != nil {
+		return nil, err
+	}
+	switch renderer {
+	case RendererQuarto:
 		return nil, nil
-	case "qm":
-	default:
-		return nil, fmt.Errorf("%s: unknown qm: renderer: %q (want qm or quarto)", f.Path, f.QM.Renderer)
+	case RendererPandoc:
+		return nil, fmt.Errorf("%s: qm: renderer: pandoc formats are rendered by qm itself, "+
+			"not by Quarto; run `qm render %s --format %s --audience %s`",
+			f.Path, ps.Selection.Topic, ps.Selection.Format, ps.Selection.Audience)
 	}
 	if _, ok := f.Format["pdf"]; ok {
 		return nil, fmt.Errorf("%s: qm: renderer: qm writes the PDF itself; remove format: pdf: "+
@@ -109,6 +139,12 @@ func LoadNative(root string, ps *qmcore.Profiles) (*Native, error) {
 		return nil, fmt.Errorf("%s: qm: renderer: qm requires the capture filter:\n"+
 			"filters:\n  - path: %s\n    at: post-finalize", f.Path, CaptureFilterPath)
 	}
+	return newNative(root, ps)
+}
+
+// newNative resolves what the PDF and the cover need: the topic's cover, the
+// book title, and the brand fonts. Both renderers that write a PDF share it.
+func newNative(root string, ps *qmcore.Profiles) (*Native, error) {
 	cover, err := qmcore.ResolveVars(ps.Topic.QM.Cover, ps.Vars())
 	if err != nil {
 		return nil, fmt.Errorf("%s: qm: cover: %w", ps.Topic.Path, err)
@@ -129,7 +165,7 @@ func LoadNative(root string, ps *qmcore.Profiles) (*Native, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Native{Cover: cover, Title: title, TOC: f.QM.PDF.TOC, Fonts: fonts, FontNotes: notes}, nil
+	return &Native{Cover: cover, Title: title, TOC: ps.Format.QM.PDF.TOC, Fonts: fonts, FontNotes: notes}, nil
 }
 
 // declaresCapture reports whether the format profile runs the capture filter
@@ -166,12 +202,22 @@ func (n *Native) Prepare(root string) error {
 // Finish turns the DOCX Quarto wrote into the qm renderer's output: the PDF
 // beside it, under the same name, and the cover on both. The captured
 // document is removed on success and kept for diagnosis otherwise.
-func (n *Native) Finish(root, docx string, log Logf) (err error) {
+func (n *Native) Finish(root, docx string, log Logf) error {
+	return n.FinishFrom(root, docx, CapturedDocFile(root), log)
+}
+
+// FinishFrom is Finish for a document captured at an arbitrary path, which
+// is where the Pandoc renderer keeps it.
+func (n *Native) FinishFrom(root, docx, captured string, log Logf) (err error) {
 	log = log.or()
-	captured := CapturedDocFile(root)
 	defer func() {
 		if err == nil {
-			os.Remove(captured)
+			// The Quarto-hook renderer captures into _build/ and cleans up
+			// after itself; the Pandoc renderer's is in a working directory
+			// that it removes as a whole.
+			if captured == CapturedDocFile(root) {
+				os.Remove(captured)
+			}
 		} else if _, statErr := os.Stat(captured); statErr == nil {
 			log("captured document retained for diagnosis: %s", captured)
 		}

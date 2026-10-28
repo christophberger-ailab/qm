@@ -37,11 +37,18 @@ import (
 
 // QM is the `qm:` section of a profile.
 type QM struct {
-	// Renderer "qm" uses Pandoc DOCX plus the native Go PDF/cover backend,
-	// run by the project's hooks (format axis). See bookrender.LoadNative.
+	// Renderer picks who builds a format's output (format axis):
+	//
+	//	quarto (or empty)  Quarto writes the output.
+	//	qm                 Quarto writes the DOCX, the project's hooks add the
+	//	                   Go-laid-out PDF and the cover. See bookrender.LoadNative.
+	//	pandoc             qm drives Pandoc itself: no Quarto, no hooks. Pandoc
+	//	                   writes the DOCX or PPTX, and for a DOCX qm lays out the
+	//	                   PDF and adds the cover. See bookrender.RenderPandoc.
 	Renderer string `yaml:"renderer"`
-	// PDF holds the options of the PDF the qm renderer writes. They cannot
-	// live under `format: pdf:`: Quarto would typeset that PDF itself.
+	// PDF holds the options of the PDF the qm and pandoc renderers write.
+	// They cannot live under `format: pdf:`: Quarto would typeset that PDF
+	// itself.
 	PDF struct {
 		TOC bool `yaml:"toc"`
 	} `yaml:"pdf"`
@@ -103,6 +110,11 @@ type Profile struct {
 	Format  OutputFormats     `yaml:"format"`
 	Filters []any             `yaml:"filters"`
 	QM      QM                `yaml:"qm"`
+	// Make holds the `make:` flags the project's content filter reads
+	// (`make.pol`, `make.explanation`, ...), and Lang the document language.
+	// The Pandoc renderer passes both to Pandoc as metadata.
+	Make    map[string]any `yaml:"make"`
+	Lang    string         `yaml:"lang"`
 	Project struct {
 		OutputDir string `yaml:"output-dir"`
 	} `yaml:"project"`
@@ -113,18 +125,30 @@ type Profile struct {
 	} `yaml:"book"`
 }
 
-// OutputFormats accepts both Quarto's scalar shorthand and format maps.
-type OutputFormats map[string]struct {
+// FormatOptions are the options of one output format (`format: docx:`), as
+// far as qm reads them. The Pandoc renderer (`qm: renderer: pandoc`) hands
+// them to Pandoc itself; Quarto reads them for the other renderers.
+type FormatOptions struct {
 	TOC bool `yaml:"toc"`
+	// ReferenceDoc is the project-relative DOCX/PPTX template. It does not
+	// resolve `{{< var >}}`; see QM.Copy for the audience-dependent case.
+	ReferenceDoc string `yaml:"reference-doc"`
+	// SlideLevel is the heading level that starts a new slide (pptx).
+	SlideLevel int `yaml:"slide-level"`
+	// SyntaxHighlighting is a built-in highlight style name or the path of
+	// a theme file. Quarto's older spelling, HighlightStyle, is accepted.
+	SyntaxHighlighting string `yaml:"syntax-highlighting"`
+	HighlightStyle     string `yaml:"highlight-style"`
 }
+
+// OutputFormats accepts both Quarto's scalar shorthand and format maps.
+type OutputFormats map[string]FormatOptions
 
 func (f *OutputFormats) UnmarshalYAML(node *yaml.Node) error {
 	*f = OutputFormats{}
 	if node.Kind == yaml.ScalarNode {
 		if node.Value != "" {
-			(*f)[node.Value] = struct {
-				TOC bool `yaml:"toc"`
-			}{}
+			(*f)[node.Value] = FormatOptions{}
 		}
 		return nil
 	}
@@ -132,9 +156,7 @@ func (f *OutputFormats) UnmarshalYAML(node *yaml.Node) error {
 		return fmt.Errorf("format must be a name or mapping")
 	}
 	for i := 0; i < len(node.Content); i += 2 {
-		var options struct {
-			TOC bool `yaml:"toc"`
-		}
+		var options FormatOptions
 		value := node.Content[i+1]
 		if value.Kind == yaml.MappingNode {
 			if err := value.Decode(&options); err != nil {

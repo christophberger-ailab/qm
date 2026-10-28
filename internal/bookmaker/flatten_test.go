@@ -445,3 +445,46 @@ func TestTrimBlankEdges(t *testing.T) {
 		t.Errorf("got %v, want %v", got, want)
 	}
 }
+
+func TestRelativeIncludes(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		line string
+		want []string
+	}{
+		{"absolute", "{{< include /assets/templates/kolophon.md >}}", nil},
+		{"absolute quoted", `{{< include "/assets/a b.md" >}}`, nil},
+		{"relative", "{{< include ../shared/x.md >}}", []string{"../shared/x.md"}},
+		{"relative quoted", `{{< include 'x.md' >}}`, []string{"x.md"}},
+		{"mixed on a line", "{{< include /a.md >}} text {{< include b.md >}}", []string{"b.md"}},
+		{"other shortcode", "{{< pagebreak >}} {{< var topic >}}", nil},
+		{"no shortcode", "include x.md", nil},
+	} {
+		got := relativeIncludes([]string{tc.line})
+		if strings.Join(got, "|") != strings.Join(tc.want, "|") {
+			t.Errorf("%s: relativeIncludes(%q) = %v, want %v", tc.name, tc.line, got, tc.want)
+		}
+	}
+}
+
+func TestFlattenIncludeWarning(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir+"/_quarto.yml", "project:\n  type: website\n")
+	writeFile(t, dir+"/book/index.qmd", "---\ntitle: B\n---\n\n# B\n")
+	writeFile(t, dir+"/book/absolut/index.qmd", "---\norder: 1\n---\n\n# Absolut\n\n{{< include /assets/templates/kolophon.md >}}\n")
+	writeFile(t, dir+"/book/relativ/index.qmd", "---\norder: 2\n---\n\n# Relativ\n\n{{< include ../kolophon.md >}}\n")
+
+	root, err := LoadTree(dir+"/book", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := Flatten(root, Options{ProjectRoot: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "relativ/index.qmd") ||
+		!strings.Contains(res.Warnings[0], "../kolophon.md") {
+		t.Fatalf("warnings = %v, want one about relativ/index.qmd only", res.Warnings)
+	}
+}

@@ -3,6 +3,7 @@ package bookmaker
 import (
 	"fmt"
 	"path"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -227,13 +228,11 @@ func preparePage(n *Node, targets linkTargets, opts Options, res *Result) (lines
 		res.Links += changed
 	}
 
-	for _, line := range lines {
-		if strings.Contains(line, "{{< include") {
-			res.Warnings = append(res.Warnings, fmt.Sprintf(
-				"%s: contains an include shortcode; Quarto resolves it at render time, "+
-					"so its path must be project-absolute", n.Page.Rel))
-			break
-		}
+	if rel := relativeIncludes(lines); len(rel) > 0 {
+		res.Warnings = append(res.Warnings, fmt.Sprintf(
+			"%s: include shortcode path %s is not project-absolute; Quarto resolves "+
+				"it at render time, so it must start with '/'",
+			n.Page.Rel, strings.Join(rel, ", ")))
 	}
 
 	res.Pages++
@@ -353,4 +352,25 @@ func trimBlankEdges(lines []string) []string {
 		end--
 	}
 	return lines[start:end]
+}
+
+// includeShortcode matches `{{< include path >}}` and captures the path,
+// quoted or not.
+var includeShortcode = regexp.MustCompile(`\{\{<\s*include\s+("[^"]*"|'[^']*'|[^\s>"']+)`)
+
+// relativeIncludes returns the paths of the include shortcodes in lines that
+// are not project-absolute. Quarto resolves an include at render time, from
+// the file that holds it, and that is the flattened `_build/book.qmd` rather
+// than the page, so only a path starting at the project root keeps working.
+func relativeIncludes(lines []string) []string {
+	var out []string
+	for _, line := range lines {
+		for _, m := range includeShortcode.FindAllStringSubmatch(line, -1) {
+			p := strings.Trim(m[1], `"'`)
+			if !strings.HasPrefix(p, "/") {
+				out = append(out, p)
+			}
+		}
+	}
+	return out
 }

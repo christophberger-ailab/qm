@@ -194,3 +194,26 @@ func TestActiveProfilesFallsBackToTheEnvironment(t *testing.T) {
 		t.Errorf("ActiveProfiles = %v, want the flag to win", got)
 	}
 }
+
+// A format that qm builds itself (`qm: renderer: pandoc`) is not Quarto's to
+// render: the hook refuses before it writes anything, and names the command
+// to use. Otherwise Quarto would write a DOCX without its PDF and its cover.
+func TestRunRefusesAFormatThePandocRendererBuilds(t *testing.T) {
+	root := fixture(t)
+	format := filepath.Join(root, "_quarto-format-handout.yml")
+	body := read(t, format) + "qm:\n  renderer: pandoc\n"
+	if err := os.WriteFile(format, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Leave a marker where the build documents go, to see that they stay.
+	os.MkdirAll(bookrender.BuildDirPath(root), 0o755)
+	os.WriteFile(bookrender.BookFile(root), []byte("UNTOUCHED"), 0o644)
+
+	err := Run(root, []string{"topic-calltaker", "format-handout", "audience-pol"}, nil)
+	if err == nil || !strings.Contains(err.Error(), "qm render calltaker --format handout --audience pol") {
+		t.Fatalf("want an error that names the qm command, got %v", err)
+	}
+	if got := read(t, bookrender.BookFile(root)); got != "UNTOUCHED" {
+		t.Errorf("the hook wrote _build/book.qmd before refusing: %q", got)
+	}
+}

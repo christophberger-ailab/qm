@@ -88,25 +88,23 @@ func FlattenBook(root, folder string) (*bookmaker.Result, error) {
 	})
 }
 
-// WriteBuild flattens folder into the build documents. An empty folder
-// writes the empty build documents, which is what a topic-less (website)
-// render needs.
+// BuildDocuments flattens folder into the two build documents and returns
+// them as text: the book, and the deck made of the pages' `::: slide`
+// blocks. An empty folder returns the empty documents, which is what a
+// topic-less (website) render needs. The deck is "" when the topic has no
+// slides.
 //
-// title becomes the slide deck's document title: the deck is a document of
-// its own, assembled from divs that carry no title, and pptx needs one for
-// its title slide.
-func WriteBuild(root, folder, title string, log Logf) error {
+// title becomes the deck's document title: the deck is a document of its
+// own, assembled from divs that carry no title, and pptx needs one for its
+// title slide.
+func BuildDocuments(root, folder, title string, log Logf) (book, slides string, err error) {
 	log = log.or()
-	if err := os.MkdirAll(BuildDirPath(root), 0o755); err != nil {
-		return err
-	}
 	if folder == "" {
-		log("no topic selected; clearing %s/", BuildDir)
-		return writeBuildFiles(root, generatedNote, "")
+		return generatedNote, "", nil
 	}
 	res, err := FlattenBook(root, folder)
 	if err != nil {
-		return err
+		return "", "", err
 	}
 	for _, w := range res.Warnings {
 		log("%s: warning: %s", folder, w)
@@ -116,7 +114,24 @@ func WriteBuild(root, folder, title string, log Logf) error {
 	if res.Slides == "" {
 		log("%s: no ::: slide blocks; the deck will be empty", folder)
 	}
-	return writeBuildFiles(root, generatedNote+res.Content, slideDoc(res.Slides, title))
+	return generatedNote + res.Content, slideDoc(res.Slides, title), nil
+}
+
+// WriteBuild flattens folder into the build documents in `_build/`, the
+// ones Quarto's project includes and renders by name.
+func WriteBuild(root, folder, title string, log Logf) error {
+	log = log.or()
+	if err := os.MkdirAll(BuildDirPath(root), 0o755); err != nil {
+		return err
+	}
+	if folder == "" {
+		log("no topic selected; clearing %s/", BuildDir)
+	}
+	book, slides, err := BuildDocuments(root, folder, title, log)
+	if err != nil {
+		return err
+	}
+	return writeBuildFiles(root, book, slides)
 }
 
 // slideDoc puts a title on the extracted slide content, or returns the
@@ -197,14 +212,23 @@ func Run(o Options, log Logf) error {
 var QuartoCommand = "quarto"
 
 // renderSelection checks a selection's qm renderer configuration, so that a
-// broken one fails before Quarto starts, and renders it. The qm renderer
-// needs nothing else from here: the project's hooks carry it out (see
-// native.go), which is what keeps `qm render` and a plain `quarto render`
-// identical.
+// broken one fails before anything starts, and renders it.
+//
+// A format with `qm: renderer: pandoc` is built by qm itself (see
+// pandoc_render.go). For the others, the qm renderer needs nothing else from
+// here: the project's hooks carry it out (see native.go), which is what keeps
+// `qm render` and a plain `quarto render` identical.
 func renderSelection(root string, sel qmcore.Selection, dryRun bool, log Logf) error {
 	ps, err := qmcore.LoadSelection(root, sel)
 	if err != nil {
 		return err
+	}
+	renderer, err := RendererOf(ps.Format)
+	if err != nil {
+		return err
+	}
+	if renderer == RendererPandoc {
+		return renderPandoc(root, ps, dryRun, log)
 	}
 	native, err := LoadNative(root, ps)
 	if err != nil {

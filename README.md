@@ -13,12 +13,14 @@ things the `quarto` command itself does not do:
 - **A three-axis render matrix.** A render is addressed by *topic* (what),
   *format* (how) and *audience* (for whom), each an ordinary Quarto profile.
   `qm` validates a selection, expands the matrix the project declares, and
-  drives one `quarto render` per combination.
+  builds each combination: documents (DOCX, PDF, PPTX) with Pandoc directly,
+  the website with `quarto render`.
 - **The output paths Quarto cannot compose.** Quarto resolves `{{< var >}}` in
-  only two configuration keys. `qm` fills the gap as the project's pre- and
-  post-render hooks, so a plain `quarto render --profile …` produces a
-  correctly built and correctly named artefact without `qm` on the command
-  line.
+  only two configuration keys. For formats Quarto renders, `qm` fills the gap
+  as the project's pre- and post-render hooks, so a plain
+  `quarto render --profile …` produces a correctly built and correctly named
+  artefact. Formats with `qm: renderer: pandoc` do not need Quarto at all (see
+  [Documents without Quarto](#documents-without-quarto-qm-renderer-pandoc)).
 - **Editing helpers.** Chapter insert/move/remove that keep the `order:` front
   matter consistent, a linter for unclosed Quarto block fences, and a local web
   UI for reordering pages by drag and drop, editing them, copyediting them with
@@ -80,15 +82,115 @@ qm render                              # every combination the project declares
 qm render calltaker dispatcher         # those two topics, all their formats
 qm render --format handout             # handouts only
 qm render --audience pol --clean       # the pol variants, from scratch
-qm render --dry-run                    # print the quarto invocations, run none
+qm render --dry-run                    # print the pipeline, run nothing
 ```
 
-By default, each combination becomes one
+A combination whose format profile says `qm: renderer: pandoc` is built by
+`qm` itself, with Pandoc (see below). Any other becomes one
 `quarto render --profile topic-<t>,format-<f>,audience-<a> --no-clean`, run in
 the project root. A failing combination does not stop the others; the command
 reports how many failed and exits non-zero.
 
+### Documents without Quarto (`qm: renderer: pandoc`)
+
+A format profile that selects the Pandoc renderer is built without Quarto and
+without the project's hooks:
+
+```yaml
+# _quarto-format-handout.yml
+qm:
+  renderer: pandoc
+  pdf:
+    toc: true
+project:
+  output-dir: _output/handout
+book:
+  output-file: "{{< var topic >}}{{< var audience >}}"
+format:
+  docx:
+    toc: true
+    reference-doc: assets/templates/Template.docx
+```
+
+```yaml
+# _quarto-format-slides.yml
+qm:
+  renderer: pandoc
+  output-file: "{{< var topic >}}{{< var audience >}}"
+  copy:
+    _build/reference-slides.pptx: "assets/templates/deck{{< var audience-template >}}.pptx"
+project:
+  output-dir: _output/slides
+format:
+  pptx:
+    slide-level: 2
+    reference-doc: _build/reference-slides.pptx
+```
+
+What happens for one combination:
+
+1. The topic's folder is flattened **in memory** (the flattening is the one
+   `qm prepare` does; nothing is written to `_build/`, so there is no stale
+   build document that could put one topic's content into another's handout).
+2. The shortcodes the content uses are resolved on the text: `{{< include
+   /path >}}` (project-absolute), `{{< pagebreak >}}` and `{{< var name >}}`.
+   Any other shortcode is reported and left as written.
+3. Pandoc reads the result as Pandoc Markdown (with Quarto's one deviation,
+   `table_attributes` off), through a filter chain: the project's own filters
+   (`filters:` in `_quarto.yml` and the profiles — a Lua filter, or a Quarto
+   extension that contributes Lua filters, such as an audience gate that asks
+   `quarto.metadata.get("make.pol")`), then `/assets/…` image paths become
+   project-relative, `{{< pagebreak >}}` becomes the format's page break, and
+   callouts are drawn.
+4. For a DOCX, the filter chain also saves the document it is about to write,
+   and `qm` lays out the PDF from it and adds the topic's cover to both (the
+   same Go layout the `qm` renderer uses).
+
+The document metadata Pandoc gets is the `make:` flags of the base config and
+the three profiles (first-listed profile wins, as in Quarto), `lang`, the book
+title, and the heading of the contents list.
+
+**What it needs.** Pandoc 3.0 or newer. `qm` looks for `$QM_PANDOC`, a `pandoc`
+on the `PATH`, the Pandoc inside a Quarto installation, and last
+`quarto pandoc`; a machine that has Quarto for the website needs nothing else.
+Quarto is also where `qm` takes two cosmetic details from when it is present:
+the callout icons (`<share>/formats/docx/*.png`) and the code highlighting
+theme (`arrow-light`), so that a DOCX looks as it did under Quarto. Without
+Quarto, put icons in `assets/callout-icons/<note|tip|warning|important|caution>.png`
+(a callout then has its icon; without any, none) and name a theme with
+`syntax-highlighting:` under `format: docx:` (a theme file of the project, one
+of Quarto's, or one of Pandoc's own). `QM_QUARTO_SHARE` points at a Quarto
+`share` directory explicitly.
+
+**Callouts** are drawn as Quarto draws them: in a DOCX, a table with a shaded
+title row (the `title` attribute, else the first heading, else the type's
+default title in the document language — German and English are built in) and
+a body row, or a bare gray bar for a `.callout` without a type; in a slide
+deck, a block quote headed by the bold title.
+
+**Differences from the Quarto renderers**, all deliberate or unavoidable:
+
+- Mermaid diagrams (` ```{mermaid} `) stay code blocks, with a warning: only
+  Quarto could draw them, and it needs a headless Chrome. Export them as
+  images.
+- A shortcode other than the three above is not resolved.
+- A `filters:` entry that names a Quarto entry point (`at:`) is an error.
+- A slide deck's title slide comes from the metadata, and a link to a site page
+  inside a deck (`/dispatcher/…`) is not rewritten relative to `_build/`.
+- `quarto render` refuses such a format: its pre-render hook says to use
+  `qm render`.
+
+**Diagnosis.** A failed render keeps its working files (the input, the
+metadata, the generated filter, the captured document) and says where.
+`QM_KEEP_WORKDIR=1` keeps them after a successful one, too. `--dry-run` prints
+the Pandoc command.
+
 ### PDF and DOCX without LaTeX or Typst
+
+This section describes `qm: renderer: qm`, where Quarto writes the DOCX and
+the project's hooks add the PDF. [`qm: renderer: pandoc`](#documents-without-quarto-qm-renderer-pandoc)
+builds the same documents without Quarto; the PDF layout and covers below
+apply to both.
 
 Enable the Go-backed document pipeline in a **format profile**:
 
@@ -412,7 +514,10 @@ render. Set `QM_FINALIZE_PREVIEW=1` (or `=0`) to override the detection.
 
 Because both are wired into the project, a plain
 `quarto render --profile topic-x,format-y,audience-z` — from a terminal, from
-VS Code, from CI — produces exactly the same artefact as `qm render`.
+VS Code, from CI — produces exactly the same artefact as `qm render`, for every
+format Quarto renders (the website, and formats with `qm: renderer: qm`). A
+format with `qm: renderer: pandoc` is built by `qm render` alone; the hook
+refuses it.
 
 ### Page conventions
 

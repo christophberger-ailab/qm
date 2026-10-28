@@ -312,8 +312,10 @@ steps is load-bearing:
    levels are what cuts a deck into slides and the book's anchors do not exist
    in it.
 3. `rewriteLinks` — turn in-book links into anchors.
-4. warn about `{{< include >}}` shortcodes, which Quarto resolves at render
-   time and whose paths must therefore be project-absolute.
+4. warn about `{{< include >}}` shortcodes whose path is not project-absolute
+   (`relativeIncludes`): Quarto resolves them at render time, from the
+   flattened document rather than the page, so only a path starting with `/`
+   keeps working. An absolute include is fine and raises no warning.
 
 `shiftHeadings` (`flatten.go:283`) applies the level delta and attaches the
 anchor to the page's own title heading — per *block*, not per page: sibling

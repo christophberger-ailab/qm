@@ -7,12 +7,13 @@
 //	qm render --format handout         -> handouts only
 //	qm render --audience pol --clean   -> the Polizei variants, from scratch
 //
-// One `quarto render --profile topic-<t>,format-<f>,audience-<a>` runs per
-// combination. That command is the whole interface: it works from the CLI,
-// from VS Code, and from CI without qm, and it produces correctly named
-// output on its own, because the project's pre- and post-render hooks
-// (`qm prepare`, `qm finalize`) do the parts Quarto's configuration cannot
-// express. `qm render` only walks the matrix.
+// A combination whose format profile says `qm: renderer: pandoc` is built by
+// qm itself, with Pandoc (see internal/bookrender). For any other, one
+// `quarto render --profile topic-<t>,format-<f>,audience-<a>` runs. That
+// command works from the CLI, from VS Code, and from CI without qm, and it
+// produces correctly named output on its own, because the project's pre- and
+// post-render hooks (`qm prepare`, `qm finalize`) do the parts Quarto's
+// configuration cannot express. `qm render` walks the matrix.
 package render
 
 import (
@@ -57,7 +58,9 @@ func Register(projectFlag *string) {
 		Short: "Render the project's topic/format/audience matrix",
 		Long: "Render every topic × format × audience combination the project " +
 			"declares, or the subset selected by the flags. Usage: " +
-			"qm render [<topic>...]. Each combination is one " +
+			"qm render [<topic>...]. A combination is built with Pandoc by qm " +
+			"itself when its format profile says `qm: renderer: pandoc`, and " +
+			"is otherwise one " +
 			"`quarto render --profile topic-<t>,format-<f>,audience-<a>`. " +
 			"Which formats and audiences a topic takes part in is declared in " +
 			"its own profile, under `qm: formats:` and `qm: audiences:`.",
