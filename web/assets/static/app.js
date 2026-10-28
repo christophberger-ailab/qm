@@ -1614,6 +1614,50 @@ document.addEventListener('DOMContentLoaded', function () {
   initSearch();
 });
 
+// The Git panel's filter. Every operation swaps the whole panel body, the
+// field included, so the text lives here and is put back after each swap;
+// a filter that emptied itself whenever a file was staged would have to
+// be typed again for the next one.
+var gitFilter = '';
+
+// applyGitFilter hides the rows of both lists whose path does not contain
+// the filter text, ignoring case, and says so in a list left with none.
+function applyGitFilter() {
+  var needle = gitFilter.trim().toLowerCase();
+  document.querySelectorAll('#git-body .git-group').forEach(function (group) {
+    var shown = 0;
+    group.querySelectorAll('.git-file').forEach(function (row) {
+      var match = !needle || (row.dataset.path || '').toLowerCase().indexOf(needle) >= 0;
+      row.hidden = !match;
+      if (match) {
+        shown++;
+      }
+    });
+    var none = group.querySelector('.git-nomatch');
+    if (none) {
+      none.hidden = shown > 0;
+    }
+  });
+}
+
+document.body.addEventListener('input', function (evt) {
+  if (evt.target.id === 'git-filter') {
+    gitFilter = evt.target.value;
+    applyGitFilter();
+  }
+});
+
+document.body.addEventListener('htmx:afterSwap', function (evt) {
+  var target = evt.detail && evt.detail.target;
+  if (target && target.id === 'git-body') {
+    var field = document.getElementById('git-filter');
+    if (field) {
+      field.value = gitFilter;
+    }
+    applyGitFilter();
+  }
+});
+
 document.body.addEventListener('htmx:afterSwap', function (evt) {
   var id = evt.detail && evt.detail.target && evt.detail.target.id;
   if (id === 'main') {

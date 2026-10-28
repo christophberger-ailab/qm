@@ -166,6 +166,7 @@ constraints:
       10-18: The panel lists the whole working tree's changes, so a file outside the open project is shown and staged like any other; only the editor, which addresses pages by their path inside the project, is not offered such a file
       10-19: The popup keeps one width and one place whether a diff is open or not -- it is as wide as a diff needs from the start -- so opening or closing a diff never moves the paths out from under the pointer
       10-20: A popup of the top bar that would reach past the window's right edge from below its button is moved left by as much, so it stays inside the window instead of pushing the page sideways
+      10-21: A filter field above the lists narrows both of them to the files whose path contains the text typed, ignoring case; the text stays in force across the operations of the panel until it is cleared, and a list it leaves empty says so
       11: A copyediting tool sits beside the editor, in a pane of its own next to the Markdown preview
       11-1: The panes beside the editor that are shown stand side by side; dragging one pane's head onto another swaps the two, and the order is remembered across page switches and sessions
       11-1-1: Every pane beside the editor has a draggable divider on its left; against the editor it resizes the pane and the editor, between two panes it trades width between them and leaves the editor as it is; the widths are remembered across page switches and sessions

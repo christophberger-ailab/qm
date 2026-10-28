@@ -354,6 +354,17 @@ body {
   font-size: 0.8rem;
 }
 
+.git-filter {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 0 0.5rem;
+}
+
+.git-file[hidden] {
+  display: none;
+}
+
 .git-group {
   border: 1px solid var(--border);
   border-radius: 4px;
