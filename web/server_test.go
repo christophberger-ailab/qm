@@ -461,6 +461,42 @@ func TestPreviewCaptionsAStandaloneImage(t *testing.T) {
 	}
 }
 
+// A Quarto callout is previewed as Quarto renders it: a box in the type's
+// color, with a header holding the icon and the title on the type's shaded
+// color. The box is built in the browser, out of a Go test's reach; what
+// can be checked here is that the script still builds it and that the
+// stylesheet still carries Quarto's colors, the ones the native PDF uses.
+func TestPreviewDrawsCalloutsLikeQuarto(t *testing.T) {
+	preview, err := assets.ReadFile("assets/static/preview.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"function buildCallouts(root)",
+		"var calloutKeys = ['title', 'appearance', 'icon', 'collapse'];",
+		"buildCallouts(el);",
+	} {
+		if !strings.Contains(string(preview), want) {
+			t.Errorf("preview.js does not lay out callouts, missing %q", want)
+		}
+	}
+
+	srv, _ := testServer(t)
+	css := get(t, srv, "/static/app.css").Body.String()
+	for _, want := range []string{
+		"--callout-color: #0758E5;\n  --callout-header: #dae6fb;",
+		"--callout-color: #00A047;\n  --callout-header: #ccf1e3;",
+		"--callout-color: #EB9113;\n  --callout-header: #fcefdc;",
+		"--callout-color: #CC1914;\n  --callout-header: #f7dddc;",
+		"--callout-color: #FC5300;\n  --callout-header: #ffe5d0;",
+		".markdown-preview .callout-icon",
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("the stylesheet does not draw callouts in Quarto's colors, missing %q", want)
+		}
+	}
+}
+
 // The editor is CodeMirror, whose library, modes, addons, and vim keymap
 // are embedded alongside the rest. A missing file leaves the page with a
 // bare textarea and no sign of why, so check every one of them.
