@@ -503,7 +503,22 @@ func ValidateCover(path string) error {
 	}
 	return nil
 }
+
+// isDrivePath reports whether src starts with a Windows drive ("C:/" or
+// "C:\"). url.Parse reads the drive letter as a URL scheme, so such a path
+// must be told apart before it is parsed.
+func isDrivePath(src string) bool {
+	if len(src) < 3 || src[1] != ':' || (src[2] != '/' && src[2] != '\\') {
+		return false
+	}
+	c := src[0] | 0x20
+	return c >= 'a' && c <= 'z'
+}
+
 func resource(root, src string) (string, error) {
+	if isDrivePath(src) {
+		return filepath.FromSlash(src), nil
+	}
 	u, err := url.Parse(src)
 	if err != nil {
 		return "", err

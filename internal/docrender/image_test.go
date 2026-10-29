@@ -3,6 +3,7 @@ package docrender
 import (
 	"fmt"
 	"math"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -78,6 +79,48 @@ func TestSoleImageStaysABlock(t *testing.T) {
 	}
 	if want := 50.0 + 10 + 7; math.Abs(w.y-start-want) > 1e-9 {
 		t.Errorf("height %v, want %v", w.y-start, want)
+	}
+}
+
+// A Windows drive letter is not a URL scheme: the callout icons Quarto ships
+// are found at C:/ProgramData/.../warning.png on a Windows agent.
+func TestResourceDrivePath(t *testing.T) {
+	for _, src := range []string{
+		"C:/ProgramData/Chocolatey/lib/quarto/tools/share/formats/docx/warning.png",
+		"d:/a/1/s/doc/Training/assets/callout-icons/caution.png",
+		`C:\Program Files\Quarto\share\formats\docx\note.png`,
+	} {
+		got, err := resource("/project", src)
+		if err != nil {
+			t.Errorf("%s: %v", src, err)
+			continue
+		}
+		if want := filepath.FromSlash(src); got != want {
+			t.Errorf("%s: got %s, want %s", src, got, want)
+		}
+	}
+}
+
+func TestResourceKeepsRejectingURLs(t *testing.T) {
+	for _, src := range []string{"https://example.com/a.png", "http://example.com/a.png", "data:image/png;base64,AAAA"} {
+		if _, err := resource("/project", src); err == nil || !strings.Contains(err.Error(), "requires local image") {
+			t.Errorf("%s: err %v, want \"requires local image\"", src, err)
+		}
+	}
+}
+
+func TestResourceRelativePaths(t *testing.T) {
+	root := filepath.FromSlash("/project")
+	for src, want := range map[string]string{
+		"assets/a.png":     filepath.Join(root, "assets", "a.png"),
+		"/assets/a.png":    filepath.Join(root, "assets", "a.png"),
+		"my%20image.png":   filepath.Join(root, "my image.png"),
+		"sub/dir/b%2B.png": filepath.Join(root, "sub", "dir", "b+.png"),
+	} {
+		got, err := resource(root, src)
+		if err != nil || got != want {
+			t.Errorf("%s: got %s, %v; want %s", src, got, err, want)
+		}
 	}
 }
 
