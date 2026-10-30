@@ -10,6 +10,10 @@ Die Vorschau ist eine Näherung. Sie wird im Browser aus deinem Markdown gezeich
 - Der Attributblock einer Überschrift, etwa `{.unnumbered}`, wird weggelassen, weil er das Rendering steuert und nicht zum Inhalt der Überschrift gehört. Überschriften in Codeblöcken bleiben unberührt.
 - Eine Seite, die für eine Zielgruppe geschrieben ist, wird innerhalb des Divs dieser Gruppe angezeigt. Das gilt, wenn der Dateiname oder ein Ordner darüber auf `_FW` oder `_POL` endet (der tiefste Name gewinnt). Das Stylesheet färbt und markiert dann die ganze Seite, wie es bei einem `::: fw`- oder `::: pol`-Block geschieht. Das Frontmatter bleibt außerhalb des Divs.
 
+## TODO-Markierungen
+
+Ein `==TODO==` erscheint als gefüllte pinke `TODO`-Marke, in derselben Farbe, mit der der Editor es hervorhebt. Ein TODO in einem HTML-Kommentar wird nicht dargestellt, daher zeigt die Vorschau an der Stelle des Kommentars eine umrandete Marke; fährst du mit der Maus darüber, siehst du den Kommentar.
+
 ## Bilder
 
 Bilder werden aus deinem Projekt geladen.

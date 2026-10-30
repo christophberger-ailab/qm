@@ -80,12 +80,30 @@ function initEditor() {
     area.dispatchEvent(new Event('input', { bubbles: true }));
   });
 
+  cm.addOverlay(todoOverlay);
   applyVim();
   // A page opened while a search is running arrives with its hits already
   // marked, and scrolled to the first of them.
   applySearchHighlight();
   scrollToFirstHit();
 }
+
+// TODO highlighting
+//
+// A `==TODO==` marks work left to do on a page, often inside an HTML
+// comment where a reader never sees it. The editor paints every one of
+// them, comment or not, in the TODO color the preview marks the same spot
+// with (see markTodos in preview.js), so none is overlooked.
+var todoOverlay = {
+  token: function (stream) {
+    if (stream.match('==TODO==')) {
+      return 'qm-todo';
+    }
+    var next = stream.string.indexOf('==TODO==', stream.pos + 1);
+    stream.pos = next < 0 ? stream.string.length : next;
+    return null;
+  }
+};
 
 // Search highlighting
 //

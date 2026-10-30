@@ -2,6 +2,10 @@
 
 Klicke im [Seitenbaum](tree.md) auf eine Seite, um sie im Editor zu öffnen. Der Editor hebt das YAML-Frontmatter und das Markdown der Seite farbig hervor.
 
+## TODO-Markierungen
+
+Jedes `==TODO==` auf der Seite wird pink hervorgehoben, auch in einem HTML-Kommentar wie `<!-- ==TODO== Zahlen prüfen -->`. Die [Vorschau](preview.md) zeigt an derselben Stelle eine pinke `TODO`-Marke, und der Seitenbaum markiert die Seite mit 🚧.
+
 ## Autosave
 
 Deine Änderungen werden automatisch kurz nach dem Tippen gespeichert. Wenn du eine Seite verlässt, neu lädst oder den Tab schließt, während eine Änderung ungespeichert ist, wirst du um Bestätigung gebeten.
