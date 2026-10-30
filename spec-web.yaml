@@ -242,6 +242,16 @@ constraints:
       11-13-4: A model that thought its way to the answer and never wrote a final message is taken at its reasoning, the answer asked for often being in there
       11-13-5: A message's content is read whether it comes as a string or as the list of parts the newer shape uses
       11-14: 'What went wrong is shown in the pane where the suggestions would be: no connection configured, the API''s own refusal, an unreadable answer'
+      11-15: A chat box at the foot of the copyedit pane lets the user talk to the selected model about the documentation; Enter sends, Shift+Enter starts a new line, and the box is offered only once a connection is configured
+      11-15-1: 'To answer, the model is given tools that read the open project and nothing else: search_pages answers from the search field''s index and rules, list_pages lists the pages as the tree does, and read_page reads one page; the page open in the editor is read from the editor''s text, unsaved edits included'
+      11-15-2: The tools reach only the pages the tree shows -- .qmd files outside the "_" and "." folders, inside the project -- so a path naming configuration, a file outside the project, or a link out of it is refused rather than read
+      11-15-3: No tool writes. A change the model would make to the open page is proposed with suggest_edit -- the passage, what to put there, and why -- and comes back as a suggestion listed below the answer exactly as a run lists one, so it is marked, applied, and finished with as one (11-8 to 11-11); a passage not in the open page is refused back to the model, which may quote it again
+      11-15-4: Every connection kind is given the same tools in the form it speaks -- Anthropic tool use, OpenAI-compatible function calling, and the Copilot SDK's custom tools, which are then the only tools the Copilot session has
+      11-15-5: An answer says below it what the model looked up to give it
+      11-15-6: After a bounded number of tool rounds the model is asked to answer with what it has, rather than left to keep searching
+      11-15-7: The server keeps nothing between two messages; the conversation is part of the pane's body, sent with each new message, kept per page with the suggestions (11-12-1), and ended by Back
+      11-15-8: Asked from the task list, the conversation takes the list's place; asked while a run's suggestions are shown, it continues below them, so the run can be asked about
+      11-15-9: Like a run, the chat's model call runs without the server's lock, and what went wrong is shown in the conversation where the answer would be; a failed answer is not sent back as part of the conversation
       12: An Editor button in the top bar opens the project in an external editor -- VS Code, VSCodium, or another of the user's choice -- for the files the app does not edit
       12-1: The editor is started on the project's directory, and on the page open in the app when there is one, so the other editor starts where the user is
       12-2: 'Which editor, and how it is told what to open, is one command line on a config page of its own, stored in the settings file (see SETTINGS): `{root}` stands for the project directory and `{file}` for the open page; VS Code''s `code {root} --goto {file}` is the default, and the page offers ready-made lines for common editors'

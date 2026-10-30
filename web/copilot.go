@@ -89,6 +89,14 @@ func copilotHome() (string, error) {
 // page and the tasks are joined into the one message, in that order, and
 // the system block becomes the session's system message.
 func askCopilot(conn apiConnection, system, page, tasks string) (string, error) {
+	return askCopilotWith(conn, system, page+"\n\n"+tasks, nil)
+}
+
+// askCopilotWith puts one prompt to Copilot under the given system
+// message, with the given tools and no others. A copyedit run passes none;
+// a chat about the documentation (see chat.go) passes the read-only ones
+// it offers every kind, and they are then the only tools the session has.
+func askCopilotWith(conn apiConnection, system, prompt string, tools []copilot.Tool) (string, error) {
 	cli, err := copilotCLI()
 	if err != nil {
 		return "", err
@@ -149,13 +157,15 @@ func askCopilot(conn apiConnection, system, page, tasks string) (string, error) 
 			Content: system,
 		},
 		WorkingDirectory: scratch,
-		// ModeEmpty makes every session say which tools it wants. This
-		// one wants none: it is handed the page and asked for JSON, and
-		// there is nothing on the machine it has any business reading.
-		// The list is empty rather than absent, the two meaning
+		// ModeEmpty makes every session say which tools it wants. A
+		// copyedit run wants none: it is handed the page and asked for
+		// JSON, and there is nothing on the machine it has any business
+		// reading. The list is empty rather than absent, the two meaning
 		// different things here -- absent is the omission ModeEmpty
-		// refuses, empty is the answer "no tools".
-		AvailableTools:      []string{},
+		// refuses, empty is the answer "no tools". A chat names the
+		// tools qm itself implements, and nothing built into the CLI.
+		Tools:               tools,
+		AvailableTools:      toolNames(tools),
 		OnPermissionRequest: refuseEverything,
 		// Nothing to compact: a session lives for one question.
 		InfiniteSessions: &copilot.InfiniteSessionConfig{Enabled: copilot.Bool(false)},
@@ -166,11 +176,21 @@ func askCopilot(conn apiConnection, system, page, tasks string) (string, error) 
 	}
 	defer session.Disconnect()
 
-	event, err := session.SendAndWait(ctx, copilot.MessageOptions{Prompt: page + "\n\n" + tasks})
+	event, err := session.SendAndWait(ctx, copilot.MessageOptions{Prompt: prompt})
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", conn.Name, err)
 	}
 	return copilotAnswer(event)
+}
+
+// toolNames lists the names of the tools a session is given, never nil:
+// an empty list is how a session is told it has no tools at all.
+func toolNames(tools []copilot.Tool) []string {
+	names := []string{}
+	for _, t := range tools {
+		names = append(names, t.Name)
+	}
+	return names
 }
 
 // refuseEverything is the session's answer to any request to use a tool.

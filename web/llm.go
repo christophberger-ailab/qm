@@ -294,33 +294,44 @@ func askModel(conn apiConnection, system, page, tasks string, count int) (string
 	if err != nil {
 		return "", err
 	}
+	raw, err := postAPI(conn, url, body)
+	if err != nil {
+		return "", err
+	}
+	return answerText(conn.Kind, raw)
+}
+
+// postAPI posts one request body to an HTTP connection and returns the
+// reply's body, or what the API said when it refused. The copyedit run
+// and every round of a chat (see chat.go) go through it.
+func postAPI(conn apiConnection, url string, body []byte) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), llmTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	setAuth(req, conn)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("calling %s: %w", url, err)
+		return nil, fmt.Errorf("calling %s: %w", url, err)
 	}
 	defer resp.Body.Close()
 	// The answer is read whatever the status: an API says why it refused
 	// in the body, and that sentence is the only useful thing to show.
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
 		// The URL is part of the report: a refusal is about the key, but a
 		// 404 is about the address, and the address is composed here from
 		// what the connection carries.
-		return "", fmt.Errorf("%s answered %s for %s: %s", conn.Name, resp.Status, url, snippet(string(raw)))
+		return nil, fmt.Errorf("%s answered %s for %s: %s", conn.Name, resp.Status, url, snippet(string(raw)))
 	}
-	return answerText(conn.Kind, raw)
+	return raw, nil
 }
 
 // endpointURL puts the API's own path onto a connection's base URL. A base

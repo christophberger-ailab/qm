@@ -12,7 +12,7 @@ You need at least one task and one connection. Both are on [config pages](settin
 
 - `Anthropic` posts to `<base URL>/messages`.
 - `OpenAI-compatible` posts to `<base URL>/chat/completions`. This is what OpenAI, Ollama, LM Studio, and OpenRouter speak. A local model needs no key.
-- `GitHub Copilot` runs the GitHub Copilot CLI. It must be installed, on your `PATH` (or named by `COPILOT_CLI_PATH`), and signed in. This kind has no base URL and no key. The CLI session gets no tools, so it can only read the page it is sent.
+- `GitHub Copilot` runs the GitHub Copilot CLI. It must be installed, on your `PATH` (or named by `COPILOT_CLI_PATH`), and signed in. This kind has no base URL and no key. The CLI session gets no tools of its own, so a task run can only read the page it is sent; a chat gets only the read-only search tools described below.
 
 You may paste the full endpoint as the base URL; the path is not added twice. A stored key is never sent back to the browser. Leave the key field empty when editing to keep it.
 
@@ -46,5 +46,14 @@ The pane switches from the task list to the suggestions, each with the quoted pa
 Suggestions are kept for each page while you work on other pages, so you can come back to them. Going back to the task list or opening another project forgets them.
 
 Errors, such as no connection or a refusal from the API, are shown in the pane.
+
+## Chatting about the documentation
+
+The box at the foot of the pane lets you ask the selected model about the documentation: what it says, where a topic is covered, whether two pages agree. Press Enter to send, Shift+Enter for a new line.
+
+- To answer, the model can search the pages, list them, and read them. Below each answer the pane says what it looked up. It reads the page open in the editor as the editor holds it, unsaved edits included.
+- The model cannot change any page. When a change to the open page would help, it suggests one, and the suggestion is listed below its answer exactly like a task's suggestion: marked in the editor, with `Apply` and `Done`. Changes to other pages are described in the answer.
+- Asked from the task list, the chat takes the list's place. Asked while a run's suggestions are shown, it continues below them, so you can ask about them.
+- The conversation is kept with the page like the suggestions are, and `◀ Tasks` ends it.
 
 Back to [Contents](index.md).

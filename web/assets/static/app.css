@@ -1749,6 +1749,59 @@ li.CodeMirror-hint-active {
   font-size: 0.85rem;
 }
 
+/* The chat box sits at the foot of the copyedit pane, below whatever the
+   body shows, and stays put while the body scrolls. */
+.copyedit-chat {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 0.4rem;
+  margin: 0.5rem 0 0.4rem;
+}
+
+.copyedit-chat textarea {
+  flex: 1;
+  min-width: 0;
+  resize: vertical;
+  font: inherit;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--input-bg);
+  color: var(--fg);
+}
+
+.copyedit-chat-log {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.chat-turn .chat-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The user's messages stand apart from the answers, the way a chat sets
+   the two sides off from each other. */
+.chat-user {
+  justify-self: end;
+  max-width: 90%;
+  padding: 0.35rem 0.6rem;
+  border-radius: 6px;
+  background: var(--accent-bg);
+}
+
+.chat-trail,
+.chat-waiting {
+  margin: 0.3rem 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.chat-suggestions {
+  margin-top: 0.5rem;
+}
+
 /* The passages the suggestions are about, marked in the editor's text.
    The backgrounds are translucent: CodeMirror draws Vim's block cursor and
    the selection underneath the text layer, so an opaque mark would hide

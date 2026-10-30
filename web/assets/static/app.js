@@ -919,6 +919,150 @@ function settleSuggestion(entry, state, label, why) {
   }
 }
 
+// The chat
+//
+// The box at the foot of the copyedit pane talks to the selected model
+// about the documentation. The conversation is written into the pane's
+// body, which is what keeps it with the page across page switches (see
+// stashSuggestions) and what Back clears: asked from the task list, it
+// takes the list's place; asked while a run's suggestions are on screen,
+// it continues below them, so the run can be asked about.
+//
+// The server keeps nothing between two messages. Each one is sent with the
+// conversation so far, read from the turns on screen, and with the page the
+// editor holds, which is what the model's suggested edits are located in.
+// Those edits come back as suggestion entries like a run's, so marking,
+// Apply, and Done work on them unchanged.
+
+function chatLog() {
+  var body = document.getElementById('copyedit-body');
+  if (!body) {
+    return null;
+  }
+  var log = body.querySelector('.copyedit-chat-log');
+  if (log) {
+    return log;
+  }
+  var run = body.querySelector('.copyedit-suggestions');
+  if (run) {
+    log = document.createElement('div');
+    log.className = 'copyedit-chat-log';
+    var head = document.createElement('h3');
+    head.className = 'copyedit-group-name';
+    head.textContent = 'Chat';
+    run.appendChild(head);
+    run.appendChild(log);
+    return log;
+  }
+  var shell = document.getElementById('copyedit-chat-shell');
+  if (!shell) {
+    return null;
+  }
+  clearCopyeditMarks();
+  body.innerHTML = '';
+  body.appendChild(shell.content.cloneNode(true));
+  htmx.process(body); // the Back button is an htmx one
+  return body.querySelector('.copyedit-chat-log');
+}
+
+// chatHistory is the conversation on screen, as the server reads it. An
+// answer that failed carries no role and is left out.
+function chatHistory() {
+  return Array.prototype.slice.call(document.querySelectorAll('#copyedit-body .chat-turn[data-role]')).map(function (turn) {
+    return { role: turn.dataset.role, text: turn.dataset.history || '' };
+  });
+}
+
+var chatPending = false;
+
+function sendChat() {
+  var field = document.getElementById('copyedit-chat-message');
+  var message = field ? field.value.trim() : '';
+  if (!message || chatPending) {
+    return;
+  }
+  var log = chatLog();
+  if (!log) {
+    return;
+  }
+  var history = chatHistory();
+  syncSuggestionOffsets(); // the marks are laid anew once the answer is in
+
+  var turn = document.createElement('div');
+  turn.className = 'chat-turn chat-user';
+  turn.dataset.role = 'user';
+  turn.dataset.history = message;
+  var text = document.createElement('div');
+  text.className = 'chat-text';
+  text.textContent = message;
+  turn.appendChild(text);
+  log.appendChild(turn);
+
+  var waiting = document.createElement('p');
+  waiting.className = 'chat-waiting';
+  waiting.textContent = 'Asking the model…';
+  log.appendChild(waiting);
+  waiting.scrollIntoView({ block: 'nearest' });
+
+  field.value = '';
+  setChatPending(true);
+  var form = new URLSearchParams();
+  form.append('message', message);
+  form.append('history', JSON.stringify(history));
+  form.append('path', editorPagePath());
+  form.append('body', editorText());
+  fetch('/copyedit/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: form.toString()
+  }).then(function (resp) {
+    return resp.text();
+  }).then(function (html) {
+    waiting.insertAdjacentHTML('beforebegin', html);
+  }).catch(function (err) {
+    var failed = document.createElement('div');
+    failed.className = 'chat-turn chat-assistant';
+    failed.innerHTML = '<div class="error"></div>';
+    failed.firstChild.textContent = 'The question did not reach qm: ' + err;
+    waiting.parentNode.insertBefore(failed, waiting);
+  }).then(function () {
+    waiting.remove();
+    setChatPending(false);
+    // The log may have gone meanwhile -- Back, or another page -- and
+    // then there is nothing to mark.
+    if (document.body.contains(log)) {
+      readSuggestions();
+      var last = log.lastElementChild;
+      if (last) {
+        last.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  });
+}
+
+function setChatPending(on) {
+  chatPending = on;
+  var send = document.getElementById('copyedit-chat-send');
+  if (send) {
+    send.disabled = on;
+  }
+}
+
+document.body.addEventListener('submit', function (evt) {
+  if (evt.target.id === 'copyedit-chat') {
+    evt.preventDefault();
+    sendChat();
+  }
+});
+
+// Enter sends, as in any chat; Shift+Enter is the way to a new line.
+document.body.addEventListener('keydown', function (evt) {
+  if (evt.target.id === 'copyedit-chat-message' && evt.key === 'Enter' && !evt.shiftKey && !evt.isComposing) {
+    evt.preventDefault();
+    sendChat();
+  }
+});
+
 // Suggestions kept across page switches
 //
 // The copyedit pane is part of the editor pane, and the pane is replaced
@@ -985,6 +1129,20 @@ function stashSuggestions() {
     saveStash(stash);
     return;
   }
+  syncSuggestionOffsets();
+  suggestionEntries().forEach(function (li) {
+    li.classList.remove('selected');
+  });
+  stash[path] = body.innerHTML;
+  saveStash(stash);
+}
+
+// syncSuggestionOffsets writes where each suggestion's mark is now back
+// into its entry. The marks have moved with the text since the offsets
+// arrived, and the entries are what the marks are laid from again: when
+// the list is put back after a page switch, and when a chat answer adds
+// suggestions of its own to the ones already marked.
+function syncSuggestionOffsets() {
   var ranges = copyeditMarkRanges();
   var text = editorText();
   suggestionEntries().forEach(function (li, i) {
@@ -999,10 +1157,7 @@ function stashSuggestions() {
       delete li.dataset.end;
       delete li.dataset.passage;
     }
-    li.classList.remove('selected');
   });
-  stash[path] = body.innerHTML;
-  saveStash(stash);
 }
 
 // restoreSuggestions puts back what was kept for the page now in the
