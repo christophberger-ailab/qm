@@ -496,6 +496,25 @@
     {{else}}<span class="empty">No model configured — <a href="/config/connections">add an API connection</a>.</span>{{end}}
   </div>
   <div id="copyedit-body">{{template "copyedit-prompts" .}}</div>
+  {{/* The chat box. It sits below whatever the body shows: asked from the
+       task list, the conversation takes the list's place; asked while a
+       run's suggestions are on screen, it continues below them. The
+       conversation is part of the body, so it is kept per page with the
+       suggestions and goes with them when Back is pressed. */ -}}
+  {{if .Connections}}<form class="copyedit-chat" id="copyedit-chat" autocomplete="off">
+    <textarea id="copyedit-chat-message" name="message" rows="2"
+              placeholder="Ask about the documentation…"
+              title="Enter sends, Shift+Enter starts a new line. The model can search and read the pages but not change them; edits it suggests to this page are listed for you to apply."></textarea>
+    <button type="submit" id="copyedit-chat-send" title="Send the question to the selected model">Send</button>
+  </form>
+  <template id="copyedit-chat-shell"><div class="copyedit-suggestions copyedit-chat-view">
+    <div class="copyedit-suggestions-head">
+      <button type="button" class="copyedit-back" id="copyedit-back" title="Back to the editing tasks — ends the conversation"
+              hx-get="/copyedit/prompts" hx-target="#copyedit-body" hx-swap="innerHTML">◀ Tasks</button>
+      <span class="copyedit-task-name">Chat</span>
+    </div>
+    <div class="copyedit-chat-log"></div>
+  </div></template>{{end}}
 </section>{{end}}
 
 {{/* The editing tasks, by title alone: the prompt itself is what the task
@@ -571,29 +590,51 @@
   {{range .Groups}}<section class="copyedit-group" data-task="{{.Task}}">
     {{if gt (len $.Groups) 1}}<h3 class="copyedit-group-name">{{if .Task}}{{.Task}}{{else}}Unattributed{{end}}</h3>{{end}}
     {{if .Suggestions}}<ol class="copyedit-list">
-      {{range .Suggestions}}<li class="copyedit-suggestion{{if not .Located}} unlocated{{end}}"
-          {{if .Located}}data-start="{{.Start}}" data-end="{{.End}}" title="Scroll the editor to this passage"{{end}}
-          {{if .Applicable}}data-replacement="{{.Replacement}}"{{end}}>
-        <blockquote class="copyedit-original">{{.Original}}</blockquote>
-        {{if .Replacement}}<p class="copyedit-replacement">{{.Replacement}}</p>{{end}}
-        {{if .Comment}}<p class="copyedit-comment">{{.Comment}}</p>{{end}}
-        {{if not .Located}}<p class="copyedit-unlocated">Not found in the page as quoted, so it is not highlighted.</p>{{end}}
-        {{/* Apply writes the suggestion in; Done says it was dealt with
-             by hand. Only a suggestion with a passage and a replacement
-             can be written in, but any of them can be finished with. */ -}}
-        <div class="copyedit-suggestion-actions">
-          {{if .Applicable}}<button type="button" class="copyedit-apply"
-                  title="Replace the passage in the editor with this text">Apply</button>{{end}}
-          <button type="button" class="copyedit-done"
-                  title="Mark as dealt with — takes it off the list and unhighlights the passage">Done</button>
-        </div>
-      </li>
+      {{range .Suggestions}}{{template "copyedit-suggestion" .}}
       {{end}}
     </ol>
     {{else if not $.Error}}<p class="empty copyedit-none">Nothing to change.</p>{{end}}
   </section>
   {{end}}
   {{if and (not .Groups) (not .Error)}}<p class="empty">Nothing to change: the model had no suggestion.</p>{{end}}
+</div>{{end}}
+
+{{/* One suggestion, as a copyedit run and a chat answer both list it. The
+     ones found in the page carry the position they were found at, which
+     is what app.js highlights the text by; the ones that say what to put
+     there instead offer to write it in. */}}
+{{define "copyedit-suggestion"}}<li class="copyedit-suggestion{{if not .Located}} unlocated{{end}}"
+    {{if .Located}}data-start="{{.Start}}" data-end="{{.End}}" title="Scroll the editor to this passage"{{end}}
+    {{if .Applicable}}data-replacement="{{.Replacement}}"{{end}}>
+  <blockquote class="copyedit-original">{{.Original}}</blockquote>
+  {{if .Replacement}}<p class="copyedit-replacement">{{.Replacement}}</p>{{end}}
+  {{if .Comment}}<p class="copyedit-comment">{{.Comment}}</p>{{end}}
+  {{if not .Located}}<p class="copyedit-unlocated">Not found in the page as quoted, so it is not highlighted.</p>{{end}}
+  {{/* Apply writes the suggestion in; Done says it was dealt with
+       by hand. Only a suggestion with a passage and a replacement
+       can be written in, but any of them can be finished with. */ -}}
+  <div class="copyedit-suggestion-actions">
+    {{if .Applicable}}<button type="button" class="copyedit-apply"
+            title="Replace the passage in the editor with this text">Apply</button>{{end}}
+    <button type="button" class="copyedit-done"
+            title="Mark as dealt with — takes it off the list and unhighlights the passage">Done</button>
+  </div>
+</li>{{end}}
+
+{{/* One answer of the chat: what the model said, what it looked up to say
+     it, and the edits it suggested to the open page, listed exactly as a
+     copyedit run lists its suggestions so that they are marked, applied,
+     and finished with the same way. data-history is the answer as it is
+     sent back with the next message; an answer that failed has no role
+     and is not sent back at all. */}}
+{{define "copyedit-chat-reply"}}<div class="chat-turn chat-assistant"{{if not .Error}} data-role="assistant" data-history="{{.History}}"{{end}}>
+  {{if .Reply}}<div class="chat-text">{{.Reply}}</div>{{end}}
+  {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
+  {{if .Trail}}<p class="chat-trail" title="What the model looked up to answer">{{range $i, $t := .Trail}}{{if $i}} · {{end}}{{$t}}{{end}}</p>{{end}}
+  {{if .Suggestions}}<ol class="copyedit-list chat-suggestions">
+    {{range .Suggestions}}{{template "copyedit-suggestion" .}}
+    {{end}}
+  </ol>{{end}}
 </div>{{end}}
 
 {{define "editor-page"}}<!doctype html>

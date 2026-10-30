@@ -47,4 +47,13 @@ Vorschläge werden pro Seite aufbewahrt, während du an anderen Seiten arbeitest
 
 Fehler, etwa eine fehlende Verbindung oder eine Ablehnung durch die API, werden im Bereich angezeigt.
 
+## Über die Dokumentation chatten
+
+Im Feld am Fuß des Bereichs kannst du dem ausgewählten Modell Fragen zur Dokumentation stellen: was sie sagt, wo ein Thema behandelt wird, ob zwei Seiten übereinstimmen. Enter schickt die Frage ab, Shift+Enter beginnt eine neue Zeile.
+
+- Für die Antwort kann das Modell die Seiten durchsuchen, auflisten und lesen. Unter jeder Antwort steht, was es nachgeschlagen hat. Die im Editor geöffnete Seite liest es so, wie der Editor sie enthält, einschließlich ungespeicherter Änderungen.
+- Das Modell kann keine Seite ändern. Wenn eine Änderung an der geöffneten Seite hilft, schlägt es sie vor, und der Vorschlag erscheint unter der Antwort genau wie der Vorschlag einer Aufgabe: im Editor markiert, mit `Apply` und `Done`. Änderungen an anderen Seiten beschreibt es in der Antwort.
+- Aus der Aufgabenliste heraus gestellt, ersetzt der Chat die Liste. Während die Vorschläge eines Laufs angezeigt werden, geht er unter ihnen weiter, sodass du nach ihnen fragen kannst.
+- Das Gespräch wird wie die Vorschläge mit der Seite aufbewahrt, und `◀ Tasks` beendet es.
+
 Zurück zum [Inhalt](index.md).
