@@ -1337,6 +1337,17 @@ document.body.addEventListener('dblclick', function (evt) {
   });
 });
 
+// A click on a commented passage in the preview puts the cursor at the
+// start of its comment in the editor, where the comment is read and edited.
+document.body.addEventListener('click', function (evt) {
+  var passage = evt.target.closest && evt.target.closest('#preview .qm-comment');
+  if (!passage) {
+    return;
+  }
+  evt.preventDefault(); // a commented link is edited, not followed
+  focusComment(Number(passage.getAttribute('data-comment')));
+});
+
 // revealSelection expands the collapsed branches above the selected page,
 // so a restored page is not hidden inside one, and scrolls the tree pane
 // to its row: flipping through a long book walks the selection off the

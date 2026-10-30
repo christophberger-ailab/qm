@@ -22,6 +22,10 @@ Bilder werden aus deinem Projekt geladen.
 - Doppelklicke auf ein Bild, um es in deinem [Bildeditor](external-editor.md) zu öffnen. Wenn du in diesem Programm speicherst, übernimmt die Vorschau die neue Version innerhalb weniger Sekunden.
 - `↻ Reload` zeigt Bilder so, wie sie auf der Platte liegen, auch wenn du eines unter demselben Namen ersetzt hast.
 
+## Kommentare
+
+Eine im [Editor](editor.md) kommentierte Stelle wird hervorgehoben, auch wenn sie über mehrere Absätze reicht. Fahre mit der Maus darüber, um den Kommentar zu lesen; ein Klick setzt den Cursor im Editor an den Anfang des Kommentars, sodass du ihn bearbeiten kannst. Ein Kommentar innerhalb von Code wird als Code angezeigt.
+
 ## Scrollen
 
 Editor und Vorschau scrollen gemeinsam: Bewegst du eines von beiden, springt das andere zur selben Stelle der Seite. Die Vorschau bleibt auch beim Tippen beim Editor.
