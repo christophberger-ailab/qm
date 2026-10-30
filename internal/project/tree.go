@@ -23,6 +23,7 @@ type Page struct {
 	Draft     bool     // the page's frontmatter says `draft: true`
 	Marker    string   // emoji marker from a _FW/_POL suffix (own or inherited)
 	Flags     []string // status emojis from the qm: frontmatter and the body, see PageFlags
+	Hidden    bool     // the page's frontmatter says `qm: {hide: true}`
 	Children  []*Page
 }
 
@@ -60,6 +61,28 @@ func pageFlagsOf(src []byte, fm FrontMatter) []string {
 		}
 	}
 	return flags
+}
+
+// IsHidden reports whether src's frontmatter says `qm: {hide: true}`, which
+// leaves the page out of the tree view.
+func IsHidden(src []byte) bool {
+	return isHidden(ParseFrontmatter(src))
+}
+
+func isHidden(fm FrontMatter) bool {
+	return fm.QM["hide"] == true
+}
+
+// HasVisibleChildren reports whether any of the page's children is shown
+// in the tree, so that a section whose children are all hidden does not
+// offer to expand.
+func (p *Page) HasVisibleChildren() bool {
+	for _, c := range p.Children {
+		if !c.Hidden {
+			return true
+		}
+	}
+	return false
 }
 
 // Tree is the page tree of a Quarto project.
@@ -120,6 +143,7 @@ func Load(root string) (*Tree, error) {
 			Order:     fm.Order,
 			Draft:     fm.Draft,
 			Flags:     pageFlagsOf(src, fm),
+			Hidden:    isHidden(fm),
 			BadFences: !BalancedFences(src),
 		}
 		if p.Title == "" {
@@ -184,7 +208,19 @@ func Load(root string) (*Tree, error) {
 	t := &Tree{Root: root, Pages: groups["."]}
 	sortPages(t.Pages)
 	markPages(t.Pages, "")
+	hideEmptyDirs(t.Pages)
 	return t, nil
+}
+
+// hideEmptyDirs hides a synthetic directory node whose pages are all
+// hidden, since it would stand in the tree with nothing under it.
+func hideEmptyDirs(pages []*Page) {
+	for _, p := range pages {
+		hideEmptyDirs(p.Children)
+		if p.Path == "" && !p.HasVisibleChildren() {
+			p.Hidden = true
+		}
+	}
 }
 
 // ownMarker returns the emoji marker implied by a page's own name suffix, or

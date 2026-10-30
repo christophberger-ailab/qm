@@ -242,6 +242,9 @@ func (d *docTools) listPages() string {
 			if p.Draft {
 				b.WriteString(" (draft)")
 			}
+			if p.Hidden {
+				b.WriteString(" (hidden in the tree)")
+			}
 			b.WriteString("\n")
 			walk(p.Children, depth+1)
 		}

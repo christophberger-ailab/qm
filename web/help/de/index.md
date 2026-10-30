@@ -7,7 +7,7 @@ Alles läuft auf deinem eigenen Rechner. Der Seitenbaum und der Editor arbeiten 
 ## Inhalt
 
 - [Projekte öffnen](projects.md): `qm web` starten, ein Projekt öffnen und die Liste der zuletzt geöffneten Projekte nutzen.
-- [Der Seitenbaum](tree.md): Reihenfolge der Website, Drag and Drop, Seiten anlegen und löschen, Entwürfe, Statusmarken.
+- [Der Seitenbaum](tree.md): Reihenfolge der Website, Drag and Drop, Seiten anlegen und löschen, Entwürfe, Statusmarken, Seiten ausblenden.
 - [Eine Seite bearbeiten](editor.md): Autosave, Konflikte, Vim-Modus und Link-Vervollständigung.
 - [Die Bereiche neben dem Editor](panes.md): Vorschau-, Copyedit- und Hilfebereich ein- und ausblenden, tauschen und in der Größe ändern.
 - [Die Markdown-Vorschau](preview.md): was die Vorschau zeigt, Bilder, Zielgruppen und eigenes CSS.
