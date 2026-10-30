@@ -34,6 +34,18 @@ qm:
 
 Each mark is shown once per page, however many `==TODO==` the page holds.
 
+## Hiding pages
+
+A page with `hide: true` under `qm:` in its frontmatter is left out of the tree. The default is `false`. A hidden section page hides its whole branch. Hiding only affects the tree: the page is still rendered, and the [search](search.md) still finds it, so you can open it there and remove the setting again.
+
+```yaml
+---
+title: My page
+qm:
+  hide: true
+---
+```
+
 ## Reordering and moving
 
 Drag a page by its `⠿` handle.

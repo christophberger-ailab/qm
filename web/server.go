@@ -1005,9 +1005,10 @@ func (s *server) save(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, `<h2 class="content-title" id="content-title" hx-swap-oob="true">`)
 	s.render(w, "content-heading", struct{ Title, Path string }{title, rel})
 	fmt.Fprint(w, `</h2>`)
-	// The tree shows the title and the page's status flags, so a save
-	// that changes either has to refresh it.
+	// The tree shows the title and the page's status flags, and leaves
+	// hidden pages out, so a save that changes any of them has to refresh it.
 	if title != project.ParseFrontmatter(old).Title ||
+		project.IsHidden(body) != project.IsHidden(old) ||
 		!slices.Equal(project.PageFlags(body), project.PageFlags(old)) {
 		s.renderTreeOOB(w)
 	}

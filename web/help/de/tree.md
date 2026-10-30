@@ -34,6 +34,18 @@ qm:
 
 Jede Marke erscheint einmal pro Seite, egal wie viele `==TODO==` die Seite enthält.
 
+## Seiten ausblenden
+
+Eine Seite mit `hide: true` unter `qm:` im Frontmatter erscheint nicht im Baum. Standard ist `false`. Eine ausgeblendete Abschnittsseite blendet ihren ganzen Zweig aus. Das Ausblenden betrifft nur den Baum: Die Seite wird weiterhin gerendert, und die [Suche](search.md) findet sie, sodass du sie dort öffnen und die Einstellung wieder entfernen kannst.
+
+```yaml
+---
+title: Meine Seite
+qm:
+  hide: true
+---
+```
+
 ## Umordnen und Verschieben
 
 Ziehe eine Seite am Griff `⠿`.

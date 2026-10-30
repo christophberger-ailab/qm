@@ -143,6 +143,53 @@ func TestTreeShowsPageFlags(t *testing.T) {
 	}
 }
 
+// A page whose frontmatter says `qm: {hide: true}` is left out of the
+// tree, a section page with its whole branch.
+func TestTreeHidesPages(t *testing.T) {
+	srv, root := testServer(t)
+	page := "---\ntitle: Sketch\norder: 4\nqm:\n  hide: true\n---\n# Sketch\n"
+	if err := os.WriteFile(filepath.Join(root, "chapter2", "sketch.qmd"), []byte(page), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	body := get(t, srv, "/tree").Body.String()
+	if strings.Contains(body, `data-path="chapter2/sketch.qmd"`) {
+		t.Errorf("hidden sketch.qmd shown in the tree:\n%s", body)
+	}
+	if !strings.Contains(body, `data-path="chapter2/second.qmd"`) {
+		t.Errorf("second.qmd missing from the tree:\n%s", body)
+	}
+
+	section, err := os.ReadFile(filepath.Join(root, "chapter2", "index.qmd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	hidden := strings.Replace(string(section), "---\n", "---\nqm:\n  hide: true\n", 1)
+	if err := os.WriteFile(filepath.Join(root, "chapter2", "index.qmd"), []byte(hidden), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	body = get(t, srv, "/tree").Body.String()
+	if strings.Contains(body, `data-path="chapter2/`) {
+		t.Errorf("hidden section's branch shown in the tree:\n%s", body)
+	}
+}
+
+// Saving a page that is hidden or shown again refreshes the tree.
+func TestSaveRefreshesTreeOnHide(t *testing.T) {
+	srv, _ := testServer(t)
+	hidden := "---\ntitle: Second\norder: 1\nqm:\n  hide: true\n---\n# Second\n"
+	rec := post(t, srv, "/save", url.Values{"path": {"chapter2/second.qmd"}, "body": {hidden}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("save: status %d: %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), `hx-swap-oob="innerHTML:#tree"`) {
+		t.Errorf("tree not refreshed after the page was hidden:\n%s", rec.Body)
+	}
+	_, tree, _ := strings.Cut(rec.Body.String(), `hx-swap-oob="innerHTML:#tree"`)
+	if strings.Contains(tree, `data-path="chapter2/second.qmd"`) {
+		t.Errorf("refreshed tree still shows the hidden page:\n%s", tree)
+	}
+}
+
 // Saving a page that gains or loses a flag refreshes the tree, since the
 // save's own write keeps /watch from noticing.
 func TestSaveRefreshesTreeOnFlagChange(t *testing.T) {

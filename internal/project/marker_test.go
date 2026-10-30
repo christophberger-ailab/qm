@@ -168,3 +168,59 @@ func TestLoadFlags(t *testing.T) {
 		t.Errorf("Flags = %q, want %q", pg.Flags, want)
 	}
 }
+
+func TestLoadHidden(t *testing.T) {
+	root := t.TempDir()
+	pages := map[string]string{
+		"shown.qmd":           "---\ntitle: Shown\norder: 1\nqm:\n  hide: false\n---\n",
+		"secret.qmd":          "---\ntitle: Secret\norder: 2\nqm:\n  hide: true\n---\n",
+		"sec/index.qmd":       "---\ntitle: Sec\norder: 3\n---\n",
+		"sec/gone.qmd":        "---\ntitle: Gone\nqm:\n  hide: true\n---\n",
+		"loose/only.qmd":      "---\ntitle: Only\nqm:\n  hide: true\n---\n",
+		"mixed/hidden.qmd":    "---\ntitle: Hidden\nqm:\n  hide: true\n---\n",
+		"mixed/visible.qmd":   "---\ntitle: Visible\n---\n",
+		"plain/no-option.qmd": "---\ntitle: Plain\n---\n",
+	}
+	for name, content := range pages {
+		p := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tree, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for p, want := range map[string]bool{
+		"shown.qmd":           false,
+		"secret.qmd":          true,
+		"sec/index.qmd":       false,
+		"sec/gone.qmd":        true,
+		"mixed/visible.qmd":   false,
+		"plain/no-option.qmd": false,
+	} {
+		if got := tree.Find(p).Hidden; got != want {
+			t.Errorf("%s: Hidden = %v, want %v", p, got, want)
+		}
+	}
+	if tree.Find("sec/index.qmd").HasVisibleChildren() {
+		t.Error("sec/index.qmd has visible children, want none")
+	}
+	// A synthetic directory node goes with its pages when they are all
+	// hidden, and stays while one of them is shown.
+	dirs := map[string]bool{}
+	for _, p := range tree.Pages {
+		if p.Path == "" {
+			dirs[p.Dir] = p.Hidden
+		}
+	}
+	if !dirs["loose"] {
+		t.Error("loose/ shown although its only page is hidden")
+	}
+	if dirs["mixed"] {
+		t.Error("mixed/ hidden although one of its pages is shown")
+	}
+}
