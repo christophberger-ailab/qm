@@ -14,6 +14,7 @@
   --danger: #dc2626;
   --input-bg: #ffffff;
   --code-atom: #7c3aed;
+  --todo: #db2777;
   --diff-add: #e6ffec;
   --diff-add-fg: #116329;
   --diff-del: #ffebe9;
@@ -34,6 +35,7 @@
     --danger: #f87171;
     --input-bg: #1b1e24;
     --code-atom: #c4b5fd;
+    --todo: #f472b6;
     --diff-add: #12261e;
     --diff-add-fg: #7ee787;
     --diff-del: #2a1214;
@@ -1796,6 +1798,38 @@ li.CodeMirror-hint-active {
   margin: 0.3rem 0 0;
   color: var(--muted);
   font-size: 0.8rem;
+}
+
+/* ==TODO== in the editor, and the marker the preview puts at the same
+   spot (see markTodos in preview.js): one color for both, so a TODO is
+   found in either pane. The editor's mark is translucent for the same
+   reason as the copyedit marks below. */
+.cm-qm-todo {
+  background: color-mix(in srgb, var(--todo) 28%, transparent);
+  border-bottom: 2px solid var(--todo);
+  border-radius: 2px;
+}
+
+mark.qm-todo {
+  display: inline-block;
+  padding: 0 0.35em;
+  border-radius: 3px;
+  background: var(--todo);
+  color: var(--bg);
+  font-size: 0.75em;
+  font-weight: 700;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  vertical-align: 0.1em;
+}
+
+/* A TODO inside an HTML comment: the text it stands in does not render,
+   so the marker is outlined rather than filled. */
+mark.qm-todo-hidden {
+  background: color-mix(in srgb, var(--todo) 15%, transparent);
+  color: var(--todo);
+  border: 1px dashed var(--todo);
+  cursor: help;
 }
 
 .chat-suggestions {

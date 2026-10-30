@@ -17,6 +17,9 @@
 //   - a page written for one target group -- an `_FW` or `_POL` suffix on
 //     its name or on a folder above it -- is shown inside that group's
 //     Quarto div, the way the flattener wraps it (see targetGroupOf),
+//   - a `==TODO==` is shown as a marker in the editor's TODO color, also
+//     where it sits inside an HTML comment, which renders as nothing
+//     (see markTodos),
 //   - everything else is CommonMark/GFM as the embedded marked library reads
 //     it. Shortcodes, citations, and math stay as written.
 
@@ -821,6 +824,62 @@ function markSourceLines(root) {
   });
 }
 
+// TODO markers
+//
+// A `==TODO==` on a page is work left to do, and the editor paints it in a
+// color of its own (see editor.js). The preview marks the same spot in the
+// same color, so a TODO is found in either pane. Most TODOs are written
+// where no reader is meant to see them -- inside an HTML comment -- and a
+// comment renders as nothing; the marker goes where the comment stands
+// then, with the comment's text as its tooltip. The DOM is searched rather
+// than the source, since marked passes the text through unchanged and the
+// comments survive in the rendered HTML as comment nodes.
+var todoText = '==TODO==';
+
+function todoMarker(hidden, tip) {
+  var mark = document.createElement('mark');
+  mark.className = hidden ? 'qm-todo qm-todo-hidden' : 'qm-todo';
+  mark.textContent = 'TODO';
+  if (tip) {
+    mark.title = tip;
+  }
+  return mark;
+}
+
+// markTodos replaces every `==TODO==` in the text of root with a marker,
+// and puts a marker in front of every comment holding one, a marker per
+// TODO. It must run once the line comments are gone (see markSourceLines),
+// which would otherwise be taken for the page's own.
+function markTodos(root) {
+  var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_COMMENT);
+  var found = [];
+  while (walker.nextNode()) {
+    if (walker.currentNode.data.indexOf(todoText) >= 0) {
+      found.push(walker.currentNode);
+    }
+  }
+  found.forEach(function (node) {
+    var parts = node.data.split(todoText);
+    if (node.nodeType === Node.COMMENT_NODE) {
+      var tip = node.data.trim();
+      for (var i = 1; i < parts.length; i++) {
+        node.parentNode.insertBefore(todoMarker(true, tip), node);
+      }
+      return;
+    }
+    var frag = document.createDocumentFragment();
+    parts.forEach(function (part, i) {
+      if (i > 0) {
+        frag.appendChild(todoMarker(false, ''));
+      }
+      if (part !== '') {
+        frag.appendChild(document.createTextNode(part));
+      }
+    });
+    node.parentNode.replaceChild(frag, node);
+  });
+}
+
 // renderPreview fills el with the preview of the Quarto Markdown in text.
 // pagePath is the edited page's path relative to the project root: it is
 // what the image paths resolve against, and what says which target group
@@ -853,6 +912,7 @@ function renderPreview(el, text, pagePath) {
   resolveMedia(el, pagePath);
   captionFigures(el);
   markSourceLines(el); // after the figures, so a figure carries its line
+  markTodos(el);
   // After the source lines, so that the line marks are attributes that
   // move along with the blocks into a callout's body.
   buildCallouts(el);

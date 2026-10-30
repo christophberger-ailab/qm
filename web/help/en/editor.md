@@ -2,6 +2,10 @@
 
 Click a page in the [page tree](tree.md) to open it in the editor. The editor highlights the page's YAML frontmatter and Markdown.
 
+## TODO markers
+
+Every `==TODO==` on the page is highlighted in pink, also inside an HTML comment such as `<!-- ==TODO== check the numbers -->`. The [preview](preview.md) marks the same spot with a pink `TODO` marker, and the page tree marks the page with 🚧.
+
 ## Autosave
 
 Your changes are saved automatically a moment after you stop typing. Leaving a page, reloading, or closing the tab while an edit is unsaved asks for confirmation.

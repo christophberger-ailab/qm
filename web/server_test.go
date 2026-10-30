@@ -1308,3 +1308,25 @@ func TestRenameSectionRepointsOpenEditor(t *testing.T) {
 		t.Errorf("rename response is missing %q:\n%s", want, rec.Body)
 	}
 }
+
+// A ==TODO== is highlighted in the editor and marked at the same spot in
+// the preview, in one color, also inside an HTML comment. Both happen in
+// the browser; what a Go test can check is that the scripts and the
+// stylesheet still do it.
+func TestTodoHighlightedInEditorAndPreview(t *testing.T) {
+	for file, wants := range map[string][]string{
+		"assets/static/editor.js":  {"var todoOverlay", "cm.addOverlay(todoOverlay);", "return 'qm-todo';"},
+		"assets/static/preview.js": {"function markTodos(root)", "markTodos(el);", "Node.COMMENT_NODE"},
+		"assets/static/app.css":    {"--todo:", ".cm-qm-todo", "mark.qm-todo", "mark.qm-todo-hidden"},
+	} {
+		src, err := assets.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range wants {
+			if !strings.Contains(string(src), want) {
+				t.Errorf("%s does not mark ==TODO==, missing %q", file, want)
+			}
+		}
+	}
+}

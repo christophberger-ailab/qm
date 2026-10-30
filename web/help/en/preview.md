@@ -10,6 +10,10 @@ The preview is an approximation. It is drawn in the browser from your Markdown a
 - A heading's attribute block, such as `{.unnumbered}`, is dropped, because it directs the render and is not part of what the heading says. Headings inside code blocks are left alone.
 - A page written for one target group is previewed inside that group's div. This applies when the file name, or a folder above it, ends in `_FW` or `_POL` (the deepest name wins). The stylesheet then tints and marks the whole page, as it does a `::: fw` or `::: pol` block. The frontmatter stays outside the div.
 
+## TODO markers
+
+A `==TODO==` is shown as a filled pink `TODO` marker, in the same color the editor highlights it with. A TODO inside an HTML comment does not render, so the preview shows an outlined marker where the comment stands instead; hover it to read the comment.
+
 ## Images
 
 Images are loaded from your project.
