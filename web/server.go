@@ -81,9 +81,9 @@ func newServer(configFile string) (*server, error) {
 			}{parent, pages}
 		},
 		// renamable says whether the editor's heading offers to rename
-		// the page's file: index.qmd stands for its section instead.
+		// the page: the project's own index.qmd has no name to change.
 		"renamable": func(p string) bool {
-			return p != "index.qmd" && !strings.HasSuffix(p, "/index.qmd")
+			return p != "index.qmd"
 		},
 	}
 	tmpl, err := template.New("").Funcs(funcs).ParseFS(assets, "assets/templates/*.tmpl")
