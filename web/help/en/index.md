@@ -7,7 +7,7 @@ Everything runs on your own machine. The page tree and the editor work on the `.
 ## Contents
 
 - [Opening projects](projects.md): start `qm web`, open a project, and use the recent projects list.
-- [The page tree](tree.md): website order, drag and drop, creating and deleting pages, drafts.
+- [The page tree](tree.md): website order, drag and drop, creating and deleting pages, drafts, status marks.
 - [Editing a page](editor.md): autosave, conflicts, Vim mode, and link completion.
 - [The panes beside the editor](panes.md): show, hide, swap, and resize the preview, copyedit, and help panes.
 - [The Markdown preview](preview.md): what the preview shows, images, target groups, and custom CSS.

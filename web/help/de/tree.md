@@ -16,6 +16,24 @@ Der Attributblock einer Überschrift, etwa `{.unnumbered}`, wird aus dem Titel w
 
 Eine Seite mit `draft: true` im Frontmatter wird ausgegraut. Sie gehört zum Projekt, aber nicht zu dem, was ein Rendering veröffentlicht. Du kannst sie weiterhin öffnen, verschieben und durchsuchen.
 
+## Statusmarken
+
+Eine Seite kann nach ihrem Titel Statusmarken tragen:
+
+- 🚧 zu erledigen: `todo: true` unter `qm:` im Frontmatter, oder der Text `==TODO==` irgendwo in der Seite, auch in einem HTML-Kommentar.
+- 👀 zu prüfen: `review: true` unter `qm:` im Frontmatter.
+
+```yaml
+---
+title: Meine Seite
+qm:
+  todo: true
+  review: true
+---
+```
+
+Jede Marke erscheint einmal pro Seite, egal wie viele `==TODO==` die Seite enthält.
+
 ## Umordnen und Verschieben
 
 Ziehe eine Seite am Griff `⠿`.

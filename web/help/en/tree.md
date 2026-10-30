@@ -16,6 +16,24 @@ A heading's own attribute block, such as `{.unnumbered}`, is dropped from the ti
 
 A page with `draft: true` in its frontmatter is greyed out. It is part of the project but not part of what a render publishes. You can still open, move, and search it.
 
+## Status marks
+
+A page can carry status marks after its title:
+
+- 🚧 to do: `todo: true` under `qm:` in the frontmatter, or the text `==TODO==` anywhere in the page, even inside an HTML comment.
+- 👀 to review: `review: true` under `qm:` in the frontmatter.
+
+```yaml
+---
+title: My page
+qm:
+  todo: true
+  review: true
+---
+```
+
+Each mark is shown once per page, however many `==TODO==` the page holds.
+
 ## Reordering and moving
 
 Drag a page by its `⠿` handle.
