@@ -3,6 +3,7 @@ package project
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -114,5 +115,56 @@ func TestLoadHeadingFallback(t *testing.T) {
 		if pg.Title != w {
 			t.Errorf("%s title = %q, want %q", p, pg.Title, w)
 		}
+	}
+}
+
+func TestPageFlags(t *testing.T) {
+	todo, review := "\U0001F6A7", "\U0001F440"
+	cases := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{"none", "---\ntitle: A\n---\n# A\n", nil},
+		{"no frontmatter", "# A\n", nil},
+		{"todo", "---\nqm:\n  todo: true\n---\n", []string{todo}},
+		{"review", "---\nqm:\n  review: true\n---\n", []string{review}},
+		{"both", "---\nqm:\n  review: true\n  todo: true\n---\n", []string{todo, review}},
+		{"false", "---\nqm:\n  todo: false\n  review: false\n---\n", nil},
+		{"not a bool", "---\nqm:\n  todo: yes please\n---\n", nil},
+		{"unknown key", "---\nqm:\n  later: true\n---\n", nil},
+		{"text", "# A\n\nSome ==TODO== here.\n", []string{todo}},
+		{"text in comment", "# A\n\n<!-- ==TODO== fix -->\n", []string{todo}},
+		{"text twice and key", "---\nqm:\n  todo: true\n---\n==TODO== ==TODO==\n", []string{todo}},
+		{"text and review", "---\nqm:\n  review: true\n---\n==TODO==\n", []string{todo, review}},
+		{"lowercase text", "==todo==\n", nil},
+	}
+	for _, c := range cases {
+		got := PageFlags([]byte(c.src))
+		if !slices.Equal(got, c.want) {
+			t.Errorf("%s: PageFlags = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestLoadFlags(t *testing.T) {
+	root := t.TempDir()
+	src := "---\ntitle: Flagged\norder: 1\nqm:\n  review: true\n---\n# Flagged\n<!-- ==TODO== -->\n"
+	if err := os.WriteFile(filepath.Join(root, "flagged.qmd"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tree, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pg := tree.Find("flagged.qmd")
+	if pg == nil {
+		t.Fatal("Find(flagged.qmd) = nil")
+	}
+	if pg.Title != "Flagged" || pg.Order == nil || *pg.Order != 1 {
+		t.Errorf("title/order = %q/%v, want Flagged/1", pg.Title, pg.Order)
+	}
+	if want := []string{"\U0001F6A7", "\U0001F440"}; !slices.Equal(pg.Flags, want) {
+		t.Errorf("Flags = %q, want %q", pg.Flags, want)
 	}
 }

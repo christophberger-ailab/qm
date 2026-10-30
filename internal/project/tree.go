@@ -1,6 +1,7 @@
 package project
 
 import (
+	"bytes"
 	"io/fs"
 	"os"
 	"path"
@@ -18,9 +19,10 @@ type Page struct {
 	Dir       string
 	Title     string
 	Order     *int
-	BadFences bool   // the file has unmatched Quarto block fences
-	Draft     bool   // the page's frontmatter says `draft: true`
-	Marker    string // emoji marker from a _FW/_POL suffix (own or inherited)
+	BadFences bool     // the file has unmatched Quarto block fences
+	Draft     bool     // the page's frontmatter says `draft: true`
+	Marker    string   // emoji marker from a _FW/_POL suffix (own or inherited)
+	Flags     []string // status emojis from the qm: frontmatter and the body, see PageFlags
 	Children  []*Page
 }
 
@@ -29,6 +31,36 @@ const (
 	markerFW  = "\U0001F692" // 🚒
 	markerPOL = "\U0001F693" // 🚔
 )
+
+// pageFlags lists the status flags a page can carry, in the order the tree
+// shows them. A flag is set by `qm: {<Key>: true}` in the frontmatter, or
+// by Text appearing anywhere in the page when Text is not empty. A new
+// flag is one more entry here.
+var pageFlags = []struct {
+	Key   string
+	Emoji string
+	Text  string
+}{
+	{Key: "todo", Emoji: "\U0001F6A7", Text: "==TODO=="}, // 🚧
+	{Key: "review", Emoji: "\U0001F440"},                 // 👀
+}
+
+// PageFlags returns the emojis of the status flags src carries, each at
+// most once, in the order of pageFlags. Text markers are matched in the
+// raw file, so one inside an HTML comment counts too.
+func PageFlags(src []byte) []string {
+	return pageFlagsOf(src, ParseFrontmatter(src))
+}
+
+func pageFlagsOf(src []byte, fm FrontMatter) []string {
+	var flags []string
+	for _, f := range pageFlags {
+		if fm.QM[f.Key] == true || f.Text != "" && bytes.Contains(src, []byte(f.Text)) {
+			flags = append(flags, f.Emoji)
+		}
+	}
+	return flags
+}
 
 // Tree is the page tree of a Quarto project.
 type Tree struct {
@@ -87,6 +119,7 @@ func Load(root string) (*Tree, error) {
 			Title:     fm.Title,
 			Order:     fm.Order,
 			Draft:     fm.Draft,
+			Flags:     pageFlagsOf(src, fm),
 			BadFences: !BalancedFences(src),
 		}
 		if p.Title == "" {

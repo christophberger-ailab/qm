@@ -53,6 +53,9 @@ constraints:
       1-3: A Quarto span in a title is shown as the symbol its class carries followed by the span's text, so `# [Polizei-]{.pol}[Feuerwehr-]{.fw}Spickzettel` shows as "🚔Polizei-🚒Feuerwehr-Spickzettel"
       1-4: The symbols are read from the `.quarto.<class>:before { content: "..." }` rules of the active custom preview stylesheet, so the tree and the preview mark a class alike and an edit to the stylesheet moves both; a span whose classes no rule names is shown as written
       1-5: 'A page whose frontmatter says `draft: true` is shown greyed out in the tree, since it is part of the project but not part of what a render publishes; the page is listed, opened, moved, and searched like any other'
+      1-6: 'A page whose frontmatter sets `qm: {todo: true}`, or whose file contains `==TODO==` anywhere -- inside an HTML comment too -- is marked 🚧 in the tree; one whose frontmatter sets `qm: {review: true}` is marked 👀'
+      1-6-1: Each mark is shown at most once per page, however many reasons the page gives for it; a page with both shows both, 🚧 before 👀
+      1-6-2: Saving a page that gains or loses a mark refreshes the tree at once
       2: Dragging a page updates the `order` frontmatter of the affected pages and the Markdown heading levels of the moved page
       2-1: A drag that moves a page to another parent renames its file on disk; if the page open in the editor is the moved one, or sits inside a moved section, the editor is re-pointed at the new path, so autosave keeps writing to the file instead of to a path that no longer exists
       2-2: The re-pointing replaces the editor's path, heading, and reload button only, never its text, which may hold edits that are not on disk yet; an autosave that the rename had already broken is retried at the new path

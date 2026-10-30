@@ -359,6 +359,7 @@
     {{if .Path}}<span class="drag-handle" title="Drag to move">⠿</span>{{end}}
     <span class="num"></span>
     {{if .Marker}}<span class="marker">{{.Marker}}</span>{{end}}
+    {{range .Flags}}<span class="marker flag">{{.}}</span>{{end}}
     {{if .Path}}<a class="title" href="#" hx-get="/content?path={{.Path}}" hx-target="#content">{{.Title}}</a>
     <button class="add" title="Add child page" hx-post="/create" hx-prompt="Name of the new page (without .qmd)" hx-vals='{"parent":"{{.Path}}"}' hx-target="#tree" hx-swap="innerHTML">＋</button>
     <button class="delete" title="Move to trash" hx-post="/delete" hx-vals='{"path":"{{.Path}}"}' hx-target="#tree" hx-swap="innerHTML" hx-confirm="Move {{.Path}} to the trash?">🗑</button>

@@ -126,6 +126,40 @@ func TestTreeMarksDrafts(t *testing.T) {
 	}
 }
 
+// A page flagged by its `qm:` frontmatter, or by a ==TODO== anywhere in
+// it, carries each flag's emoji once in the tree.
+func TestTreeShowsPageFlags(t *testing.T) {
+	srv, root := testServer(t)
+	page := "---\ntitle: Sketch\norder: 4\nqm:\n  todo: true\n  review: true\n---\n# Sketch\n<!-- ==TODO== -->\n==TODO==\n"
+	if err := os.WriteFile(filepath.Join(root, "chapter2", "sketch.qmd"), []byte(page), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	body := get(t, srv, "/tree").Body.String()
+	if n := strings.Count(body, `<span class="marker flag">🚧</span>`); n != 1 {
+		t.Errorf("🚧 shown %d times, want 1:\n%s", n, body)
+	}
+	if n := strings.Count(body, `<span class="marker flag">👀</span>`); n != 1 {
+		t.Errorf("👀 shown %d times, want 1:\n%s", n, body)
+	}
+}
+
+// Saving a page that gains or loses a flag refreshes the tree, since the
+// save's own write keeps /watch from noticing.
+func TestSaveRefreshesTreeOnFlagChange(t *testing.T) {
+	srv, _ := testServer(t)
+	flagged := "---\ntitle: Second\norder: 1\n---\n# Second\n\n==TODO==\n"
+	rec := post(t, srv, "/save", url.Values{"path": {"chapter2/second.qmd"}, "body": {flagged}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("save: status %d: %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), `hx-swap-oob="innerHTML:#tree"`) {
+		t.Errorf("tree not refreshed after a flag was added:\n%s", rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), "🚧") {
+		t.Errorf("refreshed tree missing 🚧:\n%s", rec.Body)
+	}
+}
+
 // A page written for one target group -- an `_FW` or `_POL` suffix on its
 // name or on a folder above it -- is previewed inside that group's Quarto
 // div, so the custom stylesheet tints and marks the whole page the way it

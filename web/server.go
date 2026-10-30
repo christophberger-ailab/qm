@@ -1004,7 +1004,10 @@ func (s *server) save(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, `<h2 class="content-title" id="content-title" hx-swap-oob="true">`)
 	s.render(w, "content-heading", struct{ Title, Path string }{title, rel})
 	fmt.Fprint(w, `</h2>`)
-	if title != project.ParseFrontmatter(old).Title {
+	// The tree shows the title and the page's status flags, so a save
+	// that changes either has to refresh it.
+	if title != project.ParseFrontmatter(old).Title ||
+		!slices.Equal(project.PageFlags(body), project.PageFlags(old)) {
 		s.renderTreeOOB(w)
 	}
 	// Our own write must not look like an outside change to /watch.
