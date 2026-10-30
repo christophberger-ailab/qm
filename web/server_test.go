@@ -1280,14 +1280,31 @@ func TestRenameRefusesTakenName(t *testing.T) {
 	}
 }
 
-// The heading offers the rename for a page with a name of its own, and not
-// for a section's index.qmd.
+// The heading offers the rename for every page but the project's own
+// index.qmd -- section pages, the way pages are created, included.
 func TestHeadingOffersRename(t *testing.T) {
 	srv, _ := testServer(t)
-	if rec := get(t, srv, "/content?path=chapter2/second.qmd"); !strings.Contains(rec.Body.String(), `class="rename-file"`) {
-		t.Errorf("no rename button for a page:\n%s", rec.Body)
+	for _, page := range []string{"chapter2/second.qmd", "chapter2/index.qmd"} {
+		if rec := get(t, srv, "/content?path="+page); !strings.Contains(rec.Body.String(), `class="rename-file"`) {
+			t.Errorf("no rename button for %s:\n%s", page, rec.Body)
+		}
 	}
-	if rec := get(t, srv, "/content?path=chapter2/index.qmd"); strings.Contains(rec.Body.String(), `class="rename-file"`) {
-		t.Error("rename button offered for a section's index.qmd")
+	if rec := get(t, srv, "/content?path=index.qmd"); strings.Contains(rec.Body.String(), `class="rename-file"`) {
+		t.Error("rename button offered for the project's own index.qmd")
+	}
+}
+
+// Renaming the open section page renames its directory, and the editor
+// follows the page into it.
+func TestRenameSectionRepointsOpenEditor(t *testing.T) {
+	srv, _ := testServer(t)
+	get(t, srv, "/content?path=chapter2/index.qmd")
+	rec := post(t, srv, "/rename", url.Values{
+		"path": {"chapter2/index.qmd"}, "name": {"kapitel2"},
+		"open": {"chapter2/index.qmd"},
+	})
+	want := `<input type="hidden" id="content-path" name="path" value="kapitel2/index.qmd" hx-swap-oob="true">`
+	if !strings.Contains(rec.Body.String(), want) {
+		t.Errorf("rename response is missing %q:\n%s", want, rec.Body)
 	}
 }

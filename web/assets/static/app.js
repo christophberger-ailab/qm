@@ -2152,9 +2152,13 @@ function saveNow(force) {
 
 // File renaming
 //
-// The pencil after the path in the editor's heading turns the file name,
-// and only that, into a field; the directory stays text, since a rename
-// never moves a page out of its directory. Enter renames the file; Esc, or
+// The pencil after the path in the editor's heading turns the page's name,
+// and only that, into a field; the rest of the path stays text, since a
+// rename never moves a page out of its directory. A page's name is its
+// file name, except for a section page -- name/index.qmd, which is how
+// pages are created -- whose name is its directory's: there the field
+// stands in for the directory and /index.qmd stays text after it. Enter
+// renames the page; Esc, or
 // leaving the field, gives up and puts the path back as it was. The server
 // re-points the editor at the new path the way a move does, and answers a
 // name it cannot take -- one already taken above all -- with the tree's
@@ -2166,21 +2170,24 @@ function startRename(button, typed, problem) {
     return;
   }
   var full = span.dataset.path;
-  var cut = full.lastIndexOf('/') + 1;
-  var name = full.slice(cut);
+  var tail = /\/index\.qmd$/.test(full) ? '/index.qmd' : '';
+  var head = full.slice(0, full.length - tail.length);
+  var cut = head.lastIndexOf('/') + 1;
+  var name = head.slice(cut);
   var input = document.createElement('input');
   input.type = 'text';
   input.className = 'rename-input';
   input.value = typed || name;
   input.spellcheck = false;
-  input.setAttribute('aria-label', 'File name');
+  input.setAttribute('aria-label', tail ? 'Folder name' : 'File name');
   input.size = Math.max(input.value.length + 2, 12);
   if (problem) {
     input.classList.add('invalid');
     input.title = problem;
   }
-  span.textContent = full.slice(0, cut);
+  span.textContent = head.slice(0, cut);
   span.appendChild(input);
+  span.appendChild(document.createTextNode(tail));
   button.hidden = true;
   input.focus();
   // The name without its extension is selected, so typing replaces the

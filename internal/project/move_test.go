@@ -379,7 +379,9 @@ func TestRenamePageRefuses(t *testing.T) {
 		{"chapter2/second.qmd", "_hidden.qmd"}, // the tree skips it
 		{"chapter2/second.qmd", ".qmd"},        // no name
 		{"chapter2/second.qmd", "index.qmd"},   // a section's own page
-		{"chapter2/index.qmd", "zwei.qmd"},     // a section's own page
+		{"index.qmd", "home.qmd"},              // the project's own page
+		{"chapter2/index.qmd", "chapter3"},     // taken by a section and a file
+		{"chapter3/deep/index.qmd", "another"}, // taken by a file
 		{"chapter2/nope.qmd", "zwei.qmd"},      // no such page
 	} {
 		root := writeFixture(t)
@@ -395,5 +397,27 @@ func TestRenamePageToItsOwnName(t *testing.T) {
 	renames, err := load(t, root).RenamePage("chapter2/second.qmd", "second.qmd")
 	if err != nil || len(renames) != 0 {
 		t.Errorf("renames = %v, err = %v; want none and no error", renames, err)
+	}
+}
+
+// A section page is named by its directory, which is renamed with the
+// section's pages in it; index.qmd keeps its name.
+func TestRenameSection(t *testing.T) {
+	root := writeFixture(t)
+	renames, err := load(t, root).RenamePage("chapter2/index.qmd", "kapitel2.qmd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for from, want := range map[string]string{
+		"chapter2/index.qmd":  "kapitel2/index.qmd",
+		"chapter2/second.qmd": "kapitel2/second.qmd",
+	} {
+		if got := Remap(renames, from); got != want {
+			t.Errorf("Remap(%q) = %q, want %q", from, got, want)
+		}
+	}
+	p := load(t, root).Find("kapitel2/index.qmd")
+	if p == nil || len(p.Children) != 3 || order(t, p) != 3 {
+		t.Fatalf("renamed section lost its children or place: %+v", p)
 	}
 }

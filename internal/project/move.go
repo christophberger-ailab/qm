@@ -245,13 +245,16 @@ func (t *Tree) DeletePage(p string) error {
 	return trash(t.Root, victims)
 }
 
-// RenamePage gives the page at p the file name name, in the directory it
-// is in. A missing .qmd extension is added. A page's children directory
-// (name/ next to name.qmd) is renamed along with it, so the children stay
-// with their page. index.qmd stands for its directory's section rather
-// than for a name of its own, so it is neither renamed nor a name a page
-// can take. The page's frontmatter and headings are left as they are: the
-// page keeps its place in the tree.
+// RenamePage gives the page at p a new name in the directory it is in.
+//
+// A page in a file of its own (name.qmd) gets the file name name; a
+// missing .qmd extension is added, and its children directory (name/ next
+// to name.qmd) is renamed along with it, so the children stay with their
+// page. A section page (name/index.qmd), which is how pages are created,
+// is named by its directory: the directory is renamed, taking the section's
+// pages along, and index.qmd keeps its name. The project's own index.qmd
+// has no name to change. The page's frontmatter and headings are left as
+// they are: the page keeps its place in the tree.
 //
 // It returns the renames it performed, like Move; renaming a page to the
 // name it has renames nothing.
@@ -260,36 +263,41 @@ func (t *Tree) RenamePage(p, name string) ([]Rename, error) {
 	if sp == nil {
 		return nil, fmt.Errorf("page %s not found", p)
 	}
-	if path.Base(p) == "index.qmd" {
-		return nil, fmt.Errorf("%s stands for its section and cannot be renamed", p)
+	section := path.Base(p) == "index.qmd"
+	if section && path.Dir(p) == "." {
+		return nil, fmt.Errorf("the project's own index.qmd cannot be renamed")
 	}
-	name = strings.TrimSpace(name)
-	if !strings.HasSuffix(name, ".qmd") {
-		name += ".qmd"
+	stem := strings.TrimSuffix(strings.TrimSpace(name), ".qmd")
+	if stem == "" || strings.ContainsAny(stem, `/\`) || strings.HasPrefix(stem, "_") || strings.HasPrefix(stem, ".") {
+		return nil, fmt.Errorf("invalid name %q", name)
 	}
-	stem := strings.TrimSuffix(name, ".qmd")
-	if stem == "" || strings.ContainsAny(name, `/\`) || strings.HasPrefix(name, "_") || strings.HasPrefix(name, ".") {
-		return nil, fmt.Errorf("invalid file name %q", name)
-	}
-	if name == "index.qmd" {
+	if stem == "index" {
 		return nil, fmt.Errorf("index.qmd is reserved for a section's own page")
 	}
-	dir := path.Dir(p)
-	newPath := join(dir, name)
-	if newPath == p {
+
+	var renames []Rename
+	var newDir string // the children directory the new name implies
+	if section {
+		dir := path.Dir(p)
+		newDir = join(path.Dir(dir), stem)
+		renames = []Rename{{dir, newDir}}
+	} else {
+		dir := path.Dir(p)
+		newDir = join(dir, stem)
+		renames = []Rename{{p, newDir + ".qmd"}}
+		if fi, err := os.Stat(t.abs(sp.Dir)); err == nil && fi.IsDir() {
+			renames = append(renames, Rename{sp.Dir, newDir})
+		}
+	}
+	if renames[0].To == renames[0].From {
 		return nil, nil
 	}
-
-	renames := []Rename{{p, newPath}}
-	if fi, err := os.Stat(t.abs(sp.Dir)); err == nil && fi.IsDir() {
-		renames = append(renames, Rename{sp.Dir, join(dir, stem)})
-	}
-	// The children directory the new name implies is checked even when the
-	// page has none to bring: one already there would make the renamed
-	// page the section of pages that are not its children.
-	taken := []Rename{renames[0], {sp.Dir, join(dir, stem)}}
-	for _, r := range taken {
-		// A rename that changes only the case finds the file itself on a
+	// Both names a page can go by are checked, whichever the page uses: a
+	// directory already there would make a renamed file the section of
+	// pages that are not its children, and a file already there would
+	// compete with a renamed section for the same name.
+	for _, r := range []Rename{{sp.Dir, newDir}, {p, newDir + ".qmd"}} {
+		// A rename that changes only the case finds the page itself on a
 		// case-insensitive file system; that is not a collision.
 		if to, err := os.Stat(t.abs(r.To)); err == nil {
 			if from, err := os.Stat(t.abs(r.From)); err != nil || !os.SameFile(from, to) {

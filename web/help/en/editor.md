@@ -15,7 +15,8 @@ The heading above the editor shows the page's path. The `✎` button after it tu
 - If the page has child pages in a folder of the same name, that folder is renamed too, so the children stay with it.
 - A name that is already taken is refused, and the field stays open so you can correct it.
 - The editor follows the file to its new name. Your unsaved text stays untouched, and autosave keeps writing to the right file.
-- A section's `index.qmd` stands for its folder and cannot be renamed here.
+- A page stored as `name/index.qmd`, which is how new pages are created, is named by its folder. For such a page the field holds the folder name, `/index.qmd` stays as it is, and the folder is renamed together with the pages inside it.
+- The project's own top-level `index.qmd` cannot be renamed.
 
 ## Moves while you edit
 
