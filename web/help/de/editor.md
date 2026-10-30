@@ -41,6 +41,20 @@ Wurde die Datei außerhalb des Browsers so geändert, dass der Baum es nicht ber
 
 Die Schaltfläche `⌨ Vim Mode` unter dem Editor schaltet die Vim-Tastenbelegung ein und aus. Sie ist standardmäßig aus, und deine Wahl wird gemerkt. Im Vim-Modus speichert `:w` die Seite sofort, statt auf das Autosave zu warten.
 
+## Kommentare
+
+Markiere Text, und rechts neben dem Editor erscheint in einer schmalen Leiste ein `+` auf Höhe der Markierung. Klicke darauf oder drücke `Strg-Alt-M`, um die Markierung zu kommentieren. Zwei HTML-Kommentare werden um sie herum geschrieben, und der Cursor steht dort, wo du den Kommentar eintippst:
+
+```
+<!-- << Dein Kommentar -->der markierte Text<!-- >> -->
+```
+
+- `<<` öffnet die kommentierte Stelle und enthält den Kommentar, `>>` schließt sie. Quarto lässt HTML-Kommentare weg, daher erscheinen Kommentare nie im gerenderten Ergebnis.
+- Leerzeichen und Zeilenumbrüche am Rand der Markierung bleiben außerhalb der Stelle, ebenso eine Überschriften-, Zitat- oder Listenmarke davor.
+- Im Vim-Modus landest du im Einfügemodus und kannst gleich tippen.
+- `Strg-Z` entfernt einen gerade hinzugefügten Kommentar.
+- Die [Vorschau](preview.md) hebt die Stelle hervor und zeigt den Kommentar, wenn du mit der Maus darüberfährst.
+
 ## Vervollständigung von Links und Bildern
 
 Wenn du das Ziel eines Markdown-Links tippst, bietet ein Popup unter dem Cursor passende Einträge an.

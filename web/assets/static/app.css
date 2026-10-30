@@ -19,6 +19,7 @@
   --diff-add-fg: #116329;
   --diff-del: #ffebe9;
   --diff-del-fg: #a40e26;
+  --comment: #ca8a04;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -40,6 +41,7 @@
     --diff-add-fg: #7ee787;
     --diff-del: #2a1214;
     --diff-del-fg: #ffa198;
+    --comment: #facc15;
   }
 }
 
@@ -2144,4 +2146,58 @@ mark.qm-todo-hidden {
   align-items: center;
   gap: 0.4rem;
   font-size: 0.85rem;
+}
+
+/* Comments: the editor and the rail beside it, where a "+" stands level
+   with the selection (see mountCommentRail in editor.js), and the commented
+   passages in the preview (see markComments in preview.js). */
+.editor-row {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: 0.25rem;
+}
+
+.editor-row > .CodeMirror {
+  min-width: 0;
+  height: auto;
+}
+
+.comment-rail {
+  position: relative;
+  flex: none;
+  width: 1.6rem;
+  border-left: 1px solid var(--border);
+}
+
+.comment-add {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--comment);
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--comment);
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.comment-add:hover {
+  background: var(--comment);
+  color: var(--bg);
+}
+
+.comment-add[hidden] {
+  display: none;
+}
+
+.markdown-preview .qm-comment {
+  background: color-mix(in srgb, var(--comment) 22%, transparent);
+  border-bottom: 2px solid var(--comment);
+  cursor: pointer;
 }
