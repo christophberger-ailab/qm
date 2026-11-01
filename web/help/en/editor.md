@@ -41,6 +41,20 @@ If the file was changed outside the browser in a way the tree cannot account for
 
 The `⌨ Vim Mode` button below the editor switches Vim keybindings on and off. It is off by default and your choice is remembered. In Vim mode, `:w` saves the page immediately instead of waiting for autosave.
 
+## Comments
+
+Select some text and a `+` appears in the narrow rail to the right of the editor, level with the selection. Click it, or press `Ctrl-Alt-M`, to comment on the selection. Two HTML comments are written around it, and the cursor is placed where you type the comment:
+
+```
+<!-- << Your comment goes here -->the selected text<!-- >> -->
+```
+
+- `<<` opens the commented passage and holds the comment, `>>` closes it. Quarto drops HTML comments, so comments never show up in a render.
+- Spaces and line breaks at the ends of the selection stay outside the passage, and so does a heading, quote, or list marker in front of it.
+- In Vim mode you land in Insert mode, ready to type.
+- `Ctrl-Z` removes a comment you just added.
+- The [preview](preview.md) highlights the passage and shows the comment when you hover over it.
+
 ## Link and image completion
 
 When you type the destination of a Markdown link, a popup below the cursor offers matching entries.

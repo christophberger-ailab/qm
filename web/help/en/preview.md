@@ -26,6 +26,10 @@ Images are loaded from your project.
 - Double-click an image to open it in your [image editor](external-editor.md). When you save in that program, the preview picks up the new version within a couple of seconds.
 - `↻ Reload` shows images as they are on disk, even if you replaced one under the same name.
 
+## Comments
+
+A passage commented in the [editor](editor.md) is highlighted, also when it runs over several paragraphs. Hover over it to read the comment; click it to put the editor's cursor at the start of the comment, ready to edit it. A comment written inside code is shown as code.
+
 ## Scrolling
 
 The editor and the preview scroll together: moving either one brings the other to the same part of the page. The preview also stays with the editor while you type.

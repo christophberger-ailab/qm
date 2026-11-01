@@ -14,6 +14,8 @@
 //   - an image standing alone in a paragraph becomes a figure with its alt
 //     text as the caption below it, the way Pandoc's implicit figures --
 //     which Quarto builds on -- come out (see captionFigures),
+//   - a passage between a `<!-- << comment -->` and a `<!-- >> -->` is
+//     highlighted, with the comment as its tooltip (see markComments),
 //   - a page written for one target group -- an `_FW` or `_POL` suffix on
 //     its name or on a folder above it -- is shown inside that group's
 //     Quarto div, the way the flattener wraps it (see targetGroupOf),
@@ -429,6 +431,251 @@ function captionFigures(root) {
   });
 }
 
+// Comments
+//
+// A comment on a passage is a pair of HTML comments around it:
+//
+//   <!-- << The comment itself -->the passage<!-- >> -->
+//
+// The `<<` comment opens the passage and carries the comment's text, the
+// `>>` comment closes it. Being HTML comments, both are dropped by Quarto,
+// so a commented page renders as if it had none. The preview shows the
+// passage highlighted, with the comment as its tooltip (see markComments),
+// and the editor writes the pair around a selection (see editor.js).
+//
+// A Pandoc attribute block may follow either marker, ahead of the text:
+//
+//   <!-- << {#c1 author="ana" date="2026-10-30"} The comment -->...<!-- >> {#c1} -->
+//
+// None is written yet. It is room for what comments by more than one
+// person will need -- who wrote one and when, and an id that pairs the two
+// ends when passages commented by different people overlap -- so comments
+// written today stay valid once those are added. A closing marker with an
+// id closes the open passage with that id; one without closes the passage
+// opened last.
+
+// parseCommentMarker reads the text of an HTML comment -- what lies
+// between `<!--` and `-->` -- and returns the comment marker it is, or null
+// when it is an ordinary comment. textAt is where the comment's own text
+// starts in data, after the marker, its attributes, and one space.
+function parseCommentMarker(data) {
+  var m = /^\s*(<<|>>)[ \t]?/.exec(data);
+  if (!m) {
+    return null;
+  }
+  var at = m[0].length;
+  var parsed = { id: '', keys: {} };
+  var attrs = /^[ \t]*\{([^{}]*)\}[ \t]?/.exec(data.slice(at));
+  if (attrs) {
+    parsed = parseAttrs(attrs[1]);
+    at += attrs[0].length;
+  }
+  return {
+    kind: m[1] === '<<' ? 'start' : 'end',
+    id: parsed.id,
+    author: parsed.keys.author || '',
+    date: parsed.keys.date || '',
+    text: data.slice(at).trim(),
+    textAt: at
+  };
+}
+
+// commentStart and commentEnd spell the two markers out, the start as the
+// text before and after the comment's own, so the editor can put the
+// cursor between them. meta may name an id, an author, and a date; left
+// empty, the markers carry no attribute block at all.
+function commentAttrs(meta) {
+  var attrs = [];
+  if (meta && meta.id) {
+    attrs.push('#' + meta.id);
+  }
+  ['author', 'date'].forEach(function (key) {
+    if (meta && meta[key]) {
+      attrs.push(key + '="' + String(meta[key]).replace(/"/g, "'") + '"');
+    }
+  });
+  return attrs.length ? '{' + attrs.join(' ') + '} ' : '';
+}
+
+function commentStart(meta) {
+  return { before: '<!-- << ' + commentAttrs(meta), after: ' -->' };
+}
+
+function commentEnd(meta) {
+  return '<!-- >> ' + commentAttrs(meta) + '-->';
+}
+
+// maskCode blanks out what Markdown reads as code -- fenced code blocks and
+// inline code spans -- and the first frontLines lines, keeping every
+// offset where it was, so a comment written inside code is not taken for
+// one. Only the text left over becomes HTML comments in the preview.
+function maskCode(text, frontLines) {
+  var fence = null;
+  function blank(s) {
+    return s.replace(/[^\n]/g, ' ');
+  }
+  return text.split('\n').map(function (line, n) {
+    if (n < frontLines) {
+      return blank(line);
+    }
+    var code = line.match(codeFence);
+    if (fence !== null) {
+      if (code && code[1].charAt(0) === fence.charAt(0) &&
+        code[1].length >= fence.length && code[2].trim() === '') {
+        fence = null;
+      }
+      return blank(line);
+    }
+    if (code) {
+      fence = code[1];
+      return blank(line);
+    }
+    return line.replace(/(`+)[\s\S]*?\1/g, blank);
+  }).join('\n');
+}
+
+// findCommentMarkers lists the comment markers of a page in the order they
+// stand, each with where it sits in text: from and to around the whole
+// HTML comment, textFrom where the comment's own text starts. It is the
+// order the preview meets them in, which is what ties a highlight there to
+// its marker here.
+function findCommentMarkers(text) {
+  var masked = maskCode(text, splitFrontmatter(text).offset);
+  var found = [];
+  var re = /<!--([\s\S]*?)-->/g;
+  var m;
+  while ((m = re.exec(masked)) !== null) {
+    var marker = parseCommentMarker(text.slice(m.index + 4, m.index + m[0].length - 3));
+    if (marker) {
+      marker.from = m.index;
+      marker.to = m.index + m[0].length;
+      marker.textFrom = m.index + 4 + marker.textAt;
+      found.push(marker);
+    }
+  }
+  return found;
+}
+
+// pairCommentMarkers matches each closing marker with the start it closes,
+// setting start.end and end.start: the one with the same id, or, without
+// an id, the passage opened last. A marker without a partner is left
+// unpaired.
+function pairCommentMarkers(markers) {
+  var open = [];
+  markers.forEach(function (marker) {
+    if (marker.kind === 'start') {
+      open.push(marker);
+      return;
+    }
+    for (var i = open.length - 1; i >= 0; i--) {
+      if (!marker.id || open[i].id === marker.id) {
+        open[i].end = marker;
+        marker.start = open[i];
+        open.splice(i, 1);
+        return;
+      }
+    }
+  });
+}
+
+// unblockComments keeps a comment marker at the start of a line from
+// turning the line into an HTML block. CommonMark reads a line that opens
+// with `<!--` as raw HTML, the rest of it included, so the passage after a
+// starting marker -- `<!-- << Check -->**Total** cost` -- would lose its
+// Markdown and its paragraph. A zero-width space in front makes the line
+// an ordinary paragraph line again, holding the marker as inline HTML. A
+// marker alone on its line is left as it is: there is no text to lose.
+function unblockComments(src) {
+  var masked = maskCode(src, 0);
+  var re = /(^|\n) {0,3}<!--([\s\S]*?)-->(?=[ \t]*\S)/g;
+  var out = '';
+  var last = 0;
+  var m;
+  while ((m = re.exec(masked)) !== null) {
+    if (!parseCommentMarker(m[2])) {
+      continue;
+    }
+    var at = m.index + m[1].length;
+    out += src.slice(last, at) + '​';
+    last = at;
+  }
+  return out + src.slice(last);
+}
+
+// commentTooltip is what hovering a commented passage shows: the comment,
+// who wrote it and when if the marker says, and what a click does.
+function commentTooltip(marker) {
+  var tip = marker.text || '(empty comment)';
+  if (marker.author || marker.date) {
+    tip += '\n— ' + [marker.author, marker.date].filter(Boolean).join(', ');
+  }
+  return tip + '\nClick to edit the comment in the editor';
+}
+
+// markComments highlights every commented passage in root. The markers
+// survive marked as comment nodes, so the passage is the text between a
+// start and the end it pairs with, however many blocks it spans; each of
+// its text nodes is wrapped in a span carrying the comment as its tooltip,
+// and the number of the start marker among all start markers on the page,
+// which is how a click finds the marker in the editor (see focusComment).
+// Nested passages get nested spans, the inner one answering a hover. The
+// comment nodes are left in place.
+function markComments(root) {
+  var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_COMMENT);
+  var nodes = [];
+  var markers = [];
+  var starts = 0;
+  while (walker.nextNode()) {
+    var node = walker.currentNode;
+    if (node.nodeType === Node.COMMENT_NODE) {
+      var marker = parseCommentMarker(node.data);
+      if (marker) {
+        if (marker.kind === 'start') {
+          marker.index = starts++;
+        }
+        markers.push(marker);
+        nodes.push(marker);
+      }
+    } else if (node.data.trim() !== '') {
+      nodes.push(node);
+    }
+  }
+  if (!markers.length) {
+    return;
+  }
+  pairCommentMarkers(markers);
+
+  var active = [];
+  nodes.forEach(function (item) {
+    if (item.kind === 'start') {
+      if (item.end) {
+        active.push(item);
+      }
+      return;
+    }
+    if (item.kind === 'end') {
+      var i = active.indexOf(item.start);
+      if (i >= 0) {
+        active.splice(i, 1);
+      }
+      return;
+    }
+    if (!active.length) {
+      return;
+    }
+    var inner = item;
+    active.slice().reverse().forEach(function (marker) {
+      var span = document.createElement('span');
+      span.className = 'qm-comment';
+      span.setAttribute('data-comment', String(marker.index));
+      span.title = commentTooltip(marker);
+      inner.parentNode.replaceChild(span, inner);
+      span.appendChild(inner);
+      inner = span;
+    });
+  });
+}
+
 // matchSpan looks for a Pandoc bracketed span (`[text]{.class}`) at the
 // start of src. Brackets are matched by depth rather than a regexp so that
 // spans wrapping their own bracketed content -- an image, say, as in
@@ -785,7 +1032,7 @@ var lineMark = 'qm-line:';
 // takes a line of src back to a line of the body (see convertDivs), and
 // offset a line of the body to a line of the page.
 function renderBlocks(src, lineMap, offset) {
-  var tokens = marked.lexer(src);
+  var tokens = marked.lexer(unblockComments(src)); // keeps the lines where they are
   var html = '';
   var line = 0;
   tokens.forEach(function (token) {
@@ -911,6 +1158,7 @@ function renderPreview(el, text, pagePath) {
   sanitize(el);
   resolveMedia(el, pagePath);
   captionFigures(el);
+  markComments(el); // the line comments are no comment markers, so they may stay
   markSourceLines(el); // after the figures, so a figure carries its line
   markTodos(el);
   // After the source lines, so that the line marks are attributes that

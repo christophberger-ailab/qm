@@ -38,6 +38,10 @@ function initEditor() {
     }
     cm = null;
   }
+  if (commentRow) {
+    commentRow.remove(); // what is left of it once CodeMirror has gone
+    commentRow = null;
+  }
 
   var area = document.querySelector('#content textarea.file-content');
   if (!area || typeof CodeMirror === 'undefined') {
@@ -63,13 +67,18 @@ function initEditor() {
     mode: editorMode,
     lineWrapping: true,
     keyMap: vimOn ? 'vim' : 'default',
-    extraKeys: { Enter: 'newlineAndIndentContinueMarkdownList', 'Ctrl-Space': 'autocomplete' },
+    extraKeys: {
+      Enter: 'newlineAndIndentContinueMarkdownList',
+      'Ctrl-Space': 'autocomplete',
+      'Ctrl-Alt-M': addComment
+    },
     hintOptions: pathHintOptions
   });
   clearCompletionCache();
   clearCopyeditMarks(); // the marks belonged to the pane just replaced
   cm.on('inputRead', maybeOpenPathCompletion);
   cm.on('scroll', followEditor);
+  mountCommentRail();
 
   // The textarea is what /save posts and what the preview reads, so it has
   // to follow the editor. Re-emitting the input event is what keeps both
@@ -357,6 +366,173 @@ function clearCopyeditMark(index) {
   if (index === copyeditActive) {
     copyeditActive = -1;
   }
+}
+
+// Comments
+//
+// Selecting text shows a "+" in a narrow rail to the right of the editor,
+// level with the selection; clicking it -- or Ctrl-Alt-M -- comments the
+// selection: the pair of markers preview.js reads (see parseCommentMarker)
+// is written around it, and the cursor is put inside the starting marker,
+// where the comment's text goes. The preview highlights the passage, and a
+// click on the highlight comes back here, to the comment's text (see
+// focusComment).
+
+// commentRow holds the editor and the rail side by side; commentButton is
+// the "+" in the rail.
+var commentRow = null;
+var commentButton = null;
+
+// commentMeta is what a new comment's markers record about it. Nothing yet:
+// it is where the author and the date go once the app knows its users,
+// and the markers carry whatever it names (see commentStart in preview.js).
+function commentMeta() {
+  return {};
+}
+
+// mountCommentRail puts the rail beside the editor just mounted. The rail
+// is a column of its own rather than part of the text, so the "+" never
+// covers a word of it.
+function mountCommentRail() {
+  var wrapper = cm.getWrapperElement();
+  commentRow = document.createElement('div');
+  commentRow.className = 'editor-row';
+  var rail = document.createElement('div');
+  rail.className = 'comment-rail';
+  commentButton = document.createElement('button');
+  commentButton.type = 'button';
+  commentButton.className = 'comment-add';
+  commentButton.textContent = '+';
+  commentButton.title = 'Comment on the selected text (Ctrl-Alt-M)';
+  commentButton.hidden = true;
+  // A press must not take the focus, and with it the selection, away from
+  // the editor before the click can comment on it.
+  commentButton.addEventListener('mousedown', function (evt) {
+    evt.preventDefault();
+  });
+  commentButton.addEventListener('click', function () {
+    addComment(cm);
+  });
+  rail.appendChild(commentButton);
+  wrapper.parentNode.insertBefore(commentRow, wrapper);
+  commentRow.appendChild(wrapper);
+  commentRow.appendChild(rail);
+
+  cm.on('cursorActivity', placeCommentButton);
+  cm.on('scroll', placeCommentButton);
+  cm.on('refresh', placeCommentButton);
+}
+
+// placeCommentButton shows the "+" level with the first line of the
+// selection, or hides it when nothing is selected. A selection that starts
+// above the visible text keeps the button at the rail's top while some of
+// it is still in view.
+function placeCommentButton() {
+  if (!cm || !commentButton) {
+    return;
+  }
+  if (!cm.somethingSelected()) {
+    commentButton.hidden = true;
+    return;
+  }
+  var rail = commentButton.parentNode.getBoundingClientRect();
+  var from = cm.cursorCoords(cm.getCursor('from'), 'window');
+  var to = cm.cursorCoords(cm.getCursor('to'), 'window');
+  var size = 22; // the button's height, see .comment-add
+  if (to.bottom < rail.top || from.top > rail.bottom - size) {
+    commentButton.hidden = true;
+    return;
+  }
+  var top = from.top - rail.top + (from.bottom - from.top - size) / 2;
+  commentButton.style.top = Math.max(0, Math.min(rail.height - size, top)) + 'px';
+  commentButton.hidden = false;
+}
+
+window.addEventListener('resize', placeCommentButton);
+
+// blockMarker is the Markdown that makes a line a heading, a quote, or a
+// list item. A comment starting in front of it would end that: the line
+// would open with the marker and no longer be a heading, so a comment on a
+// selection starting there starts after it.
+var blockMarker = /^[ \t]{0,3}(?:#{1,6}[ \t]+|(?:>[ \t]?)+|[-*+][ \t]+|\d{1,9}[.)][ \t]+)/;
+
+// commentRange is the part of the selection a comment goes around: the
+// selection without the whitespace and line breaks at either end -- a
+// whole line selected brings its line break along -- and without the
+// block marker in front of its first line. It is null when nothing is left.
+function commentRange(instance) {
+  var from = instance.indexFromPos(instance.getCursor('from'));
+  var to = instance.indexFromPos(instance.getCursor('to'));
+  var text = instance.getValue();
+  while (to > from && /\s/.test(text.charAt(to - 1))) {
+    to--;
+  }
+  while (from < to && /\s/.test(text.charAt(from))) {
+    from++;
+  }
+  var start = instance.posFromIndex(from);
+  var marker = blockMarker.exec(instance.getLine(start.line));
+  if (marker && start.ch < marker[0].length) {
+    from += marker[0].length - start.ch;
+  }
+  if (from >= to) {
+    return null;
+  }
+  return { from: instance.posFromIndex(from), to: instance.posFromIndex(to) };
+}
+
+// addComment writes the comment markers around the selection and leaves
+// the cursor where the comment's text goes. In Vim mode it leaves Visual
+// mode first and enters Insert mode after, so typing writes the comment.
+// The edit goes through CodeMirror like a typed one: it is autosaved, the
+// preview follows, and Ctrl-Z takes it back in one step.
+function addComment(instance) {
+  instance = instance || cm;
+  if (!instance || !instance.somethingSelected()) {
+    return;
+  }
+  var range = commentRange(instance);
+  if (!range) {
+    return;
+  }
+  var vim = vimOn && typeof CodeMirror !== 'undefined' && CodeMirror.Vim;
+  if (vim && instance.state.vim && instance.state.vim.visualMode) {
+    CodeMirror.Vim.handleKey(instance, '<Esc>', 'mapping');
+  }
+  var meta = commentMeta();
+  var start = commentStart(meta);
+  instance.operation(function () {
+    // The end goes in first, so writing the start does not move it.
+    instance.replaceRange(commentEnd(meta), range.to);
+    instance.replaceRange(start.before + start.after, range.from);
+    var at = instance.indexFromPos(range.from) + start.before.length;
+    instance.setCursor(instance.posFromIndex(at));
+  });
+  instance.focus();
+  if (vim && instance.state.vim && !instance.state.vim.insertMode) {
+    CodeMirror.Vim.handleKey(instance, 'i', 'mapping');
+  }
+}
+
+// focusComment puts the cursor at the start of the text of the nth comment
+// on the page -- counted the way the preview counts its highlights (see
+// markComments) -- and brings it into view. It is what a click on a
+// highlight in the preview does.
+function focusComment(index) {
+  if (!cm) {
+    return;
+  }
+  var starts = findCommentMarkers(cm.getValue()).filter(function (marker) {
+    return marker.kind === 'start';
+  });
+  var marker = starts[index];
+  if (!marker) {
+    return;
+  }
+  var at = cm.posFromIndex(marker.textFrom);
+  cm.focus();
+  cm.setCursor(at);
+  cm.scrollIntoView(at, 80);
 }
 
 // refreshEditor makes CodeMirror remeasure, which it needs whenever the
