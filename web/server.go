@@ -127,6 +127,8 @@ func newServer(configFile string) (*server, error) {
 	s.mux.HandleFunc("POST /config/connections/delete", s.deleteConnectionHandler)
 	s.mux.HandleFunc("GET /config/editor", s.editorConfigPage)
 	s.mux.HandleFunc("POST /config/editor", s.saveEditorHandler)
+	s.mux.HandleFunc("GET /config/user", s.userConfigPage)
+	s.mux.HandleFunc("POST /config/user", s.saveUserHandler)
 	s.mux.HandleFunc("POST /editor/open", s.openEditorHandler)
 	s.mux.HandleFunc("POST /editor/image", s.openImageEditorHandler)
 	s.mux.HandleFunc("POST /copyedit/active", s.activeConnectionHandler)
@@ -181,6 +183,9 @@ type state struct {
 	// them appears above the preview only when there is more than one.
 	CSSFiles  []string
 	ActiveCSS string
+	// User is the name new comments and replies are signed with (see
+	// user.go); the editor reads it off the page.
+	User string
 }
 
 // openView is the Open field in the top bar. The field itself shows only
@@ -330,7 +335,7 @@ type checkbox struct {
 
 // load builds the current template state; the caller must hold s.mu.
 func (s *server) load() (state, error) {
-	st := state{Root: s.root, Open: s.openViewFor(), CSSFiles: s.cssFiles(), ActiveCSS: s.activeCSS()}
+	st := state{Root: s.root, Open: s.openViewFor(), CSSFiles: s.cssFiles(), ActiveCSS: s.activeCSS(), User: s.commentAuthor()}
 	if s.root == "" {
 		return st, nil
 	}
@@ -508,6 +513,10 @@ func (s *server) config(w http.ResponseWriter, r *http.Request) {
 		Title:       "External editor",
 		Description: "Choose the editor the top bar's Editor button opens the project in, and the one images open in.",
 		Href:        "/config/editor",
+	}, {
+		Title:       "Comments: Your name",
+		Description: "Set the name the comments and replies you write are signed with.",
+		Href:        "/config/user",
 	}}})
 }
 

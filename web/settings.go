@@ -48,6 +48,7 @@ type storedConfig struct {
 	Preview  previewConfig           `json:"preview"`
 	Copyedit copyeditConfig          `json:"copyedit"`
 	Editor   editorConfig            `json:"editor"`
+	User     userConfig              `json:"user"`
 }
 
 // previewConfig is the Markdown preview's own settings. The stylesheets
@@ -80,6 +81,7 @@ const configSchema = `// -------------------------------------------------------
 	preview:  #Preview
 	copyedit: #Copyedit
 	editor:   #Editor
+	user:     #User
 }
 
 #Project: {
@@ -110,6 +112,12 @@ const configSchema = `// -------------------------------------------------------
 	// {file} is the image, {root} the project's directory. Left empty,
 	// the system's own way of opening a file is used.
 	image: string | *""
+}
+
+#User: {
+	// The name the comments you write in the editor are signed with.
+	// Left empty, the name you are logged in to the computer with is used.
+	name: string | *""
 }
 
 #Copyedit: {

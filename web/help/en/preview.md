@@ -28,7 +28,7 @@ Images are loaded from your project.
 
 ## Comments
 
-A passage commented in the [editor](editor.md) is highlighted, also when it runs over several paragraphs. Hover over it to read the comment; click it to put the editor's cursor at the start of the comment, ready to edit it. A comment written inside code is shown as code.
+A passage commented in the [editor](editor.md) is highlighted, also when it runs over several paragraphs. Hover over it to read the comment, who wrote it and when, and the replies to it; click it to put the editor's cursor at the start of the comment, ready to edit it. A comment written inside code is shown as code.
 
 ## Scrolling
 

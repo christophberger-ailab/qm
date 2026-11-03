@@ -46,14 +46,26 @@ The `⌨ Vim Mode` button below the editor switches Vim keybindings on and off. 
 Select some text and a `+` appears in the narrow rail to the right of the editor, level with the selection. Click it, or press `Ctrl-Alt-M`, to comment on the selection. Two HTML comments are written around it, and the cursor is placed where you type the comment:
 
 ```
-<!-- << Your comment goes here -->the selected text<!-- >> -->
+<!-- << {#c4k2x9 author="Ana" date="2026-11-03"} Your comment goes here -->the selected text<!-- >> {#c4k2x9} -->
 ```
 
 - `<<` opens the commented passage and holds the comment, `>>` closes it. Quarto drops HTML comments, so comments never show up in a render.
+- The comment is signed with your name and today's date. Set the name under `Config` → [`Comments: Your name`](settings.md); without one, your login name is used. The id pairs the two ends, so passages commented by different people may overlap.
 - Spaces and line breaks at the ends of the selection stay outside the passage, and so does a heading, quote, or list marker in front of it.
 - In Vim mode you land in Insert mode, ready to type.
 - `Ctrl-Z` removes a comment you just added.
 - The [preview](preview.md) highlights the passage and shows the comment when you hover over it.
+
+### Replies
+
+Put the cursor in a comment or in its passage, with nothing selected, and a `↩` appears in the rail level with the cursor. Click it, or press `Ctrl-Alt-R`, to reply. The reply is written right after the comment, or after the last reply to it, signed with your name and the date, and the cursor is placed where you type:
+
+```
+<!-- << {#c4k2x9 author="Ana" date="2026-11-03"} Too long? --><!-- <<+ {author="Ben" date="2026-11-04"} No, keep it. -->the passage<!-- >> {#c4k2x9} -->
+```
+
+- `<<+` marks a reply. It belongs to the comment in front of it as long as only spaces stand between them.
+- Clicking a highlighted passage in the preview takes you to its comment, where `↩` is ready.
 
 ## Link and image completion
 

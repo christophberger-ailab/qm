@@ -34,7 +34,7 @@
   <script src="/static/editor.js" defer></script>
   <script src="/static/app.js" defer></script>
 </head>
-<body>
+<body data-user="{{.User}}">
   <header class="topbar">
     <h1>Quarto Manager</h1>
     <div id="open-panel">{{template "open-form" .}}</div>
@@ -683,6 +683,41 @@
         {{range .ImagePresets}}<button type="button" class="editor-preset" data-target="image-editor-command" data-command="{{.Command}}" title="{{.Command}}">{{.Name}}</button>
         {{end}}
       </div>
+      <div class="config-actions"><button type="submit">Save</button></div>
+    </form>
+    <div class="config-actions">
+      <a class="button" href="/config">Back to Config</a>
+      <a class="button" href="/">Back to App</a>
+    </div>
+  </main>
+</body>
+</html>{{end}}
+
+{{define "user-page"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Comments: Your name</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Quarto Manager</h1>
+    <nav class="topbar-nav">
+      <a class="button" href="/config">Config</a>
+      <a class="button" href="/">App</a>
+    </nav>
+  </header>
+  <main class="config-main">
+    <h2>Your name</h2>
+    <p class="config-intro">The comments and replies you write in the editor are signed with this name and the date, so that everyone working on the project can tell who wrote what. qm runs on your own computer, so there is nothing to log in to: the name is all it needs.</p>
+    <p class="config-intro">Leave it empty to sign with the name you are logged in to this computer with{{if .Fallback}} (<code>{{.Fallback}}</code>){{end}}.</p>
+    {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
+    {{if .Message}}<div class="notice">{{.Message}}</div>{{end}}
+    <form class="config-form config-setting" method="post" action="/config/user" autocomplete="off">
+      <label>Name<input type="text" name="name" id="user-name" value="{{.Name}}" placeholder="{{.Fallback}}"></label>
       <div class="config-actions"><button type="submit">Save</button></div>
     </form>
     <div class="config-actions">
