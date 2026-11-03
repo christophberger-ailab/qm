@@ -15,6 +15,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/christophberger-ailab/qm/internal/markdown"
 )
 
 type Node struct {
@@ -28,6 +30,11 @@ type Document struct {
 type Options struct {
 	Root, Cover, Title string
 	TOC                bool
+	// Lang is the document language; it picks the contents heading.
+	Lang string
+	// Markdown is the document to lay out when no Pandoc document is
+	// given.
+	Markdown *markdown.Document
 	// Fonts maps roles in FontRoles to TrueType files that replace the Go
 	// fonts there.
 	Fonts map[string]string
@@ -537,4 +544,13 @@ func resource(root, src string) (string, error) {
 	}
 	// Quarto project-absolute resources use a leading slash.
 	return filepath.Join(root, filepath.FromSlash(strings.TrimPrefix(p, "/"))), nil
+}
+
+// tocTitle is the heading of the contents list: German unless the
+// document says otherwise, which is what qm documents were written in.
+func tocTitle(lang string) string {
+	if lang == "" || strings.HasPrefix(strings.ToLower(lang), "de") {
+		return "Inhalt"
+	}
+	return "Contents"
 }

@@ -1,6 +1,6 @@
 feature:
   name: render
-  description: Render the project's topic × format × audience matrix
+  description: Render the project's topic × format × audience matrix, without Quarto or Pandoc
 
 components:
   COMMAND:
@@ -14,7 +14,7 @@ components:
       3-3: Flag --format takes a comma-separated list of formats. Defaults to every format a topic takes part in
       3-4: Flag --audience takes a comma-separated list of audiences. Defaults to every audience a topic takes part in
       3-5: Flag --clean empties the output directories of the selected formats before the first render. Defaults to false
-      3-6: Flag --dry-run prints the quarto invocations without running them. Defaults to false
+      3-6: Flag --dry-run prints the files that would be written without writing anything. Defaults to false
       3-7: Positional arguments name topics and are added to --topic
 
 constraints:
@@ -23,78 +23,51 @@ constraints:
   PROCESS:
     description: >
       The render flow is shared with `qm web` (see spec-web.yaml); both drive
-      internal/bookrender. A format with `qm: renderer: pandoc` is built by qm
-      itself (see PANDOC). Any other format uses the Quarto backend, a matrix
-      driver: the artefact is built and named by the project's own Quarto hooks
-      (`qm prepare`, `qm finalize`), so a plain
-      `quarto render --profile topic-x,format-y,audience-z` produces exactly
-      the same result without qm.
+      internal/build. Every format is built by qm itself; neither Quarto nor
+      Pandoc nor LaTeX is invoked.
     requirements:
-      1: The matrix is the cross product of the requested topics, formats, and audiences, cut down per topic to what the topic profile declares under `qm: formats:` and `qm: audiences:`
-      1-1: A name that no `_quarto-<axis>-<value>.yml` backs is an error, not an empty result
-      1-2: The order is stable — topics outermost, then formats, then audiences — and follows the project's own order on each axis, not the order a profile happened to spell its list in
-      2: 'Each combination whose format profile does not select the pandoc renderer is one invocation: `quarto render --profile topic-<t>,format-<f>,audience-<a> --no-clean`, run in the project root'
-      2-1: No input file is named; the project renders and its index.qmd includes the flattened topic
-      2-2: No --to is passed; the format profile declares the output formats and Quarto renders them in one pass
-      2-3: No --output or --output-dir is passed; output paths are left to the configuration and to `qm finalize`
-      2-4: --no-clean is not optional. Several topics and audiences share one output directory, so a cleaning run would delete what the run before it produced. Quarto has no configuration key for this
-      3: With --clean, each selected format's output directory is emptied once, before the first render
-      4: Progress, the quarto invocations, and their output are written to stdout
+      1: The matrix is the cross product of the requested topics, formats, and audiences, cut down to what the topics and formats declare in qm.yml under `formats`, `audiences` and `topics`
+      1-1: A topic, format or audience that qm.yml does not define is an error, not an empty result; so is a selection that matches no combination
+      1-2: The order is stable -- formats outermost, then topics, then audiences -- and follows the order of qm.yml on each axis
+      2: A website format (type html) yields one render per selected audience, covering all selected topics; a document format (docx, pdf) yields one render per topic and audience
+      2-1: A website goes to `<output>/<dir>`; with more than one audience in the project and no placeholder in `dir`, to `<output>/<dir>-<audience>`
+      2-2: A document goes to `<output>/<dir>/<file>.<type>`; `file` defaults to `{topic}`, plus `-{audience}` when the project has more than one audience
+      3: With --clean, each selected format's output directory is emptied once, before the first render; a directory that is not below the output directory is refused
+      4: Progress is written to stdout, one line per step
       5: A failing combination does not stop the remaining ones; the command reports how many failed and exits with an error
+      6: A dry run writes nothing and prints the files it would write
 
-  NATIVE:
-    description: >
-      Optional Go PDF backend with Pandoc DOCX and full-page PNG covers. It
-      runs in the project's hooks (`qm prepare`, `qm finalize`), so a plain
-      `quarto render` produces the same PDF and DOCX as qm render and qm web.
+  DOCUMENT:
+    description: A document is the topic flattened into one Markdown text, parsed and filtered in Go, and written as DOCX and/or PDF.
     requirements:
-      1: 'A format profile with qm: renderer: qm selects the native pipeline; absent or quarto uses Quarto''s own writers'
-      2: 'Native profiles declare format: docx only, PDF options under qm: pdf:, and the capture filter `_build/qm-capture.lua` at the post-finalize entry point; anything else fails in qm render and in qm prepare before Quarto renders'
-      3: 'qm render and qm web invoke Quarto exactly as for any other format; qm prepare writes the capture filter, which saves the filtered Pandoc JSON to `_build/qm-document.json` during the DOCX render; LaTeX and Typst are never invoked'
-      4: 'A topic may declare qm: cover: as a project-relative PNG path supporting profile variables; missing or invalid covers fail before rendering'
-      5: Go generates an A4 PDF with embedded fonts, pagination, contents, links, headings, lists, ordinary tables and local raster images; emoji render in a monochrome emoji font, and a line never breaks inside a word that spans quote marks, emphasis or links
-      5-1: An image among text in a paragraph is drawn inline on the text's baseline, and a line with a tall image grows to hold it; an image alone in its paragraph stays a block of its own
-      5-2: Image width and height attributes are honoured in cm, mm, in, pt, px, em, per cent of the available width, and bare numbers as pixels; with one of the two given the other follows the aspect ratio, and an image too large for the text width or the page shrinks to fit
-      5-3: 'With a `_brand.yml` at the project root, the PDF sets body text, headings and code in the typography base, headings and monospace fonts, choosing the closest weight and style among the family''s TrueType files; fonts it cannot embed (other formats, or not from local files) are reported and leave that text in the Go fonts, and emoji still fall back to the emoji font'
-      5-4: Quarto callouts are drawn in a box in the callout type's own Quarto color, with a thick left bar, so that it is clear where a callout ends; the title of a default callout sits on Quarto's header background for that type and stays with the first lines of the body, and a callout running over pages keeps its box open at the page breaks
-      5-5: 'Quarto''s `{{< pagebreak >}}` shortcode starts a new page, also inside lists, block quotes and callouts; a break on a page that holds nothing yet adds no blank page, and one inside a table cell is ignored'
-      5-6: A heading without text or image draws nothing, takes no space and opens no page; every page the layout starts can be addressed for its page number, contents entry and callout box, even if nothing was drawn on it
-      6: qm finalize writes the PDF beside the DOCX Quarto reported, under the same name, and prepends a full-page PNG cover with preserved aspect ratio to both
-      7: DOCX cover uses its own zero-margin section and page-relative image; original body section properties, styles, headers and footers are preserved
-      8: Unsupported PDF constructs produce actionable errors rather than silently discarding content
-      9: Dry runs print the selected pipeline and create no build artifacts; a failed PDF layout retains the captured document for diagnosis
+      1: The text is the one `qm flatten` writes; its shortcodes (`include`, `var`, `pagebreak`) are resolved before it is parsed
+      1-1: '`{{< include /path >}}` takes a project-absolute path, nested up to 8 deep; a relative path, a path outside the project, a missing file and a cycle are errors'
+      1-2: '`{{< var name >}}` resolves against `_variables.yml` and the selection''s variables; an undefined name is reported and left as written'
+      1-3: Text inside fenced code blocks is not touched, and any other shortcode is reported once and left in the text
+      2: Conditional content the selected format and audience do not show is removed after parsing (see CONDITIONAL in spec.yaml)
+      3: The DOCX is written in Go. A format's `template` names a reference DOCX whose styles, page setup, headers, footers and numbering are used and whose body is discarded; a missing template fails before anything is written
+      3-1: With `toc: true` the DOCX has a Word contents field
+      4: The PDF is laid out in Go (gopdf) from the same parsed document, A4, with embedded fonts, pagination, contents, links, headings, lists, ordinary tables and local raster images
+      4-1: Emoji render in a monochrome emoji font, and a line never breaks inside a word that spans quote marks, emphasis or links
+      4-2: An image among text in a paragraph is drawn inline on the text's baseline, and a line with a tall image grows to hold it; an image alone in its paragraph stays a block of its own
+      4-3: Image width and height attributes are honoured in cm, mm, in, pt, px, em, per cent of the available width, and bare numbers as pixels; with one of the two given the other follows the aspect ratio, and an image too large for the text width or the page shrinks to fit
+      4-4: 'With a `_brand.yml` at the project root, the PDF sets body text, headings and code in the typography base, headings and monospace fonts, choosing the closest weight and style among the family''s TrueType files; fonts it cannot embed (other formats, or not from local files) are reported and leave that text in the Go fonts, and emoji still fall back to the emoji font'
+      4-5: Callouts are drawn in a box in the callout type's own color, with a thick left bar; the title of a default callout sits on a header background for that type and stays with the first lines of the body, and a callout running over pages keeps its box open at the page breaks
+      4-6: A `{{< pagebreak >}}` starts a new page, also inside lists, block quotes and callouts; a break on a page that holds nothing yet adds no blank page, and one inside a table cell is ignored
+      4-7: A heading without text or image draws nothing, takes no space and opens no page; every page the layout starts can be addressed for its page number, contents entry and callout box, even if nothing was drawn on it
+      5: A topic may declare `cover:` as a project-relative PNG path supporting placeholders; a missing or invalid cover fails before rendering
+      5-1: The cover is put in front of both the DOCX and the PDF with preserved aspect ratio, full-page for the PDF; the DOCX cover uses its own zero-margin section and page-relative image, and the original body section properties, styles, headers and footers are preserved
+      6: Unsupported PDF constructs produce actionable errors rather than silently discarding content
+      7: Mermaid diagrams stay code blocks, with a warning; math is not typeset
+      8: PPTX slide decks are not supported; `::: slide` blocks and `.notes` are dropped
 
-  PANDOC:
-    description: >
-      `qm: renderer: pandoc` in a format profile makes qm build the combination
-      itself, with Pandoc, instead of running Quarto. The DOCX or PPTX is
-      written by Pandoc; for a DOCX, the Go PDF backend (see NATIVE) lays out
-      the PDF and adds the covers. The project's hooks do not take part, and
-      nothing is written to `_build/`.
+  SITE:
+    description: A website format writes a static site of all selected topics, with a layout like Quarto's.
     requirements:
-      1: The format profile declares exactly one of `format: docx:` and `format: pptx:`, `project: output-dir:`, and a file name (`book: output-file:` or `qm: output-file:`); the topic names a content folder. Anything else fails before Pandoc runs
-      1-1: '`format: pdf:` is rejected: qm writes the PDF'
-      2: The topic's folder is flattened in memory, with the same flattening `qm prepare` does
-      2-1: The deck is built from the flattened `::: slide` blocks; a topic without any still gets a deck, with a title slide
-      3: Shortcodes are resolved on the text before Pandoc reads it
-      3-1: '`{{< include /path >}}` takes a project-absolute path, nested up to 8 deep; a relative path, a path outside the project, a missing file and a cycle are errors'
-      3-2: '`{{< pagebreak >}}` becomes a page break in a DOCX and nothing in a deck'
-      3-3: '`{{< var name >}}` resolves against the selection''s `_quarto-vars` and `_variables.yml`; an undefined name is reported and left as written'
-      3-4: Text inside fenced code blocks is not touched
-      3-5: Any other shortcode is reported once and left in the text
-      4: Pandoc reads Pandoc Markdown, with `table_attributes` off where the reader has it, as Quarto does
-      5: The document metadata is the merged `make:` flags (first-listed profile wins, the base `_quarto.yml` lowest), `lang`, and the title; a DOCX with a contents list also gets the contents heading in its language
-      6: The project's `filters:` entries run first, as Lua filters, in a scope of their own each, with `quarto.metadata.get` available
-      6-1: An entry is a project-relative `.lua` file or a Quarto extension's name; the capture filter of the `qm` renderer is skipped; an entry with an entry point (`at:`), a missing file, or a contributed filter that is not Lua is an error
-      7: Image paths that start with `/` become project-relative
-      8: A callout is drawn as Quarto draws it for the format
-      8-1: In a DOCX, a table with a shaded title row (icon and title) and a body row; the title is the `title` attribute, else the first heading, else the default of the type in the document language. A callout without a type is a bare gray bar with the title, if any, in bold
-      8-2: A callout that follows a table or another callout is preceded by an empty paragraph, since Word merges tables that touch
-      8-3: In any other format, a block quote headed by the title in bold
-      9: A deck loses its empty paragraphs and its block-level HTML comments, as Pandoc would otherwise count them into the slide
-      10: For a DOCX, the document is captured as the writer receives it, the PDF is laid out from it, and the covers are added; the DOCX and the PDF are written under the same name
-      11: Callout icons come from `assets/callout-icons/` or from a Quarto installation; code is highlighted in the style named by `syntax-highlighting:` or, unset, in Quarto's, when Quarto is installed
-      12: Pandoc is `$QM_PANDOC`, `pandoc` on the PATH, the Pandoc inside a Quarto installation, or `quarto pandoc`; one older than 3.0 is rejected
-      13: Output is written under a temporary name in the output directory and renamed; a failed render leaves no partial file, and keeps its working files (named in the log) for diagnosis. QM_KEEP_WORKDIR=1 keeps them after success too
-      14: A dry run prints the Pandoc command and creates nothing
-      15: '`qm prepare` and `qm finalize` refuse a format with this renderer and name the `qm render` command to use'
+      1: Each topic is one entry in a top navbar; the current topic's page tree is a left sidebar; the headings of the current page are a right "On this page" contents list with scroll-spy; each page has previous/next links
+      1-1: The site's home page lists the topics
+      2: Pages are rendered from the same tree and with the same heading demotion as a document, with the same shortcodes and conditional filter
+      3: All links in the output are relative, so the site works from file:// and below any URL prefix; links between pages of a topic are rewritten to the generated pages, raw HTML links are not
+      4: The layout is responsive -- the contents list is hidden at 75em and narrower, the sidebar is off-canvas at 50em and narrower -- with all text sizes and the 42em text column in em
+      5: The site has a dark mode following the system setting and print styles
+      6: The site has no search

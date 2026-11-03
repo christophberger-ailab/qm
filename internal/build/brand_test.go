@@ -1,4 +1,4 @@
-package bookrender
+package build
 
 import (
 	"os"
@@ -104,21 +104,5 @@ func TestBrandFonts(t *testing.T) {
 		if _, _, err := brandFonts(brandProject(t, yml)); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
-	}
-}
-
-func TestLoadNativeReadsBrandFonts(t *testing.T) {
-	root := project(t)
-	os.WriteFile(filepath.Join(root, "_quarto-format-handout.yml"), []byte(nativeFormat), 0o644)
-	os.MkdirAll(filepath.Join(root, "fonts"), 0o755)
-	os.WriteFile(filepath.Join(root, "fonts", "Mono.ttf"), gomono.TTF, 0o644)
-	os.WriteFile(filepath.Join(root, BrandFile), []byte("typography:\n  fonts:\n    - family: M\n"+
-		"      source: file\n      files: [fonts/Mono.ttf]\n  base: M\n"), 0o644)
-	n, err := loadNative(t, root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n.Fonts["regular"] != filepath.Join(root, "fonts", "Mono.ttf") {
-		t.Errorf("fonts %v", n.Fonts)
 	}
 }

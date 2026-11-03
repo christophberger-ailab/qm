@@ -17,9 +17,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/christophberger-ailab/qm/internal/bookrender"
+	"github.com/christophberger-ailab/qm/internal/build"
+	"github.com/christophberger-ailab/qm/internal/config"
 	"github.com/christophberger-ailab/qm/internal/project"
-	"github.com/christophberger-ailab/qm/internal/qmcore"
 )
 
 //go:embed assets
@@ -311,6 +311,8 @@ type previewCSSView struct {
 type renderView struct {
 	Books   []bookView
 	Formats []checkbox
+	// Error is why the panel cannot be built, e.g. a broken qm.yml.
+	Error string
 }
 
 // bookView is one topic in the render panel. Profiles holds the audiences
@@ -376,39 +378,35 @@ func (s *server) lastPage() *contentView {
 // axes each of them declares. The caller must hold s.mu.
 func (s *server) renderView() renderView {
 	prefs := s.prefsFor(s.root)
-	topics, _ := qmcore.AxisValues(s.root, qmcore.AxisTopic)
-	formats, _ := qmcore.AxisValues(s.root, qmcore.AxisFormat)
-
 	var v renderView
-	for _, name := range topics {
+	cfg, err := config.Load(s.root)
+	if err != nil {
+		v.Error = err.Error()
+		return v
+	}
+	for _, name := range cfg.Topics.Names() {
 		b := bookView{Name: name, Selected: slices.Contains(prefs.Topics, name)}
-		on := prefs.audiencesFor(name, s.audiencesOf(name))
-		for _, a := range s.audiencesOf(name) {
+		on := prefs.audiencesFor(name, cfg.AudiencesOf(name))
+		for _, a := range cfg.AudiencesOf(name) {
 			b.Profiles = append(b.Profiles, checkbox{a, slices.Contains(on, a)})
 		}
 		v.Books = append(v.Books, b)
 	}
-	for _, f := range formats {
+	for _, f := range cfg.Formats.Names() {
 		v.Formats = append(v.Formats, checkbox{f, slices.Contains(prefs.Formats, f)})
 	}
 	return v
 }
 
-// audiencesOf returns the audiences a topic takes part in: what its profile
-// declares under `qm: audiences:`, or every audience the project offers.
+// audiencesOf returns the audiences a topic takes part in: what qm.yml
+// declares under the topic's `audiences:`, or every audience the project
+// offers.
 func (s *server) audiencesOf(topic string) []string {
-	all, _ := qmcore.AxisValues(s.root, qmcore.AxisAudience)
-	p, err := qmcore.LoadProfile(s.root, qmcore.AxisTopic.ProfileName(topic))
-	if err != nil || len(p.QM.Audiences) == 0 {
-		return all
+	cfg, err := config.Load(s.root)
+	if err != nil {
+		return nil
 	}
-	var out []string
-	for _, a := range all {
-		if slices.Contains(p.QM.Audiences, a) {
-			out = append(out, a)
-		}
-	}
-	return out
+	return cfg.AudiencesOf(topic)
 }
 
 func (s *server) render(w http.ResponseWriter, name string, data any) {
@@ -418,7 +416,7 @@ func (s *server) render(w http.ResponseWriter, name string, data any) {
 }
 
 // fingerprint hashes everything the tree pane is rendered from: the paths,
-// sizes, and mtimes of the project's .qmd files and _quarto*.yml configs.
+// sizes, and mtimes of the project's .qmd files and its qm.yml.
 // Equal fingerprints mean no refresh is needed.
 func fingerprint(root string) string {
 	tree, _ := fingerprints(root)
@@ -446,7 +444,7 @@ func fingerprints(root string) (tree, media string) {
 		}
 		qmd := strings.HasSuffix(name, ".qmd") && !strings.HasPrefix(name, "_")
 		cfg := filepath.Dir(p) == root && strings.HasSuffix(name, ".yml") &&
-			(name == "_quarto.yml" || strings.HasPrefix(name, "_quarto-"))
+			name == config.FileName
 		img := mediaExts[strings.ToLower(filepath.Ext(name))]
 		if !qmd && !cfg && !img {
 			return nil
@@ -1039,7 +1037,10 @@ func formValues(p projectPrefs, form map[string][]string, root string) projectPr
 	p.Topics = form["book"]
 	p.Formats = form["format"]
 	p.Audiences = map[string][]string{}
-	topics, _ := qmcore.AxisValues(root, qmcore.AxisTopic)
+	var topics []string
+	if cfg, err := config.Load(root); err == nil {
+		topics = cfg.Topics.Names()
+	}
 	for _, t := range topics {
 		if sel := form["profile."+t]; len(sel) > 0 {
 			p.Audiences[t] = sel
@@ -1091,29 +1092,66 @@ func (s *server) startRender(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The panel's per-topic audiences cannot go into one matrix request —
-	// that would apply every topic's audiences to every other topic — so the
-	// matrix is built per topic and the results are concatenated.
-	var sels []qmcore.Selection
-	for _, t := range prefs.Topics {
-		part, err := qmcore.BuildMatrix(s.root, qmcore.Matrix{
-			Topics:    []string{t},
-			Formats:   prefs.Formats,
-			Audiences: prefs.audiencesFor(t, s.audiencesOf(t)),
-		})
-		if err != nil {
-			s.renderLog(w, jobState{Lines: []string{err.Error()}, Failed: true})
-			return
-		}
-		sels = append(sels, part...)
+	sels, err := s.selections(prefs)
+	if err != nil {
+		s.renderLog(w, jobState{Lines: []string{err.Error()}, Failed: true})
+		return
 	}
-
-	opts := bookrender.Options{Root: s.root, Selections: sels}
+	opts := build.Options{Selections: sels}
 	if !s.job.start(opts) {
 		s.renderLog(w, s.job.state())
 		return
 	}
 	s.renderLog(w, s.job.state())
+}
+
+// selections turns the panel's choice into the renders to run.
+//
+// The panel's per-topic audiences cannot go into one matrix request — that
+// would apply every topic's audiences to every other topic — so documents
+// are expanded per topic. A website covers every selected topic at once,
+// so it is expanded once, for the audiences any selected topic has ticked.
+func (s *server) selections(prefs projectPrefs) ([]config.Selection, error) {
+	cfg, err := config.Load(s.root)
+	if err != nil {
+		return nil, err
+	}
+	var docs, webs []string
+	for _, f := range prefs.Formats {
+		if fm, ok := cfg.Formats.Get(f); ok && fm.IsWeb() {
+			webs = append(webs, f)
+		} else {
+			docs = append(docs, f)
+		}
+	}
+	var sels []config.Selection
+	var webAudiences []string
+	for _, t := range prefs.Topics {
+		auds := prefs.audiencesFor(t, cfg.AudiencesOf(t))
+		for _, a := range auds {
+			if !slices.Contains(webAudiences, a) {
+				webAudiences = append(webAudiences, a)
+			}
+		}
+		if len(docs) == 0 || len(auds) == 0 {
+			continue
+		}
+		part, err := cfg.Expand(config.Request{Topics: []string{t}, Formats: docs, Audiences: auds})
+		if err != nil {
+			continue // this topic takes no part in the ticked formats
+		}
+		sels = append(sels, part...)
+	}
+	if len(webs) > 0 && len(webAudiences) > 0 {
+		part, err := cfg.Expand(config.Request{Topics: prefs.Topics, Formats: webs, Audiences: webAudiences})
+		if err == nil {
+			sels = append(part, sels...)
+		}
+	}
+	if len(sels) == 0 {
+		return nil, fmt.Errorf("the selection matches no topic × format × audience combination")
+	}
+	return sels, nil
 }
 
 // renderStatus is polled by the log panel while a render runs.

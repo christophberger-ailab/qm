@@ -1,0 +1,54 @@
+{{define "label"}}{{if .URL}}<a href="{{.URL}}"{{if .Current}} aria-current="page"{{end}}>{{.Title}}</a>{{else}}<span class="group">{{.Title}}</span>{{end}}{{end}}
+{{define "item"}}<li>{{if .Children}}<details{{if .Open}} open{{end}}><summary>{{template "label" .}}</summary><ul>{{range .Children}}{{template "item" .}}{{end}}</ul></details>{{else}}{{template "label" .}}{{end}}</li>
+{{end}}
+{{- define "page.html" -}}
+<!DOCTYPE html>
+<html lang="{{.Lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}}</title>
+<link rel="stylesheet" href="{{.Base}}_site/style.css">
+<script>document.documentElement.classList.add('js')</script>
+<script src="{{.Base}}_site/site.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">{{.L.Skip}}</a>
+<header class="navbar">
+  <div class="navbar-inner">
+    {{if .Sidebar}}<button class="icon-button sidebar-toggle" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="{{.L.Sidebar}}"><span class="icon icon-sidebar" aria-hidden="true"></span><span class="btn-label">{{.L.Contents}}</span></button>{{end}}
+    <a class="site-title" href="{{.HomeURL}}">{{.SiteTitle}}</a>
+    {{if .Nav}}<button class="icon-button menu-toggle" type="button" aria-controls="topics" aria-expanded="false" aria-label="{{.L.Menu}}"><span class="icon icon-menu" aria-hidden="true"></span></button>
+    <nav id="topics" class="topics" aria-label="{{.L.Topics}}"><ul>
+      {{range .Nav}}<li><a href="{{.URL}}"{{if .Active}} class="active" aria-current="true"{{end}}>{{.Title}}</a></li>
+      {{end}}</ul></nav>{{end}}
+  </div>
+</header>
+<div class="layout{{if not .Sidebar}} no-sidebar{{end}}{{if not .TOC}} no-toc{{end}}">
+  {{if .Sidebar}}<aside id="sidebar" class="sidebar" aria-label="{{.L.Sidebar}}">
+    <nav>
+      <p class="sidebar-title">{{if .Sidebar.URL}}<a href="{{.Sidebar.URL}}"{{if .Sidebar.Current}} aria-current="page"{{end}}>{{.Sidebar.Title}}</a>{{else}}{{.Sidebar.Title}}{{end}}</p>
+      <ul class="tree">{{range .Sidebar.Items}}{{template "item" .}}{{end}}</ul>
+    </nav>
+  </aside>
+  <div class="scrim"></div>{{end}}
+  <main id="main" class="content" tabindex="-1">
+    <article class="page">
+{{.Content}}
+    </article>
+    {{if or .Prev .Next}}<nav class="pager" aria-label="Pagination">
+      {{if .Prev}}<a class="prev" rel="prev" href="{{.Prev.URL}}"><span class="pager-label">{{$.L.Prev}}</span><span class="pager-title">{{.Prev.Title}}</span></a>{{else}}<span></span>{{end}}
+      {{if .Next}}<a class="next" rel="next" href="{{.Next.URL}}"><span class="pager-label">{{$.L.Next}}</span><span class="pager-title">{{.Next.Title}}</span></a>{{end}}
+    </nav>{{end}}
+  </main>
+  {{if .TOC}}<aside class="toc" aria-label="{{.L.OnThisPage}}">
+    <nav>
+      <p class="toc-title">{{.L.OnThisPage}}</p>
+      <ul>{{range .TOC}}<li class="toc-l{{.Level}}"><a href="#{{.ID}}">{{.Text}}</a></li>
+      {{end}}</ul>
+    </nav>
+  </aside>{{end}}
+</div>
+</body>
+</html>
+{{end}}

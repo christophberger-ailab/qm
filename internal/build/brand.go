@@ -1,4 +1,4 @@
-package bookrender
+package build
 
 import (
 	"errors"

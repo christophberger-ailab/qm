@@ -7,13 +7,9 @@
 //	qm render --format handout         -> handouts only
 //	qm render --audience pol --clean   -> the Polizei variants, from scratch
 //
-// A combination whose format profile says `qm: renderer: pandoc` is built by
-// qm itself, with Pandoc (see internal/bookrender). For any other, one
-// `quarto render --profile topic-<t>,format-<f>,audience-<a>` runs. That
-// command works from the CLI, from VS Code, and from CI without qm, and it
-// produces correctly named output on its own, because the project's pre- and
-// post-render hooks (`qm prepare`, `qm finalize`) do the parts Quarto's
-// configuration cannot express. `qm render` walks the matrix.
+// The matrix is the one qm.yml declares (see internal/config); every
+// combination is built by qm itself, without Quarto or Pandoc (see
+// internal/build).
 package render
 
 import (
@@ -22,9 +18,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/christophberger-ailab/qm/internal/bookrender"
+	"github.com/christophberger-ailab/qm/internal/build"
 	"github.com/christophberger-ailab/qm/internal/cli"
-	"github.com/christophberger-ailab/qm/internal/qmcore"
+	"github.com/christophberger-ailab/qm/internal/config"
 	"github.com/christophberger/start"
 	flag "github.com/spf13/pflag"
 )
@@ -57,13 +53,11 @@ func Register(projectFlag *string) {
 		Name:  "render",
 		Short: "Render the project's topic/format/audience matrix",
 		Long: "Render every topic × format × audience combination the project " +
-			"declares, or the subset selected by the flags. Usage: " +
-			"qm render [<topic>...]. A combination is built with Pandoc by qm " +
-			"itself when its format profile says `qm: renderer: pandoc`, and " +
-			"is otherwise one " +
-			"`quarto render --profile topic-<t>,format-<f>,audience-<a>`. " +
-			"Which formats and audiences a topic takes part in is declared in " +
-			"its own profile, under `qm: formats:` and `qm: audiences:`.",
+			"declares in qm.yml, or the subset selected by the flags. Usage: " +
+			"qm render [<topic>...]. A website covers all selected topics at " +
+			"once; a document (DOCX, PDF) is written per topic and audience. " +
+			"Which formats and audiences a topic takes part in is declared " +
+			"under the topic in qm.yml, as `formats:` and `audiences:`.",
 		Flags: []string{"project", "topic", "format", "audience", "clean", "dry-run"},
 		Cmd:   cli.Guard(cmd),
 	})
@@ -79,7 +73,7 @@ func cmd(c *start.Command) error {
 	}
 	// Positional arguments name topics, the axis one usually varies.
 	topics := append(splitList(deref(topicFlag)), c.Args...)
-	req := qmcore.Matrix{
+	req := config.Request{
 		Topics:    topics,
 		Formats:   splitList(deref(formatFlag)),
 		Audiences: splitList(deref(audienceFlag)),
@@ -89,7 +83,7 @@ func cmd(c *start.Command) error {
 
 // Run renders the requested part of the project's matrix. Progress is
 // written to stdout.
-func Run(docPath string, req qmcore.Matrix, clean, dryRun bool) error {
+func Run(docPath string, req config.Request, clean, dryRun bool) error {
 	opts, err := BuildOptions(docPath, req, clean, dryRun)
 	if err != nil {
 		return err
@@ -98,7 +92,7 @@ func Run(docPath string, req qmcore.Matrix, clean, dryRun bool) error {
 		fmt.Fprintf(os.Stdout, format+"\n", args...)
 	}
 	log("%d render(s) selected", len(opts.Selections))
-	if err := bookrender.Run(opts, log); err != nil {
+	if err := build.Run(opts, log); err != nil {
 		return fmt.Errorf("render: %w", err)
 	}
 	return nil
@@ -106,13 +100,16 @@ func Run(docPath string, req qmcore.Matrix, clean, dryRun bool) error {
 
 // BuildOptions turns the command line into a render request. Exposed for
 // tests. docPath must be absolute.
-func BuildOptions(docPath string, req qmcore.Matrix, clean, dryRun bool) (bookrender.Options, error) {
-	sels, err := qmcore.BuildMatrix(docPath, req)
+func BuildOptions(docPath string, req config.Request, clean, dryRun bool) (build.Options, error) {
+	cfg, err := config.Load(docPath)
 	if err != nil {
-		return bookrender.Options{}, fmt.Errorf("render: %w", err)
+		return build.Options{}, fmt.Errorf("render: %w", err)
 	}
-	return bookrender.Options{
-		Root:       docPath,
+	sels, err := cfg.Expand(req)
+	if err != nil {
+		return build.Options{}, fmt.Errorf("render: %w", err)
+	}
+	return build.Options{
 		Selections: sels,
 		Clean:      clean,
 		DryRun:     dryRun,

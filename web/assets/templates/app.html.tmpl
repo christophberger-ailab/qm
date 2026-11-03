@@ -186,8 +186,11 @@
   {{if .Lines}}<pre class="git-diff-body">{{range .Lines}}<span class="git-dl git-dl-{{.Kind}}">{{.Text}}</span>{{end}}</pre>{{else if not .Error}}<p class="empty">Nothing to show: this side of the file has no textual change.</p>{{end}}
 </div>{{end}}
 
-{{define "render"}}{{with .Render}}{{if .Books}}<details class="render">
-  <summary title="Build each selected topic into one flat document and render it">Render</summary>
+{{define "render"}}{{with .Render}}{{if .Error}}<details class="render">
+  <summary title="qm.yml cannot be read">Render</summary>
+  <div class="render-body"><pre class="render-error">{{.Error}}</pre></div>
+</details>{{else if .Books}}<details class="render">
+  <summary title="Render the selected topics in the selected formats and audiences">Render</summary>
   <div class="render-body">
     <form id="render-form" hx-post="/render/select" hx-trigger="change" hx-swap="none">
       {{range $book := .Books}}
@@ -195,7 +198,7 @@
         <legend><label><input type="checkbox" name="book" value="{{$book.Name}}"{{if $book.Selected}} checked{{end}}> {{$book.Name}}</label></legend>
         {{if gt (len $book.Profiles) 1}}
         <div class="variants">
-          {{range $book.Profiles}}<label class="profile" title="One quarto render run per checked audience"><input type="checkbox" name="profile.{{$book.Name}}" value="{{.Name}}"{{if .Selected}} checked{{end}}> {{.Name}}</label>
+          {{range $book.Profiles}}<label class="profile" title="One render per checked audience"><input type="checkbox" name="profile.{{$book.Name}}" value="{{.Name}}"{{if .Selected}} checked{{end}}> {{.Name}}</label>
           {{end}}
         </div>
         {{else if eq (len $book.Profiles) 1}}

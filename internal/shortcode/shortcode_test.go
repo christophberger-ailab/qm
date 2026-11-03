@@ -75,4 +75,3 @@ func TestShortcodes(t *testing.T) {
 		}
 	}
 }
-

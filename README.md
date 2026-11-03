@@ -1,30 +1,28 @@
-# qm — a companion CLI for Quarto documentation trees
+# qm — build and manage a Markdown documentation tree
 
 ![`qm web`](./docs/images/qm_web.png)
 
-`qm` manages a [Quarto](https://quarto.org) documentation tree and adds the
-things the `quarto` command itself does not do:
+`qm` turns a tree of Markdown pages (`.qmd` or `.md`, in the dialect Quarto
+projects use) into a website, Word documents and PDFs. It needs neither Quarto
+nor Pandoc: the Markdown is parsed, filtered and written by `qm` itself.
 
-- **Books out of nested folders.** A Quarto book is flat — one file per
-  chapter, folder depth carries no meaning. `qm` flattens a whole content
-  folder into a single document, demoting each page's headings to the level its
-  folder depth implies, rewriting in-book links into anchors, and lifting the
-  pages' `::: slide` blocks out into a slide deck of its own.
+- **One tree, many outputs.** The folder structure and the `order:` front
+  matter of the pages decide the order and the nesting of every output. A
+  website, a DOCX and a PDF all come from the same pages, with the headings
+  demoted to the level the folder depth implies.
 - **A three-axis render matrix.** A render is addressed by *topic* (what),
-  *format* (how) and *audience* (for whom), each an ordinary Quarto profile.
-  `qm` validates a selection, expands the matrix the project declares, and
-  builds each combination: documents (DOCX, PDF, PPTX) with Pandoc directly,
-  the website with `quarto render`.
-- **The output paths Quarto cannot compose.** Quarto resolves `{{< var >}}` in
-  only two configuration keys. For formats Quarto renders, `qm` fills the gap
-  as the project's pre- and post-render hooks, so a plain
-  `quarto render --profile …` produces a correctly built and correctly named
-  artefact. Formats with `qm: renderer: pandoc` do not need Quarto at all (see
-  [Documents without Quarto](#documents-without-quarto-qm-renderer-pandoc)).
+  *format* (how) and *audience* (for whom). One file, `qm.yml`, declares them;
+  `qm render` builds any part of the matrix, and `qm web` does the same from a
+  panel.
+- **Conditional content.** A block or span can be marked for a format
+  (`explanation`) or an audience (`pol`); a render keeps only what the
+  selection shows.
 - **Editing helpers.** Chapter insert/move/remove that keep the `order:` front
-  matter consistent, a linter for unclosed Quarto block fences, and a local web
-  UI for reordering pages by drag and drop, editing them, copyediting them with
+  matter consistent, a linter for unclosed block fences, and a local web UI
+  for reordering pages by drag and drop, editing them, copyediting them with
   an LLM, and rendering.
+- **Migration.** `qm migrate` writes `qm.yml` from an older Quarto setup
+  (`_quarto.yml` and its profiles).
 
 ## Install
 
@@ -43,9 +41,10 @@ or, from a clone:
 go build -o qm .
 ```
 
-The binary is self-contained: the web UI's templates and assets are embedded.
-The only external tool it needs is `quarto` itself, on `PATH`, and — optionally
-— `trash`, which the deleting commands prefer over permanent removal.
+The binary is self-contained: the web UI's templates and assets, the website's
+stylesheet and script, and the PDF's default fonts are embedded. No external
+tool is needed. Optionally, `trash` is preferred by the deleting commands over
+permanent removal.
 
 ## Usage
 
@@ -57,16 +56,15 @@ Global flags apply to every command:
 
 | flag | env | default | meaning |
 | --- | --- | --- | --- |
-| `--project`, `-p` | `QM_PROJECT` | `.` | path to the Quarto document tree |
+| `--project`, `-p` | `QM_PROJECT` | `.` | path to the document tree |
 
 ### Commands
 
 | command | what it does |
 | --- | --- |
 | `qm render [<topic>…]` | render the project's topic × format × audience matrix |
-| `qm flatten <topic>` | write the build documents of one topic without rendering |
-| `qm prepare` | pre-render hook: validate the selection, build the topic, write the capture filter |
-| `qm finalize` | post-render hook: move the output where the profiles say, add the qm renderer's PDF and covers |
+| `qm flatten <topic>` | write the Markdown a document render of one topic parses, to `_build/<topic>.md`, without rendering |
+| `qm migrate` | write `qm.yml` from the project's old `_quarto*.yml` files |
 | `qm lint [<topic>]` | check the `.qmd` sources (currently: unclosed `:::` fences) |
 | `qm chapters insert <folder>` | give a new page its `order:`, renumbering its siblings |
 | `qm chapters move <folder> <old> <new>` | move a chapter to another order position |
@@ -82,221 +80,28 @@ qm render                              # every combination the project declares
 qm render calltaker dispatcher         # those two topics, all their formats
 qm render --format handout             # handouts only
 qm render --audience pol --clean       # the pol variants, from scratch
-qm render --dry-run                    # print the pipeline, run nothing
+qm render --dry-run                    # print what would be written, write nothing
 ```
 
-A combination whose format profile says `qm: renderer: pandoc` is built by
-`qm` itself, with Pandoc (see below). Any other becomes one
-`quarto render --profile topic-<t>,format-<f>,audience-<a> --no-clean`, run in
-the project root. A failing combination does not stop the others; the command
-reports how many failed and exits non-zero.
+Positional arguments name topics and are added to `--topic`. `--topic`,
+`--format` and `--audience` take comma-separated lists; a name `qm.yml` does not
+define is an error. Without them every topic, format and audience the project
+offers is rendered, cut down to what each topic and format declares (see
+[`qm.yml`](#qmyml)).
 
-### Documents without Quarto (`qm: renderer: pandoc`)
+A **website** format covers all selected topics in one site, one site per
+selected audience. A **document** format (DOCX, PDF) is written per topic and
+audience. A failing combination does not stop the others; the command reports
+how many failed and exits non-zero. `--clean` empties each selected format's
+output directory once, before the first render; it refuses a directory that is
+not below the output directory. `--dry-run` prints the files that would be
+written.
 
-A format profile that selects the Pandoc renderer is built without Quarto and
-without the project's hooks:
-
-```yaml
-# _quarto-format-handout.yml
-qm:
-  renderer: pandoc
-  pdf:
-    toc: true
-project:
-  output-dir: _output/handout
-book:
-  output-file: "{{< var topic >}}{{< var audience >}}"
-format:
-  docx:
-    toc: true
-    reference-doc: assets/templates/Template.docx
-```
-
-```yaml
-# _quarto-format-slides.yml
-qm:
-  renderer: pandoc
-  output-file: "{{< var topic >}}{{< var audience >}}"
-  copy:
-    _build/reference-slides.pptx: "assets/templates/deck{{< var audience-template >}}.pptx"
-project:
-  output-dir: _output/slides
-format:
-  pptx:
-    slide-level: 2
-    reference-doc: _build/reference-slides.pptx
-```
-
-What happens for one combination:
-
-1. The topic's folder is flattened **in memory** (the flattening is the one
-   `qm prepare` does; nothing is written to `_build/`, so there is no stale
-   build document that could put one topic's content into another's handout).
-2. The shortcodes the content uses are resolved on the text: `{{< include
-   /path >}}` (project-absolute), `{{< pagebreak >}}` and `{{< var name >}}`.
-   Any other shortcode is reported and left as written.
-3. Pandoc reads the result as Pandoc Markdown (with Quarto's one deviation,
-   `table_attributes` off), through a filter chain: the project's own filters
-   (`filters:` in `_quarto.yml` and the profiles — a Lua filter, or a Quarto
-   extension that contributes Lua filters, such as an audience gate that asks
-   `quarto.metadata.get("make.pol")`), then `/assets/…` image paths become
-   project-relative, `{{< pagebreak >}}` becomes the format's page break, and
-   callouts are drawn.
-4. For a DOCX, the filter chain also saves the document it is about to write,
-   and `qm` lays out the PDF from it and adds the topic's cover to both (the
-   same Go layout the `qm` renderer uses).
-
-The document metadata Pandoc gets is the `make:` flags of the base config and
-the three profiles (first-listed profile wins, as in Quarto), `lang`, the book
-title, and the heading of the contents list.
-
-**What it needs.** Pandoc 3.0 or newer. `qm` looks for `$QM_PANDOC`, a `pandoc`
-on the `PATH`, the Pandoc inside a Quarto installation, and last
-`quarto pandoc`; a machine that has Quarto for the website needs nothing else.
-Quarto is also where `qm` takes two cosmetic details from when it is present:
-the callout icons (`<share>/formats/docx/*.png`) and the code highlighting
-theme (`arrow-light`), so that a DOCX looks as it did under Quarto. Without
-Quarto, put icons in `assets/callout-icons/<note|tip|warning|important|caution>.png`
-(a callout then has its icon; without any, none) and name a theme with
-`syntax-highlighting:` under `format: docx:` (a theme file of the project, one
-of Quarto's, or one of Pandoc's own). `QM_QUARTO_SHARE` points at a Quarto
-`share` directory explicitly.
-
-**Callouts** are drawn as Quarto draws them: in a DOCX, a table with a shaded
-title row (the `title` attribute, else the first heading, else the type's
-default title in the document language — German and English are built in) and
-a body row, or a bare gray bar for a `.callout` without a type; in a slide
-deck, a block quote headed by the bold title.
-
-**Differences from the Quarto renderers**, all deliberate or unavoidable:
-
-- Mermaid diagrams (` ```{mermaid} `) stay code blocks, with a warning: only
-  Quarto could draw them, and it needs a headless Chrome. Export them as
-  images.
-- A shortcode other than the three above is not resolved.
-- A `filters:` entry that names a Quarto entry point (`at:`) is an error.
-- A slide deck's title slide comes from the metadata, and a link to a site page
-  inside a deck (`/dispatcher/…`) is not rewritten relative to `_build/`.
-- `quarto render` refuses such a format: its pre-render hook says to use
-  `qm render`.
-
-**Diagnosis.** A failed render keeps its working files (the input, the
-metadata, the generated filter, the captured document) and says where.
-`QM_KEEP_WORKDIR=1` keeps them after a successful one, too. `--dry-run` prints
-the Pandoc command.
-
-### PDF and DOCX without LaTeX or Typst
-
-This section describes `qm: renderer: qm`, where Quarto writes the DOCX and
-the project's hooks add the PDF. [`qm: renderer: pandoc`](#documents-without-quarto-qm-renderer-pandoc)
-builds the same documents without Quarto; the PDF layout and covers below
-apply to both.
-
-Enable the Go-backed document pipeline in a **format profile**:
-
-```yaml
-qm:
-  renderer: qm
-  pdf:
-    toc: true
-filters:
-  - path: _build/qm-capture.lua
-    at: post-finalize
-project:
-  type: book
-  output-dir: _output/handout
-book:
-  output-file: "{{< var topic >}}{{< var audience >}}"
-format:
-  docx:
-    toc: true
-    reference-doc: assets/templates/reference.docx
-```
-
-Set the optional cover in the **topic profile**. Paths are project-relative
-and support the same profile variables as output filenames:
-
-```yaml
-qm:
-  cover: "assets/templates/coverpage_schulung_calltaker{{< var audience-template >}}.png"
-```
-
-The pipeline runs in the project's hooks, so `quarto render --profile …`,
-`qm render`, and **qm web** all produce the same PDF and DOCX:
-
-1. `qm prepare` (pre-render) checks the configuration and writes the capture
-   filter to `_build/qm-capture.lua`.
-2. Quarto renders **only DOCX**, with the project's includes, variables,
-   audience filters, and Word reference styles. The capture filter runs at
-   Quarto's last filter entry point and saves the processed Pandoc JSON to
-   `_build/qm-document.json` in the same run.
-3. `qm finalize` (post-render) uses Go and `signintech/gopdf` to lay out an A4
-   PDF next to the DOCX. The PDF has embedded fonts (with monochrome Noto
-   Emoji for emoji the text fonts lack), headings, paragraphs,
-   lists, ordinary tables, raster images, links, bookmarks, page numbers, and a
-   linked contents list. `qm finalize` then puts the cover on both files.
-
-The PDF sets its text in the Go fonts, unless the project root has a
-[`_brand.yml`](https://posit-dev.github.io/brand-yml/) whose `typography`
-names fonts with local files. Then body text uses `base` (regular, bold,
-italic and bold italic, each the closest weight and style the family
-offers), headings use `headings` (default weight bold), and code uses
-`monospace`. Only TrueType files (`.ttf`) can be embedded; `.otf`, WOFF
-files and fonts from Google, Bunny or the system are skipped with a note
-in the `qm finalize` output, and their text keeps the Go fonts. Font sizes,
-colors and line heights from the brand file do not apply to the PDF.
-
-```yaml
-typography:
-  fonts:
-    - family: Source Sans 3
-      source: file
-      files:
-        - path: fonts/SourceSans3-Regular.ttf
-        - path: fonts/SourceSans3-Bold.ttf
-          weight: bold
-        - path: fonts/SourceSans3-Italic.ttf
-          style: italic
-  base: Source Sans 3
-  headings:
-    family: Source Sans 3
-    weight: semi-bold
-```
-
-The PDF options belong under `qm: pdf:`, not `format: pdf:`, because Quarto
-would typeset a `format: pdf:` itself with LaTeX. `qm prepare` rejects a
-`qm: renderer: qm` format profile that declares `format: pdf:`, lacks
-`format: docx:`, or does not declare the capture filter at `post-finalize`.
-
-Both covers keep the image's aspect ratio and are anchored at the
-bottom-right corner of the page, where the brand graphic ends. The PDF cover
-(A4) fills the page and crops any overflow at the top or left. The DOCX cover
-uses the document's page size, shrinks to fit, and never crops. It sits in a
-dedicated zero-margin section, and the body's original section properties,
-styles, headers, and footers are preserved. No header or footer is added to
-either cover. Omit `qm: cover:` to render without one.
-
-Neither LaTeX nor Typst is invoked. Content-specific Quarto dependencies still
-apply (for example, Chrome for rendering Mermaid diagrams). Under
-`quarto preview`, `qm finalize` does nothing, so no PDF is written. Set
-`qm: renderer: quarto` (or omit it) to use Quarto's own writers.
-
-The PDF backend has its own layout; it does not reproduce the Word template
-or interpret LaTeX/CSS styling. Callout content is retained with simplified
-formatting. Quarto's `{{< pagebreak >}}` starts a new page, but never leaves a
-blank one. Images inside table cells are scaled to the column width; a row
-containing an image moves to the next page whole when it does not fit. Advanced
-constructs such as mathematical typesetting, footnotes, and merged table cells
-currently report an error rather than silently losing content. When a PDF layout fails, the captured
-document stays in `_build/qm-document.json` for diagnosis. Word computes its
-DOCX table of contents when fields are updated.
-
-Library research and rationale: [docs/native-rendering.md](docs/native-rendering.md).
-
-`--clean` empties each selected format's output directory once, before the
-first render. It is a `qm` flag rather than Quarto's own cleaning because
-several topics and audiences share one output directory, so a per-run clean
-would delete what the run before it produced.
+`qm flatten <topic>` writes `_build/<topic>.md`: the topic's pages in folder
+order, with demoted headings, in-book links turned into anchors and shortcodes
+resolved. It is the text a document render parses, so it is the way to look at
+what a render works from. Conditional content is still in it; a render removes
+what the selected format and audience do not show.
 
 #### `qm web`
 
@@ -397,7 +202,7 @@ kept in a subdirectory of a larger one is managed just the same. It runs the
 as they do in a terminal.
 
 The Editor button opens the project, and the page open in the app, in an
-external editor — for `_quarto.yml`, filters, stylesheets, and whatever else
+external editor — for `qm.yml`, stylesheets, and whatever else
 the app does not edit. *Config → External editor* sets the command line it
 runs, with `{root}` for the project directory and `{file}` for the page;
 the default is VS Code's `code {root} --goto {file}`, and the page offers
@@ -449,103 +254,318 @@ files qm used to keep (`render.json`, `recent.json`, `copyedit.json`, and the
 `custom-css/.active` marker) are carried over into it once and those files are
 renamed `*.migrated`; they are no longer read and can be deleted.
 
-## How a project is set up
+## qm.yml
 
-`qm` expects a Quarto project laid out along three profile axes.
+One file in the project root, `qm.yml`, configures everything: the output
+formats, the audiences, the topics. Unknown keys are errors. Maps keep the
+order they are written in, and that order is the order of the render matrix
+and of the web UI's panel.
 
-**One profile per axis**, named `_quarto-<axis>-<value>.yml` in the project
-root:
+Top level keys:
 
-```
-_quarto-topic-calltaker.yml     what is rendered  — the content folder
-_quarto-format-handout.yml      how               — project type, output dir, formats
-_quarto-audience-pol.yml        for whom          — the flags the content filter reads
-```
+| key | meaning |
+| --- | --- |
+| `title` | the site title and, for documents, the default document title |
+| `lang` | the document language (`de`, `en-US`, …); sets the proofing language and the contents heading |
+| `output` | the directory renders are written below; default `_output` |
+| `vars` | variables for `{{< var name >}}` and `{name}` placeholders |
+| `formats` | how a render is produced |
+| `audiences` | for whom |
+| `topics` | what: one content folder each |
 
-A render selects exactly one of each; two on an axis, a missing axis, or a
-profile with no file are errors.
+A **format** has a `type`: `html` (a website), `docx`, `pdf`, or a list
+`[docx, pdf]` that writes both from the same document. `html` cannot be
+combined with another type. If `type` is left out, it is guessed from the
+name (`docx`, `word`, `handout` and `handbook` mean DOCX, `pdf` means PDF,
+anything else HTML). More keys: `show` (the conditional classes the format
+keeps), `toc` (a table of contents in a document), `template` (a reference
+DOCX), `dir` (output directory below `output`; default the format's name),
+`file` (a document's file name without extension; default `{topic}`, plus
+`-{audience}` when the project has more than one audience), `topics` and
+`audiences` (restrict the matrix from the format's side) and `vars`.
 
-**A topic profile declares what it takes part in**, under the `qm:` key that
-Quarto ignores and `qm` owns:
+An **audience** has an optional `title` (the label in the web UI), `show` (the
+conditional classes it keeps; its own name is always one of them) and `vars`.
 
-```yaml
-# _quarto-topic-sysadmin.yml
-qm:
-  folder:    systemadministration    # default: the topic name
-  formats:   [handout, handbook, slides]
-  audiences: [std]
-```
+A **topic** has `folder` (the content folder, project-relative; default the
+topic's name), `title` (overrides the title of the folder's index page),
+`cover` (a PNG put in front of a document), `formats` and `audiences`
+(restrict the matrix from the topic's side) and `vars`. Where a topic and a
+format both restrict an axis, both have to agree.
 
-Declaring nothing means every value the project offers. A format profile may
-narrow the same axes from its side; where both declare one, both have to agree.
-
-**The book is a fixed one-element chapter list.** `_quarto.yml` holds
-
-```yaml
-book:
-  chapters: [index.qmd]
-```
-
-and `index.qmd` includes `_build/book.qmd`, which the pre-render hook writes.
-A profile must never set `book: chapters:` — Quarto concatenates array keys
-across profiles instead of replacing them, so the book would render twice.
-
-**The hooks do the rest**:
+A complete example:
 
 ```yaml
-# _quarto.yml
-project:
-  pre-render:  qm prepare
-  post-render: qm finalize
+title: Handbuch Leitstelle
+lang: de
+output: _output
+vars:
+  org: Leitstelle Nord
+  suffix: ""
+formats:
+  web:
+    type: html
+  handout:
+    type: [docx, pdf]
+    toc: true
+    template: assets/templates/Template.docx
+    show: [explanation]
+    topics: [calltaker, dispatcher]
+  handbook:
+    type: docx
+    toc: true
+    template: assets/templates/Template{suffix}.docx
+    show: [explanation, tutorial]
+    dir: handbook
+    file: "{topic}{suffix}"
+audiences:
+  std:
+    title: Standard
+  pol:
+    title: Polizei
+    show: [pol]
+    vars: {suffix: _POL}
+  fw:
+    title: Feuerwehr
+    show: [fw]
+    vars: {suffix: _FW}
+topics:
+  calltaker:
+    cover: "assets/covers/calltaker{suffix}.png"
+  dispatcher:
+    cover: "assets/covers/dispatcher{suffix}.png"
+  sysadmin:
+    folder: systemadministration
+    title: Systemadministration
+    audiences: [std]
 ```
 
-`qm prepare` validates the active profile selection, flattens the selected
-topic into `_build/book.qmd` and `_build/slides.qmd`, and copies the files a
-format's `qm: copy:` map asks for. `qm finalize` applies the format's
-`qm: output-file:` and `qm: output-dir-suffix:` to what Quarto produced.
-For a `qm: renderer: qm` format, `qm prepare` also writes the capture filter,
-and `qm finalize` lays out the PDF and adds the covers (see
-[PDF and DOCX without LaTeX or Typst](#pdf-and-docx-without-latex-or-typst)).
+(`suffix` is an example variable: it means something only because `template`,
+`file` and `cover` use it. The project-level default keeps `{suffix}` defined
+for the audience `std`, which sets none.)
 
-Under `quarto preview`, `qm finalize` does nothing. The preview server reads
-and stamps the files it just rendered under the path it reported, so moving
-them away would abort the preview; the final placement is left to the real
-render. Set `QM_FINALIZE_PREVIEW=1` (or `=0`) to override the detection.
+A minimal project needs no `qm.yml` at all. Without one, every top-level
+content folder (one holding a `.qmd` or `.md` file, and not starting with `_`
+or `.`) is a topic, there are two formats, `web` (HTML) and `docx`, and one
+audience, `all`. A `qm.yml` states only what differs:
 
-Because both are wired into the project, a plain
-`quarto render --profile topic-x,format-y,audience-z` — from a terminal, from
-VS Code, from CI — produces exactly the same artefact as `qm render`, for every
-format Quarto renders (the website, and formats with `qm: renderer: qm`). A
-format with `qm: renderer: pandoc` is built by `qm render` alone; the hook
-refuses it.
+```yaml
+title: Handbook
+lang: en
+```
 
-### Page conventions
+`{name}` placeholders in `dir`, `file`, `cover` and `template` resolve against
+the variables: the project's `vars`, then the topic's, the audience's and the
+format's (later ones win), plus the built-ins `topic`, `format` and
+`audience`. A placeholder without a variable is an error. The same variables
+serve `{{< var name >}}` in the content, together with the keys of
+`_variables.yml` in the project root (nested keys are written with dots,
+`metadata.version`); `vars` win over the file.
+
+### Conditional content
+
+A div or span carrying a class that a format or an audience lists under
+`show:` — or the name of an audience — is *conditional*:
+
+```markdown
+::: explanation
+Shown in the handbook, which lists `explanation` under `show:`.
+:::
+
+::: pol
+Only for the `pol` audience.
+:::
+
+Fire engines [(Feuerwehr only)]{.fw} arrive first.
+```
+
+A render keeps a conditional div or span only if the selection shows it.
+Format classes and audience classes are checked separately, and a block that
+carries both kinds must pass both. Classes that no format or audience lists
+are ordinary styling classes and do not matter. A div that is not kept is
+removed with its content; one that is kept stays as a wrapper for its content.
+
+Quarto's `.content-visible` and `.content-hidden` divs with `when-format` or
+`unless-format` also work; they compare against the format's types (`html`,
+`docx`, `pdf`) and its name. Conditions on profiles or metadata are not
+supported, and such content is kept.
+
+A `::: slide` div and a `.notes` div are always dropped. PPTX slide decks are
+not supported for now.
+
+The project's Lua filters no longer run. What an audience filter did there is
+done by `show:`.
+
+### Heading demotion
+
+Folder structure and `order:` drive every output; there is no distinction
+between a "book" and a "website". Pages that lie directly in a topic's folder,
+and the `index.qmd` of a subfolder (which sorts among its *parent's* pages),
+use their headings as written. Every deeper folder level adds one heading
+level. A page that writes `##` two levels below the topic folder therefore
+ends up as `####`. A page whose front-matter `title:` is not spelled out by a
+heading at its top level gets a generated title heading, and its own headings
+stay below it.
+
+`qm flatten <topic>` shows the result for a document.
+
+### The website
+
+An HTML format builds a site with a layout like Quarto's:
+
+- a top navbar with one entry per topic, and the site title linking to the
+  home page, which lists the topics;
+- a left sidebar with the current topic's page tree;
+- a right "On this page" table of contents with scroll-spy;
+- previous/next links at the foot of a page;
+- a responsive layout: the contents list is hidden at 75em and narrower, the
+  sidebar becomes off-canvas at 50em and narrower;
+- all text sizes and the 42em text column are in `em`, so the page scales with
+  the reader's font size; dark mode follows the system setting; print styles;
+- all links are relative, so the site works from `file://` and below any URL
+  prefix.
+
+Callouts, tables, footnotes, definition lists and images are drawn by the
+site's own stylesheet. Links between pages of a topic (`/dispatcher/a/`,
+`/dispatcher/a/index.qmd`, …) are rewritten to the generated pages. With
+several audiences, a site goes to `<output>/<format>-<audience>` unless the
+format's `dir` contains a placeholder.
+
+### Documents: DOCX and PDF
+
+A document format flattens one topic into one Markdown text, resolves its
+shortcodes, parses it, removes the conditional content the selection does not
+show, and writes it. The shortcodes `include`, `var` and `pagebreak` are
+resolved by `qm`:
+
+- `{{< include /path/file.md >}}` takes a project-absolute path, nested up to
+  eight deep;
+- `{{< var name >}}` resolves as described above;
+- `{{< pagebreak >}}` starts a new page.
+
+Any other shortcode is reported and left as written.
+
+Documents are written to `<output>/<dir>/<file>.docx` and `.pdf`, which by
+default is `_output/<format>/<topic>[-<audience>]`.
+
+**DOCX** is written in Go. A `template:` names a reference DOCX; its styles,
+page setup, headers, footers and numbering are used, and its body is
+discarded. Without one, a blank document with Word's default styles is used.
+`toc: true` adds a Word contents field, which Word fills when fields are
+updated.
+
+**PDF** is laid out in Go (A4, embedded fonts, headings, lists, tables,
+images, links, bookmarks, page numbers, a linked contents list). It is fed
+from the same parsed document as the DOCX. The PDF sets its text in the Go
+fonts, unless the project root has a
+[`_brand.yml`](https://posit-dev.github.io/brand-yml/) whose `typography`
+names fonts with local files. Then body text uses `base` (regular, bold,
+italic and bold italic, each the closest weight and style the family
+offers), headings use `headings` (default weight bold), and code uses
+`monospace`. Only TrueType files (`.ttf`) can be embedded; `.otf`, WOFF files
+and fonts from Google, Bunny or the system are skipped with a note in the
+render log, and their text keeps the Go fonts. Font sizes, colors and line
+heights from the brand file do not apply to the PDF.
+
+```yaml
+typography:
+  fonts:
+    - family: Source Sans 3
+      source: file
+      files:
+        - path: fonts/SourceSans3-Regular.ttf
+        - path: fonts/SourceSans3-Bold.ttf
+          weight: bold
+        - path: fonts/SourceSans3-Italic.ttf
+          style: italic
+  base: Source Sans 3
+  headings:
+    family: Source Sans 3
+    weight: semi-bold
+```
+
+**Covers.** A topic's `cover:` is a project-relative PNG, and may use
+placeholders. It is put in front of the DOCX and the PDF. Both covers keep
+the image's aspect ratio and are anchored at the bottom-right corner of the
+page, where the brand graphic ends. The PDF cover (A4) fills the page and
+crops any overflow at the top or left. The DOCX cover uses the document's page
+size, shrinks to fit, and never crops. It sits in a dedicated zero-margin
+section, and the body's original section properties, styles, headers and
+footers are preserved. No header or footer is added to either cover. A
+missing or invalid cover fails the render before anything is written.
+
+The PDF has its own layout; it does not reproduce the Word template. Library
+research and rationale: [docs/native-rendering.md](docs/native-rendering.md).
+
+### Migrating an existing project
+
+```sh
+qm migrate --dry-run     # print the qm.yml that would be written
+qm migrate               # write it
+qm migrate --force       # overwrite an existing qm.yml
+```
+
+`qm migrate` reads `_quarto.yml` and the profile files
+`_quarto-topic-<t>.yml`, `_quarto-format-<f>.yml` and
+`_quarto-audience-<a>.yml` and writes the equivalent `qm.yml`: `qm:` keys such
+as `folder`, `formats`, `audiences` and `cover`, the `make:` flags that are
+true, the `_quarto-vars`, and the output directories. It refuses to
+overwrite an existing `qm.yml` without `--force`, checks that the result loads,
+and prints a warning for everything it could not carry over: a title that
+contains a variable, an output directory outside the common output directory,
+a template generated into `_build/`, a slide deck format (skipped) or a PPTX
+output (dropped).
+
+The old `_quarto*.yml` files are **not read anymore** by `qm` itself. Delete
+them once you no longer render with Quarto; the `project: pre-render` and
+`post-render` hooks (`qm prepare`, `qm finalize`) no longer exist and must go
+from `_quarto.yml` if you keep the file for other tools.
+
+### Known differences from Quarto
+
+- No slide decks (PPTX): `::: slide` blocks and `.notes` are dropped. A
+  follow-up will bring them back.
+- Mermaid diagrams (` ```{mermaid} `) stay code blocks, with a warning.
+- No math typesetting.
+- The site has no search, and raw HTML links in a page are not rewritten.
+- The project's Lua filters do not run; use `show:` for audience gates.
+- Shortcodes other than `include`, `var` and `pagebreak` are not resolved.
+- The PDF does not reproduce the Word template, and the DOCX table of
+  contents is filled by Word when fields are updated.
+
+## Page conventions
 
 - Every page carries an `order:` in its front matter; a folder is ordered by
   its `index.qmd`, which sorts among its *parent's* pages.
-- Names starting with `_` or `.` are invisible, as they are to Quarto.
+- Names starting with `_` or `.` are invisible.
 - A `_FW` or `_POL` suffix on a file or folder name marks it for one audience.
   A variant file supersedes its plain counterpart for the matching audience,
-  and the flattener wraps variant content in a `::: fw` / `::: pol` div so the
-  project's content filter can select it.
-- A `::: slide` div holds content for the deck rather than the book; the
-  flattener moves it into `_build/slides.qmd`.
+  and the flattener wraps variant content in a `::: fw` / `::: pol` div. That
+  div is conditional like any other: it is kept for an audience named `fw`
+  (or `pol`) or one that lists the class under `show:`.
+- Pages can be written as `.qmd` or `.md`.
 
 ## Repository layout
 
 ```
-main.go              command wiring: flags, the `chapters` object, registration
-internal/cli/        the exit-status guard every command body is wrapped in
-internal/qmcore/     axes, selections, profiles, the render matrix, front matter
-internal/bookmaker/  folder tree → one flat document (+ the slide deck)
-internal/bookrender/ the build documents and the `quarto` invocation
-internal/project/    the editable page tree behind the web UI
-internal/gitrepo/    the `git` command behind the web UI's Git panel
-web/                 the local web UI: server, settings (CUE), copyediting
-insert/ move/ remove/  the `qm chapters` subcommands
-lint/ flatten/ render/ prepare/ finalize/ web/   the leaf commands
-spec.yaml, spec-*.yaml   the specification each package implements
-testdata/            a miniature Quarto project and the flattener's golden files
+main.go                 command wiring: flags, the `chapters` object, registration
+internal/cli/           the exit-status guard every command body is wrapped in
+internal/config/        qm.yml: formats, audiences, topics, the render matrix, selections
+internal/qmcore/        front matter, page scans, the chapters' ordering (and the old profiles, for migrate)
+internal/bookmaker/     folder tree → one flat document, headings demoted by depth
+internal/markdown/      the Markdown parser (goldmark plus divs, spans, attributes, callouts) and the conditional filter
+internal/shortcode/     include, var, pagebreak
+internal/build/         a render: flatten, parse, filter, write; brand fonts
+internal/site/          the website writer
+internal/docx/          the DOCX writer
+internal/docrender/     PDF layout, covers, and the Markdown → PDF input
+internal/project/       the editable page tree behind the web UI
+internal/gitrepo/       the `git` command behind the web UI's Git panel
+web/                    the local web UI: server, settings (CUE), copyediting
+insert/ move/ remove/   the `qm chapters` subcommands
+lint/ flatten/ render/ migrate/ web/   the leaf commands
+spec.yaml, spec-*.yaml  the specification each package implements
+testdata/               a miniature project and the flattener's golden files
 ```
 
 `WALKTHROUGH.md` reads the whole codebase once, in dependency order, and

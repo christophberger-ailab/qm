@@ -348,15 +348,15 @@ func joinRel(dir, name string) string {
 }
 
 // FindProjectRoot walks up from start looking for the directory that holds
-// the Quarto project configuration. It returns an empty string when no
-// `_quarto.yml` / `_quarto.yaml` is found.
+// the project configuration. It returns an empty string when no `qm.yml`
+// (or, from before qm.yml, `_quarto.yml` / `_quarto.yaml`) is found.
 func FindProjectRoot(start string) string {
 	dir, err := filepath.Abs(start)
 	if err != nil {
 		return ""
 	}
 	for {
-		for _, name := range []string{"_quarto.yml", "_quarto.yaml"} {
+		for _, name := range []string{"qm.yml", "_quarto.yml", "_quarto.yaml"} {
 			if st, err := os.Stat(filepath.Join(dir, name)); err == nil && !st.IsDir() {
 				return dir
 			}
@@ -369,10 +369,10 @@ func FindProjectRoot(start string) string {
 	}
 }
 
-// HasProjectConfig reports whether dir itself contains a Quarto project
+// HasProjectConfig reports whether dir itself contains a project
 // configuration file.
 func HasProjectConfig(dir string) bool {
-	for _, name := range []string{"_quarto.yml", "_quarto.yaml"} {
+	for _, name := range []string{"qm.yml", "_quarto.yml", "_quarto.yaml"} {
 		if st, err := os.Stat(filepath.Join(dir, name)); err == nil && !st.IsDir() {
 			return true
 		}

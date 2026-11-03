@@ -6,48 +6,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/christophberger-ailab/qm/internal/bookrender"
 )
-
-// fakeQuarto installs a stub `quarto` that appends its arguments to a log
-// file. Building the input is no longer the render's job — the project's
-// pre-render hook does that — so the stub only has to record how it was
-// called.
-func fakeQuarto(t *testing.T) string {
-	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("the stub quarto is a shell script")
-	}
-	dir := t.TempDir()
-	log := filepath.Join(dir, "calls.log")
-	stub := filepath.Join(dir, "quarto")
-	script := "#!/bin/sh\necho \"args: $*\" >> " + log + "\necho \"pandoc output\"\n"
-	if err := os.WriteFile(stub, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	old := bookrender.QuartoCommand
-	bookrender.QuartoCommand = stub
-	t.Cleanup(func() { bookrender.QuartoCommand = old })
-	return log
-}
-
-// calls returns the stub's recorded lines.
-func calls(t *testing.T, log string) string {
-	t.Helper()
-	b, err := os.ReadFile(log)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return ""
-		}
-		t.Fatal(err)
-	}
-	return string(b)
-}
 
 // waitForRender blocks until the background render finishes.
 func waitForRender(t *testing.T, s *server) jobState {
@@ -91,21 +53,17 @@ func bookFieldset(t *testing.T, body, book string) string {
 	return body[start : i+end+len(`</fieldset>`)]
 }
 
-// writeProfile adds a profile to the fixture project.
-func writeProfile(t *testing.T, root, name, body string) {
+// writeConfig replaces the fixture project's qm.yml.
+func writeConfig(t *testing.T, root, body string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(root, "_quarto-"+name+".yml"),
-		[]byte(body), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "qm.yml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// One `quarto render --profile topic-<t>,format-<f>,audience-<a>` per
-// selection: no input file, no --to, no --output-dir. Everything the render
-// needs beyond that is the project's own pre- and post-render hooks.
-func TestRenderRunsQuartoPerSelection(t *testing.T) {
-	log := fakeQuarto(t)
-	srv, _ := testServer(t)
+// A render from the panel writes what the selection names.
+func TestRenderWritesTheSelection(t *testing.T) {
+	srv, root := testServer(t)
 
 	rec := post(t, srv, "/render", renderForm())
 	if rec.Code != http.StatusOK {
@@ -115,83 +73,51 @@ func TestRenderRunsQuartoPerSelection(t *testing.T) {
 	if st.Failed {
 		t.Fatalf("render failed:\n%s", strings.Join(st.Lines, "\n"))
 	}
-
-	got := calls(t, log)
-	want := "args: render --profile topic-chapter2,format-pdf,audience-std --no-clean\n"
-	if !strings.Contains(got, want) {
-		t.Errorf("unexpected quarto invocation:\n%s", got)
-	}
-	if n := strings.Count(got, "args: render"); n != 1 {
-		t.Errorf("got %d render runs, want 1:\n%s", n, got)
+	if _, err := os.Stat(filepath.Join(root, "_output", "pdf", "chapter2.pdf")); err != nil {
+		t.Errorf("no PDF: %v\n%s", err, strings.Join(st.Lines, "\n"))
 	}
 }
 
-// Every checked format and audience is a combination of its own.
+// Every checked format and audience is a combination of its own; a website
+// covers every checked topic at once.
 func TestRenderExpandsTheSelectedMatrix(t *testing.T) {
-	log := fakeQuarto(t)
 	srv, root := testServer(t)
-	writeProfile(t, root, "audience-pol", "_quarto-vars:\n  audience: \"-pol\"\n")
+	writeConfig(t, root, "formats:\n  pdf: {type: pdf}\n  web: {type: html}\naudiences: [std, pol]\ntopics:\n  chapter2:\n")
 
 	form := url.Values{
 		"book":             {"chapter2"},
 		"profile.chapter2": {"std", "pol"},
-		"format":           {"pdf", "docx"},
+		"format":           {"pdf", "web"},
 	}
 	if rec := post(t, srv, "/render", form); rec.Code != http.StatusOK {
 		t.Fatalf("render: status %d: %s", rec.Code, rec.Body)
 	}
-	if st := waitForRender(t, srv); st.Failed {
+	st := waitForRender(t, srv)
+	if st.Failed {
 		t.Fatalf("render failed:\n%s", strings.Join(st.Lines, "\n"))
 	}
-
-	got := calls(t, log)
+	log := strings.Join(st.Lines, "\n")
 	for _, want := range []string{
-		"--profile topic-chapter2,format-pdf,audience-pol",
-		"--profile topic-chapter2,format-pdf,audience-std",
-		"--profile topic-chapter2,format-docx,audience-pol",
-		"--profile topic-chapter2,format-docx,audience-std",
+		"web · std (site)", "web · pol (site)",
+		"chapter2 · pdf · std", "chapter2 · pdf · pol",
 	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("missing render run %q:\n%s", want, got)
+		if !strings.Contains(log, want) {
+			t.Errorf("missing render %q:\n%s", want, log)
 		}
 	}
-	if n := strings.Count(got, "args: render"); n != 4 {
-		t.Errorf("got %d render runs, want 4:\n%s", n, got)
+	if n := strings.Count(log, "] "); n != 4 {
+		t.Errorf("got %d renders, want 4:\n%s", n, log)
 	}
-}
-
-// Renders go into the same output directory one after another, so Quarto
-// must not clean it between runs, and it must be left to the profiles to say
-// where the output goes and what it is called.
-func TestRenderKeepsProfileOutput(t *testing.T) {
-	log := fakeQuarto(t)
-	srv, _ := testServer(t)
-
-	if rec := post(t, srv, "/render", renderForm()); rec.Code != http.StatusOK {
-		t.Fatalf("render: status %d: %s", rec.Code, rec.Body)
-	}
-	if st := waitForRender(t, srv); st.Failed {
-		t.Fatalf("render failed:\n%s", strings.Join(st.Lines, "\n"))
-	}
-
-	got := calls(t, log)
-	if !strings.Contains(got, "--no-clean") {
-		t.Errorf("quarto called without --no-clean:\n%s", got)
-	}
-	for _, flag := range []string{"--output", "--output-dir", "--to"} {
-		if strings.Contains(got, flag) {
-			t.Errorf("%s overrides the profile's own setting:\n%s", flag, got)
+	for _, p := range []string{"_output/web-pol/index.html", "_output/pdf/chapter2-pol.pdf"} {
+		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
+			t.Errorf("%s: %v", p, err)
 		}
 	}
 }
 
 func TestRenderReportsFailure(t *testing.T) {
-	fakeQuarto(t)
-	srv, _ := testServer(t)
-	if err := os.WriteFile(bookrender.QuartoCommand,
-		[]byte("#!/bin/sh\necho boom >&2\nexit 1\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	srv, root := testServer(t)
+	writeConfig(t, root, "formats:\n  pdf: {type: pdf}\naudiences: [std]\ntopics:\n  chapter2: {cover: missing.png}\n")
 
 	if rec := post(t, srv, "/render", renderForm()); rec.Code != http.StatusOK {
 		t.Fatalf("render: status %d", rec.Code)
@@ -200,8 +126,18 @@ func TestRenderReportsFailure(t *testing.T) {
 	if !st.Failed {
 		t.Errorf("failing render not reported as failed:\n%s", strings.Join(st.Lines, "\n"))
 	}
-	if out := strings.Join(st.Lines, "\n"); !strings.Contains(out, "boom") {
-		t.Errorf("quarto stderr missing from the log:\n%s", out)
+	if out := strings.Join(st.Lines, "\n"); !strings.Contains(out, "missing.png") {
+		t.Errorf("the cause is missing from the log:\n%s", out)
+	}
+}
+
+// A broken qm.yml is shown in the panel instead of hiding it.
+func TestRenderPanelShowsAConfigError(t *testing.T) {
+	srv, root := testServer(t)
+	writeConfig(t, root, "formatz: {}\n")
+	body := get(t, srv, "/").Body.String()
+	if !strings.Contains(body, `class="render-error"`) || !strings.Contains(body, "formatz") {
+		t.Errorf("config error not shown:\n%s", body)
 	}
 }
 
@@ -233,7 +169,6 @@ func TestRenderLogSwapsItselfInPlace(t *testing.T) {
 
 // Rendering nothing is a mistake worth naming rather than a no-op.
 func TestRenderNeedsTopicAndFormat(t *testing.T) {
-	fakeQuarto(t)
 	srv, _ := testServer(t)
 
 	rec := post(t, srv, "/render", url.Values{"format": {"pdf"}})
@@ -264,11 +199,6 @@ func TestRenderPanelListsTheAxes(t *testing.T) {
 			t.Errorf("render panel missing %q:\n%s", want, body)
 		}
 	}
-	// A `_quarto-*.yml` that is not on one of the three axes is not a
-	// render selection and is not offered.
-	if strings.Contains(body, `value="not-an-axis-web"`) {
-		t.Errorf("a non-axis profile was offered:\n%s", body)
-	}
 	// Nothing is selected by default: Render must not kick off a long run
 	// before the user has chosen anything.
 	if strings.Contains(body, `name="book" value="chapter2" checked`) {
@@ -279,12 +209,12 @@ func TestRenderPanelListsTheAxes(t *testing.T) {
 // A topic offers only the audiences it declares.
 func TestRenderPanelShowsTheTopicsOwnAudiences(t *testing.T) {
 	srv, root := testServer(t)
-	writeProfile(t, root, "audience-pol", "_quarto-vars:\n  audience: \"-pol\"\n")
-	writeProfile(t, root, "audience-fw", "_quarto-vars:\n  audience: \"-fw\"\n")
-	writeProfile(t, root, "topic-agency",
-		"book:\n  title: Agency\nqm:\n  audiences: [pol, fw]\n")
-	writeProfile(t, root, "topic-common",
-		"book:\n  title: Common\nqm:\n  audiences: [std]\n")
+	for _, d := range []string{"agency", "common"} {
+		os.MkdirAll(filepath.Join(root, d), 0o755)
+		os.WriteFile(filepath.Join(root, d, "index.qmd"), []byte("# x\n"), 0o644)
+	}
+	writeConfig(t, root, "formats: [pdf, docx]\naudiences: [std, pol, fw]\n"+
+		"topics:\n  chapter2:\n  agency: {audiences: [pol, fw]}\n  common: {audiences: [std]}\n")
 
 	body := get(t, srv, "/").Body.String()
 	section := bookFieldset(t, body, "agency")
@@ -326,10 +256,10 @@ func TestRenderPanelShowsTheTopicsOwnAudiences(t *testing.T) {
 // the markup the rule reads.
 func TestRenderPanelDimsTheAudiencesOfAnUncheckedTopic(t *testing.T) {
 	srv, root := testServer(t)
-	writeProfile(t, root, "audience-pol", "_quarto-vars:\n  audience: \"-pol\"\n")
-	writeProfile(t, root, "audience-fw", "_quarto-vars:\n  audience: \"-fw\"\n")
-	writeProfile(t, root, "topic-agency",
-		"book:\n  title: Agency\nqm:\n  audiences: [pol, fw]\n")
+	os.MkdirAll(filepath.Join(root, "agency"), 0o755)
+	os.WriteFile(filepath.Join(root, "agency", "index.qmd"), []byte("# x\n"), 0o644)
+	writeConfig(t, root, "formats: [pdf, docx]\naudiences: [std, pol, fw]\n"+
+		"topics:\n  chapter2:\n  agency: {audiences: [pol, fw]}\n")
 
 	// The selector reaches from the topic's checkbox to its audiences, so
 	// both have to sit in the fieldset the way it expects them to.
@@ -351,7 +281,7 @@ func TestRenderPanelDimsTheAudiencesOfAnUncheckedTopic(t *testing.T) {
 
 func TestRenderSelectionPersistsPerProject(t *testing.T) {
 	root := fixture(t)
-	writeProfile(t, root, "audience-pol", "_quarto-vars:\n  audience: \"-pol\"\n")
+	writeConfig(t, root, "formats: [pdf, docx]\naudiences: [std, pol]\ntopics:\n  chapter2:\n")
 	prefs := filepath.Join(t.TempDir(), configFileName)
 
 	srv, err := newServer(prefs)
