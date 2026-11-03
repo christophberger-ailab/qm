@@ -70,7 +70,8 @@ function initEditor() {
     extraKeys: {
       Enter: 'newlineAndIndentContinueMarkdownList',
       'Ctrl-Space': 'autocomplete',
-      'Ctrl-Alt-M': addComment
+      'Ctrl-Alt-M': addComment,
+      'Ctrl-Alt-R': replyToComment
     },
     hintOptions: pathHintOptions
   });
@@ -377,17 +378,47 @@ function clearCopyeditMark(index) {
 // where the comment's text goes. The preview highlights the passage, and a
 // click on the highlight comes back here, to the comment's text (see
 // focusComment).
+//
+// With the cursor in a comment, its replies, or its passage, and nothing
+// selected, the rail shows a reply button level with the cursor instead;
+// clicking it -- or Ctrl-Alt-R -- writes a reply marker after the comment's
+// last reply and puts the cursor where the reply's text goes.
 
 // commentRow holds the editor and the rail side by side; commentButton is
-// the "+" in the rail.
+// the "+" in the rail, replyButton the reply button.
 var commentRow = null;
 var commentButton = null;
+var replyButton = null;
 
-// commentMeta is what a new comment's markers record about it. Nothing yet:
-// it is where the author and the date go once the app knows its users,
-// and the markers carry whatever it names (see commentStart in preview.js).
-function commentMeta() {
-  return {};
+// commentUser is who the app is run by, as the server put it on the page
+// (see user.go): the name new comments and replies are signed with.
+function commentUser() {
+  return (document.body && document.body.getAttribute('data-user')) || '';
+}
+
+// today is the date a comment or reply is written on, in the reader's own
+// time zone, as YYYY-MM-DD.
+function today() {
+  var d = new Date();
+  function two(n) {
+    return (n < 10 ? '0' : '') + n;
+  }
+  return d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate());
+}
+
+// commentMeta is what a new comment's markers record about it: an id no
+// other comment on the page has, which pairs its two markers, who wrote it,
+// and when (see commentStart in preview.js).
+function commentMeta(instance) {
+  var taken = {};
+  findCommentMarkers(instance.getValue()).forEach(function (marker) {
+    taken[marker.id] = true;
+  });
+  var id;
+  do {
+    id = 'c' + Math.random().toString(36).slice(2, 7);
+  } while (taken[id]);
+  return { id: id, author: commentUser(), date: today() };
 }
 
 // mountCommentRail puts the rail beside the editor just mounted. The rail
@@ -414,6 +445,19 @@ function mountCommentRail() {
     addComment(cm);
   });
   rail.appendChild(commentButton);
+  replyButton = document.createElement('button');
+  replyButton.type = 'button';
+  replyButton.className = 'comment-add comment-reply';
+  replyButton.textContent = '↩';
+  replyButton.title = 'Reply to this comment (Ctrl-Alt-R)';
+  replyButton.hidden = true;
+  replyButton.addEventListener('mousedown', function (evt) {
+    evt.preventDefault();
+  });
+  replyButton.addEventListener('click', function () {
+    replyToComment(cm);
+  });
+  rail.appendChild(replyButton);
   wrapper.parentNode.insertBefore(commentRow, wrapper);
   commentRow.appendChild(wrapper);
   commentRow.appendChild(rail);
@@ -426,11 +470,13 @@ function mountCommentRail() {
 // placeCommentButton shows the "+" level with the first line of the
 // selection, or hides it when nothing is selected. A selection that starts
 // above the visible text keeps the button at the rail's top while some of
-// it is still in view.
+// it is still in view. With nothing selected, the reply button stands
+// level with the cursor while the cursor is in a comment's thread.
 function placeCommentButton() {
   if (!cm || !commentButton) {
     return;
   }
+  placeReplyButton();
   if (!cm.somethingSelected()) {
     commentButton.hidden = true;
     return;
@@ -449,6 +495,73 @@ function placeCommentButton() {
 }
 
 window.addEventListener('resize', placeCommentButton);
+
+function placeReplyButton() {
+  if (cm.somethingSelected() || !commentThreadAt(cm)) {
+    replyButton.hidden = true;
+    return;
+  }
+  var rail = replyButton.parentNode.getBoundingClientRect();
+  var at = cm.cursorCoords(cm.getCursor(), 'window');
+  var size = 22; // the button's height, see .comment-add
+  var top = at.top - rail.top + (at.bottom - at.top - size) / 2;
+  if (top < 0 || top > rail.height - size) {
+    replyButton.hidden = true;
+    return;
+  }
+  replyButton.style.top = top + 'px';
+  replyButton.hidden = false;
+}
+
+// commentThreadAt is the comment whose thread the cursor is in -- in its
+// starting marker, one of its replies, or its passage up to the end
+// marker -- or null. In nested passages it is the innermost one.
+function commentThreadAt(instance) {
+  var at = instance.indexFromPos(instance.getCursor());
+  var markers = findCommentMarkers(instance.getValue());
+  pairCommentMarkers(markers);
+  var found = null;
+  markers.forEach(function (marker) {
+    if (marker.kind !== 'start' || marker.from > at) {
+      return;
+    }
+    var last = marker.replies.length ? marker.replies[marker.replies.length - 1] : marker;
+    var to = Math.max(marker.end ? marker.end.to : 0, last.to);
+    if (at <= to) {
+      found = marker; // a later start lies inside an earlier one
+    }
+  });
+  return found;
+}
+
+// replyToComment writes a reply marker, signed with the user's name and
+// today's date, after the last reply to the comment the cursor is in, and
+// leaves the cursor where the reply's text goes -- in Vim mode in Insert
+// mode. Like a new comment, it is one step for Ctrl-Z.
+function replyToComment(instance) {
+  instance = instance || cm;
+  if (!instance) {
+    return;
+  }
+  var thread = commentThreadAt(instance);
+  if (!thread) {
+    return;
+  }
+  var last = thread.replies.length ? thread.replies[thread.replies.length - 1] : thread;
+  var reply = commentReply({ author: commentUser(), date: today() });
+  var vim = vimOn && typeof CodeMirror !== 'undefined' && CodeMirror.Vim;
+  if (vim && instance.state.vim && instance.state.vim.visualMode) {
+    CodeMirror.Vim.handleKey(instance, '<Esc>', 'mapping');
+  }
+  instance.operation(function () {
+    instance.replaceRange(reply.before + reply.after, instance.posFromIndex(last.to));
+    instance.setCursor(instance.posFromIndex(last.to + reply.before.length));
+  });
+  instance.focus();
+  if (vim && instance.state.vim && !instance.state.vim.insertMode) {
+    CodeMirror.Vim.handleKey(instance, 'i', 'mapping');
+  }
+}
 
 // blockMarker is the Markdown that makes a line a heading, a quote, or a
 // list item. A comment starting in front of it would end that: the line
@@ -499,7 +612,7 @@ function addComment(instance) {
   if (vim && instance.state.vim && instance.state.vim.visualMode) {
     CodeMirror.Vim.handleKey(instance, '<Esc>', 'mapping');
   }
-  var meta = commentMeta();
+  var meta = commentMeta(instance);
   var start = commentStart(meta);
   instance.operation(function () {
     // The end goes in first, so writing the start does not move it.

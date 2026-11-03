@@ -24,7 +24,7 @@ constraints:
       carries the schema it is checked against.
     requirements:
       1: 'The settings are one file: `<user config dir>/qm/config.cue`. Nothing else is written beside it but the preview stylesheets, which are CSS rather than settings'
-      2: The file holds the recently opened projects, the per-project render selection and last open page, the active preview stylesheet, the copyediting setup, and the external editors' command lines
+      2: The file holds the recently opened projects, the per-project render selection and last open page, the active preview stylesheet, the copyediting setup, the external editors' command lines, and the name comments are signed with
       3: The file is written for its owner alone, since the copyediting setup holds API keys
       4: 'The file carries its own schema: the CUE definitions the settings are checked against are written into it above them, so the file says what belongs in it and in what shape'
       4-1: The schema is written by the app and rewritten with every save, so the schema in the file is always the one the running binary checks against
@@ -118,7 +118,11 @@ constraints:
       3-8-2: Whitespace and line breaks at either end of the selection are left outside the passage, and so is a heading, quote, or list marker in front of its first line, which a comment in front of it would break
       3-8-3: The preview highlights every commented passage, also one spanning several blocks; hovering it shows the comment as a tooltip, and clicking it puts the editor's cursor at the start of the comment's text
       3-8-4: A comment marker in a code block or a code span is code, not a comment, in both panes
-      3-8-5: 'Either marker may carry a Pandoc attribute block after `<<` or `>>` -- an id, `author=`, `date=` -- for comments by more than one person: the tooltip shows the author and the date, and a closing marker with an id closes the passage with that id, so passages may overlap; one without closes the passage opened last. The editor writes no attributes yet, and a comment without them stays valid'
+      3-8-5: 'Either marker may carry a Pandoc attribute block after `<<` or `>>` -- an id, `author=`, `date=` -- for comments by more than one person: the tooltip shows the author and the date, and a closing marker with an id closes the passage with that id, so passages may overlap; one without closes the passage opened last. A comment without attributes stays valid'
+      3-8-6: 'There is no login, since the app runs on the user''s own machine: a new comment is signed with the name set under Config -> "Comments: Your name" (`user: name:` in the settings file), or the system''s login name when none is set, and today''s date; its starting marker carries a fresh id and both, its closing marker the id alone'
+      3-8-7: 'A comment can be replied to: a reply is a `<!-- <<+ {author="..." date="..."} The reply -->` marker right after the comment''s starting marker or the reply before it, with only spaces between; the replies form the comment''s thread, and a `<<+` marker anywhere else is an ordinary HTML comment'
+      3-8-8: With the cursor in a comment's thread or passage and nothing selected, the rail shows a reply button level with the cursor; clicking it, or Ctrl-Alt-R, writes a signed and dated reply after the thread's last one and puts the cursor where its text goes -- in Vim mode in Insert mode
+      3-8-9: The preview's tooltip shows the comment and each reply, with who wrote it and when
       4: The tree is polled for outside changes and refreshed when the project changed on disk
       5: The render panel selects a point in the project's three-axis matrix: topics, the audiences of each topic, and the output formats
       5-1: The selection is remembered per project in the settings file (see SETTINGS)

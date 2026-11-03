@@ -7,6 +7,11 @@
 - `Preview: Custom CSS`: the stylesheet for the [preview](preview.md).
 - `Copyedit: Editing tasks` and `Copyedit: API connections`: see [copyediting](copyedit.md).
 - `External editor`: see [other editors](external-editor.md).
+- `Comments: Your name`: the name your [comments](editor.md#comments) and replies are signed with.
+
+## Comments: Your name
+
+`qm web` runs on your own computer, so there is no login. The comments and replies you write in the editor are signed with the name you enter here, together with the date. Leave the field empty to sign with the name you are logged in to the computer with. Double quotes, braces, and line breaks are not allowed in the name.
 
 ## Preview: Custom CSS
 
@@ -27,7 +32,8 @@ Everything `qm web` remembers lives in one file: `<user config dir>/qm/config.cu
 - the render selection and last open page of each project,
 - the active preview stylesheet,
 - the copyediting tasks and connections (including API keys),
-- the external editor command lines.
+- the external editor command lines,
+- the name your comments are signed with (`user: name:`).
 
 It is readable by you alone because of the keys. The file is created with defaults on the first run. Older JSON settings files are carried over once and renamed to `*.migrated`.
 

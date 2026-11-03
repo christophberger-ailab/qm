@@ -46,14 +46,26 @@ Die Schaltfläche `⌨ Vim Mode` unter dem Editor schaltet die Vim-Tastenbelegun
 Markiere Text, und rechts neben dem Editor erscheint in einer schmalen Leiste ein `+` auf Höhe der Markierung. Klicke darauf oder drücke `Strg-Alt-M`, um die Markierung zu kommentieren. Zwei HTML-Kommentare werden um sie herum geschrieben, und der Cursor steht dort, wo du den Kommentar eintippst:
 
 ```
-<!-- << Dein Kommentar -->der markierte Text<!-- >> -->
+<!-- << {#c4k2x9 author="Ana" date="2026-11-03"} Dein Kommentar -->der markierte Text<!-- >> {#c4k2x9} -->
 ```
 
 - `<<` öffnet die kommentierte Stelle und enthält den Kommentar, `>>` schließt sie. Quarto lässt HTML-Kommentare weg, daher erscheinen Kommentare nie im gerenderten Ergebnis.
+- Der Kommentar wird mit deinem Namen und dem heutigen Datum gezeichnet. Den Namen legst du unter `Config` → [`Comments: Your name`](settings.md) fest; ohne ihn wird dein Anmeldename verwendet. Die Id verbindet die beiden Enden, sodass sich Stellen, die verschiedene Personen kommentiert haben, überlappen dürfen.
 - Leerzeichen und Zeilenumbrüche am Rand der Markierung bleiben außerhalb der Stelle, ebenso eine Überschriften-, Zitat- oder Listenmarke davor.
 - Im Vim-Modus landest du im Einfügemodus und kannst gleich tippen.
 - `Strg-Z` entfernt einen gerade hinzugefügten Kommentar.
 - Die [Vorschau](preview.md) hebt die Stelle hervor und zeigt den Kommentar, wenn du mit der Maus darüberfährst.
+
+### Antworten
+
+Steht der Cursor in einem Kommentar oder in seiner Stelle und ist nichts markiert, erscheint in der Leiste auf Höhe des Cursors ein `↩`. Klicke darauf oder drücke `Strg-Alt-R`, um zu antworten. Die Antwort wird direkt hinter den Kommentar oder hinter die letzte Antwort darauf geschrieben, mit deinem Namen und dem Datum gezeichnet, und der Cursor steht dort, wo du tippst:
+
+```
+<!-- << {#c4k2x9 author="Ana" date="2026-11-03"} Zu lang? --><!-- <<+ {author="Ben" date="2026-11-04"} Nein, so lassen. -->die Stelle<!-- >> {#c4k2x9} -->
+```
+
+- `<<+` kennzeichnet eine Antwort. Sie gehört zum Kommentar davor, solange nur Leerzeichen dazwischen stehen.
+- Ein Klick auf eine hervorgehobene Stelle in der Vorschau führt dich zu ihrem Kommentar, wo `↩` bereitsteht.
 
 ## Vervollständigung von Links und Bildern
 
