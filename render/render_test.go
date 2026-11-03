@@ -106,7 +106,7 @@ func TestBuildOptionsWithoutConfigUsesDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"web · all (site)", "chapter2 · docx · all", "extra · docx · all"}
+	want := []string{"web · all (site)"}
 	if got := selections(opts); !slices.Equal(got, want) {
 		t.Errorf("got %q, want %q", got, want)
 	}

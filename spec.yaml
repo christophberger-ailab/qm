@@ -47,7 +47,7 @@ constraints:
       3: 'An audience has the optional keys `title`, `show` and `vars`'
       4: 'A topic has the optional keys `folder` (default the topic name), `title`, `cover`, `formats`, `audiences` and `vars`'
       5: 'A format, audience or topic named in a `formats`, `audiences` or `topics` list that the project does not define is an error'
-      6: 'Without qm.yml every top-level content folder -- a directory not starting with `_` or `.` that holds a .qmd or .md file -- is a topic, the formats are `web` (html) and `docx`, and there is one audience, `all`'
+      6: 'Without qm.yml every top-level content folder -- a directory not starting with `_` or `.` that holds a .qmd or .md file -- is a topic, the only format is `web` (html), and there is one audience, `all`'
       7: 'The old `_quarto.yml` and `_quarto-<axis>-<value>.yml` files are not read'
       8: '`{name}` placeholders in a format''s `dir`, `file` and `template` and a topic''s `cover` resolve against the variables: the project''s `vars`, then the topic''s, the audience''s and the format''s (later ones win), then the built-ins `topic`, `format` and `audience`. A placeholder without a variable is an error'
       9: 'The matrix is the cross product of topics, formats and audiences, cut down by what a topic and a format each declare under `formats`, `audiences` and `topics`; where both declare an axis, both have to agree'

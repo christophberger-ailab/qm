@@ -31,7 +31,7 @@ func TestDefaults(t *testing.T) {
 	if got := c.Topics.Names(); !slices.Equal(got, []string{"a", "b"}) {
 		t.Errorf("topics %q", got)
 	}
-	if got := c.Formats.Names(); !slices.Equal(got, []string{"web", "docx"}) {
+	if got := c.Formats.Names(); !slices.Equal(got, []string{"web"}) {
 		t.Errorf("formats %q", got)
 	}
 	if c.Output != "_output" || len(c.Audiences) != 1 {

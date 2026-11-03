@@ -3,7 +3,7 @@
 //
 // A minimal project needs no configuration at all: without qm.yml every
 // top-level content folder is a topic, there is one audience, and the
-// formats are a website and a Word document. Everything in the file only
+// format is a website. Everything in the file only
 // states what differs from those defaults:
 //
 //	title: Handbuch Leitstelle
@@ -171,7 +171,6 @@ func (c *Config) complete() error {
 	if len(c.Formats) == 0 {
 		c.Formats = Entries[Format]{
 			{Name: "web", Value: Format{Type: StringList{TypeHTML}}},
-			{Name: "docx", Value: Format{Type: StringList{TypeDOCX}}},
 		}
 	}
 	for i := range c.Formats {

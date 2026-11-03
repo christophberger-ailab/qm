@@ -8,7 +8,7 @@ A render is chosen by three things:
 
 - **Topics**: what to render. One checkbox per topic, taken from the `topics` in the project's `qm.yml`. Without a `qm.yml`, every top-level content folder is a topic.
 - **Audiences**: for whom. A topic with two or more audiences shows a checkbox for each below the topic. A topic with only one audience shows none and uses that one. Only the audiences a topic declares are offered.
-- **Formats**: how. One checkbox per format, in the `Formats` group, taken from the `formats` in `qm.yml` (a website, a Word document, a PDF, or both). Without a `qm.yml` there are two: `web` and `docx`.
+- **Formats**: how. One checkbox per format, in the `Formats` group, taken from the `formats` in `qm.yml` (a website, a Word document, a PDF, or both). Without a `qm.yml` there is one: `web`.
 
 Each checked topic is rendered once for every checked audience and every checked format. The audience boxes of a topic are dimmed while the topic itself is unchecked, but you can still change them in advance. A topic you have never set up starts with all its audiences checked.
 

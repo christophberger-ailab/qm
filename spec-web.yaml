@@ -122,7 +122,7 @@ constraints:
       4: The tree is polled for outside changes and refreshed when the project changed on disk
       5: The render panel selects a point in the project's three-axis matrix: topics, the audiences of each topic, and the output formats
       5-1: The selection is remembered per project in the settings file (see SETTINGS)
-      5-2: The topics and the formats are those of the project's qm.yml, or the defaults of a project without one (every content folder; `web` and `docx`)
+      5-2: The topics and the formats are those of the project's qm.yml, or the defaults of a project without one (every content folder; `web` only)
       5-3: For each topic, only the audiences the topic declares under `audiences:` in qm.yml are offered or submitted for it; a topic that declares none offers every audience the project has
       5-4: A topic the user never configured defaults to every audience it takes part in
       5-5: A topic with two or more audiences shows them as checkboxes in the open, directly below the topic's own checkbox; every checked audience is one render run per checked format

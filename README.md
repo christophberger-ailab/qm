@@ -346,7 +346,7 @@ for the audience `std`, which sets none.)
 
 A minimal project needs no `qm.yml` at all. Without one, every top-level
 content folder (one holding a `.qmd` or `.md` file, and not starting with `_`
-or `.`) is a topic, there are two formats, `web` (HTML) and `docx`, and one
+or `.`) is a topic, the only format is `web` (HTML), and there is one
 audience, `all`. A `qm.yml` states only what differs:
 
 ```yaml

@@ -8,7 +8,7 @@ Ein Rendering wird durch drei Dinge bestimmt:
 
 - **Topics** (Themen): was gerendert wird. Ein Kästchen pro Thema, entnommen aus den `topics` in der `qm.yml` des Projekts. Ohne `qm.yml` ist jeder Inhaltsordner auf oberster Ebene ein Thema.
 - **Audiences** (Zielgruppen): für wen. Ein Thema mit zwei oder mehr Zielgruppen zeigt darunter je ein Kästchen. Ein Thema mit nur einer Zielgruppe zeigt keines und verwendet diese eine. Angeboten werden nur die Zielgruppen, die ein Thema deklariert.
-- **Formats** (Formate): wie. Ein Kästchen pro Format, in der Gruppe `Formats`, entnommen aus den `formats` der `qm.yml` (eine Website, ein Word-Dokument, ein PDF oder beides). Ohne `qm.yml` gibt es zwei: `web` und `docx`.
+- **Formats** (Formate): wie. Ein Kästchen pro Format, in der Gruppe `Formats`, entnommen aus den `formats` der `qm.yml` (eine Website, ein Word-Dokument, ein PDF oder beides). Ohne `qm.yml` gibt es eines: `web`.
 
 Jedes angehakte Thema wird einmal für jede angehakte Zielgruppe und jedes angehakte Format gerendert. Die Zielgruppen-Kästchen eines Themas sind abgeblendet, solange das Thema selbst nicht angehakt ist, du kannst sie aber trotzdem schon vorab ändern. Ein Thema, das du noch nie eingerichtet hast, startet mit allen Zielgruppen angehakt.
 
