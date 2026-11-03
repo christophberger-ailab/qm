@@ -2,7 +2,7 @@
 
 Die Vorschau zeigt die Seite, die du bearbeitest, und aktualisiert sich beim Tippen. Blende sie mit der Schaltfläche `Preview` ein oder aus (siehe [die Bereiche](panes.md)).
 
-Die Vorschau ist eine Näherung. Sie wird im Browser aus deinem Markdown gezeichnet und ist kein Quarto-Render; für das echte Ergebnis nutze [Rendern](render.md).
+Die Vorschau ist eine Näherung. Sie wird im Browser aus deinem Markdown gezeichnet und ist kein Rendering; für das echte Ergebnis nutze [Rendern](render.md).
 
 ## Was sie zeigt
 

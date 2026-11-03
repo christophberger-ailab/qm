@@ -1,39 +1,40 @@
 # A walkthrough of the qm source
 
 This document reads the code once, from front to back, in the order the
-pieces depend on each other. It follows one `quarto render` from the command
-line down to the renamed output file, then doubles back for the commands that
-do not take part in a render (`chapters`, `lint`) and for the web UI.
+pieces depend on each other. It follows one `qm render` from the command line
+down to the written file, then doubles back for the commands that do not take
+part in a render (`chapters`, `lint`, `migrate`) and for the web UI.
 
 Every section names the files it covers, so it can also be used as a map.
 
 ---
 
-## 0. The five Quarto facts the code is built around
+## 0. The facts the code is built around
 
-Almost every design decision in this repository is a reaction to something
-Quarto does or refuses to do. Knowing these five up front makes the rest read
-as consequences rather than choices:
+qm used to drive Quarto and Pandoc; it now needs neither. What remains of that
+history is a set of facts about the content, which explain most of the design:
 
-1. **A Quarto book is flat.** One file per chapter, folder depth carries no
-   meaning, and the first chapter must be the project root's `index.qmd`. A
-   multi-level content folder cannot be expressed as a chapter list at all.
-2. **Quarto resolves `{{< var >}}` in exactly two configuration keys**,
-   `book: output-file` and `book: title`. Not in `project: output-dir`, not in
-   format-level keys such as `format: pptx: reference-doc`.
-3. **Profiles merge, they do not replace.** Two profiles of the same group are
-   accepted silently and their array keys — `book: chapters` above all — are
-   concatenated, not overridden.
-4. **A missing profile file is ignored.** A typo in `--profile` produces no
-   error; the variables that profile should have defined resolve to the
-   literal `?var:audience`, which then lands in the output file name.
-5. **Quarto aborts a render when the pre-render hook exits non-zero.** That is
-   the only lever qm has to stop a bad render before anything is written.
-
-Fact 1 produces `internal/bookmaker`. Fact 2 produces the `qm:` profile
-section, `qm prepare`'s copy step and `qm finalize` entirely. Facts 3 and 4
-produce the validation in `internal/qmcore/selection.go`. Fact 5 produces
-`internal/cli`.
+1. **The documentation is a folder tree.** Folder structure and the `order:`
+   front matter decide the order and nesting of every output, and a
+   multi-level folder has to become one flat document (DOCX, PDF) or a tree of
+   pages (website). That is `internal/bookmaker`, and the same tree feeds both.
+2. **A render is a point in a three-axis matrix**: topic (which folder),
+   format (how) and audience (for whom). All three are declared in one file,
+   `qm.yml` (`internal/config`), whose maps are ordered and whose `{name}`
+   placeholders resolve against variables.
+3. **The content is Quarto-flavoured Markdown**: fenced divs, bracketed
+   spans, attributes, callouts, shortcodes. `internal/markdown` parses it in Go
+   (goldmark plus extensions), and `internal/shortcode` resolves the three
+   shortcodes the content uses.
+4. **Conditional content replaces the Lua filters.** A div or span whose class
+   a format or audience lists under `show:` survives only when the selection
+   shows it. It is one function, `config.Selection.Keep`, applied to the
+   parsed tree.
+5. **Every output is written from that one parsed tree**: the website by
+   `internal/site`, the DOCX by `internal/docx`, the PDF by
+   `internal/docrender`. `internal/build` is the glue.
+6. **A command's failure must show in the exit status**, because scripts and
+   CI read it. That is `internal/cli`.
 
 The formal specification of all of this lives in `spec.yaml` and the
 `spec-*.yaml` files, one per subcommand, in the [acai feature-spec
@@ -46,13 +47,11 @@ requirement id (`SUBCOMMANDS.3`, `BOOKS.2-1`, …).
 
 `main.go` is short and does four things.
 
-**It declares the flags that are not owned by a single command.**
-`--project`/`-p` (`main.go:38`) is qm-wide; `--profile` (`main.go:44`) is
-shared by exactly two commands, the Quarto hooks `prepare` and `finalize`, so
-it is declared once here rather than by either of them. Both are passed to the
-subcommands as `*string`, which is the shape
-[`github.com/christophberger/start`](https://github.com/christophberger/start)
-uses — the flag is parsed by the time a command body runs.
+**It declares the flag that is not owned by a single command.**
+`--project`/`-p` is qm-wide and passed to the subcommands as `*string`, which is
+the shape [`github.com/christophberger/start`](https://github.com/christophberger/start)
+uses — the flag is parsed by the time a command body runs. (The `--profile`
+flag the Quarto hooks used is gone with them.)
 
 **It models the `<object>` parameter.** The command pattern is
 `qm <object> <subcommand> [flags]`, but `start` has no notion of an object. So
@@ -62,145 +61,77 @@ it. Leaving `Cmd` nil is deliberate: `start` then auto-generates the "missing
 subcommand" usage instead of panicking.
 
 **It registers everything else as a leaf command**: `lint`, `render`,
-`flatten`, `prepare`, `finalize`, `web` (`main.go:76`–`main.go:93`). Each of
-those packages exposes a single `Register(...)` function and keeps its flag
-pointers in package-level variables — the same pattern in all eight command
-packages, so once you have read one you have read them all.
+`flatten`, `migrate`, `web`. Each of those packages exposes a single
+`Register(...)` function and keeps its flag pointers in package-level
+variables — the same pattern in all command packages, so once you have read
+one you have read them all.
 
 **It sets the exit status.** `start.Up()` prints a command's error and returns
-normally, leaving the status at 0. `cli.Exit()` (`main.go:102`) is what turns a
+normally, leaving the status at 0. `cli.Exit()` is what turns a
 failure into a non-zero exit — see the next section.
 
-`version` (`main.go:32`) is `"dev"` unless the release workflow stamps it via
+`version` is `"dev"` unless the release workflow stamps it via
 `-ldflags -X main.version=…`.
 
 ## 2. `internal/cli` — the exit-status guard
 
-Twelve lines of substance, and the reason for Quarto fact 5.
-
-`cli.Guard` (`internal/cli/cli.go:28`) wraps every registered command body and
-records failure in a package-level `atomic.Bool`; `cli.Exit`
-(`internal/cli/cli.go:40`) reads it after `start.Up()` returns. Without this,
-`qm prepare` could fail validation, print its error, exit 0 — and Quarto would
-carry on rendering whatever the *previous* run left in `_build/`, producing the
-last topic's content under the new selection's file name.
+Twelve lines of substance. `cli.Guard` wraps every registered command body and
+records failure in a package-level `atomic.Bool`; `cli.Exit` reads it after
+`start.Up()` returns. Without this, `qm render` could print its error and exit
+0, and a script or CI job would take a failed render for a good one.
 
 Every `start.Command` in the repository has `Cmd: cli.Guard(cmd)`. That is the
 convention to preserve when adding a command.
 
 ---
 
-## 3. `internal/qmcore` — the project's vocabulary
+## 2a. `internal/config` — `qm.yml`
 
-This is the package to read first after `main.go`, because everything else
-speaks its language. Note the name: per `spec.yaml` MAIN.2-4 the user-facing
-object name (`chapters`) is deliberately *not* a package name.
+The project's vocabulary for rendering. Read this before `build`.
 
-### 3.1 Axes and selections — `selection.go`
+- `Load` (`config.go`) reads `qm.yml` from the project root with unknown keys
+  as errors, then `complete` fills the defaults and checks cross references.
+  Without a file the project gets one topic per top-level content folder
+  (`ContentFolders`), the formats `web` (html) and `docx`, and one audience,
+  `all`. A format's `type` is a `StringList` (`html`, `docx`, `pdf`, or a list
+  of the last two), guessed from the format's name when left out.
+- `Entries[T]` (`entries.go`) is an ordered YAML map: the order of `formats`,
+  `audiences` and `topics` is the order of the matrix and of the web panel.
+- `Config.Expand` (`matrix.go`) turns a `Request` (topics, formats, audiences)
+  into `Selection`s. A document format yields one selection per topic and
+  audience; a website yields one per audience, with all requested topics in
+  `Selection.Topics`. A topic and a format each may narrow the axes from their
+  side, and both have to agree. Unknown names are errors.
+- `Selection` is one render. `Vars` merges the project's, topic's,
+  audience's and format's variables (later wins) and adds the built-ins
+  `topic`, `format` and `audience`; `Interpolate` replaces `{name}`
+  placeholders and treats an undefined one as an error. `OutputDir`,
+  `FileStem`, `Cover` and `Template` apply it to the format's and topic's
+  paths.
+- `Selection.Keep` is the conditional-content decision: format classes and
+  audience classes are checked separately and both must pass. `Types` gives
+  the names Quarto's `when-format` conditions compare against.
 
-A render is addressed along three orthogonal axes, each of them an ordinary
-Quarto profile:
+---
 
-```
-topic-<t>     what is rendered    — which content folder
-format-<f>    how it is rendered  — project type, output dir, output formats
-audience-<a>  who it is for       — which ::: pol / ::: fw content survives
+## 3. `internal/qmcore` — front matter and page scans
 
-quarto render --profile topic-calltaker,format-handout,audience-pol
-```
+Per `spec.yaml` MAIN.2-4 the user-facing object name (`chapters`) is
+deliberately *not* a package name. The package once held the Quarto profile
+vocabulary — axes, `ParseSelection`, `LoadProfile`, `BuildMatrix`, in
+`selection.go`, `profile.go`, `profileconfig.go` and `matrix.go`. Rendering no
+longer uses any of it; `internal/config` replaced it. It stays only because
+`qm migrate` reads the old profile files with it (`LoadSelection`,
+`AxisValues`), and can go once migrating is no longer needed.
 
-`Axis` (`selection.go:27`) is a string type with three constants; `Axes`
-(`selection.go:39`) fixes their order, and the order matters — Quarto merges
-profiles left to right and the first one wins for scalar keys, so `format` must
-precede `audience` for a book's output directory to come from the format.
+### 3.1 Front matter, on disk — `scan.go`, `profile_yaml.go`, `types.go`
 
-`Selection` (`selection.go:54`) is one value per axis. `ProfileNames`,
-`String` (`selection.go:95`) turn it back into the `--profile` argument.
-
-`ParseSelection` (`selection.go:109`) is the project's validation gate, and the
-direct answer to Quarto facts 3 and 4: it rejects a name with no known axis
-prefix, two profiles on one axis, and a missing axis. `SplitProfileName`
-(`selection.go:150`) does the taking-apart, tolerating the `_quarto-` file
-prefix. Because the axis comes from the *prefix* rather than a lookup table,
-adding an audience means adding one `_quarto-audience-<x>.yml` and nothing
-else.
-
-`NoTopic` (`selection.go:50`) is the value `none`: a render of the whole
-website, which selects no content folder.
-
-`AxisValues` (`selection.go:171`) lists what an axis actually offers, by
-looking at the profile files on disk. It is what the error messages and the web
-UI's render panel are built from.
-
-### 3.2 Finding profile files — `profile.go`
-
-Small helpers: `ResolveProfilePath` (`profile.go:24`) accepts a bare name, a
-`_quarto-`-prefixed name, or a full file name, preferring `.yaml` over `.yml`;
-`NormalizeProfileArg` (`profile.go:38`) adds the prefix; `DiscoverProfiles`
-(`profile.go:48`) lists every `_quarto-*.y[a]ml` in the project root.
-
-### 3.3 Reading a profile — `profileconfig.go`
-
-`Profile` (`profileconfig.go:83`) is a profile file as far as qm reads it:
-`_quarto-vars`, `project: output-dir`, the `book:` keys — and `qm:`, the root
-key Quarto ignores and qm owns.
-
-`QM` (`profileconfig.go:39`) is worth reading field by field, because each
-field is a workaround for Quarto fact 2:
-
-| field | axis | why it exists |
-| --- | --- | --- |
-| `folder` | topic | the content folder to flatten; defaults to the topic name |
-| `formats`, `audiences`, `topics` | topic / format | which combinations this profile takes part in — the render matrix |
-| `copy` | format | target→source files copied into place before the render, because `format: pptx: reference-doc:` does not interpolate |
-| `output-file` | format | renames a non-book artefact (a deck), which has no interpolating key |
-| `output-dir-suffix` | format | appended after the render, because `project: output-dir` does not interpolate |
-
-`LoadProfile` (`profileconfig.go:127`) reads one file and makes two failures
-loud: a missing file (Quarto fact 4) and a profile that sets `book: chapters:`
-(Quarto fact 3 — the list would be *added* to the one in `_quarto.yml`, and
-the book would render twice).
-
-`Profiles` (`profileconfig.go:161`) is the three profiles of one selection.
-`Vars` (`profileconfig.go:194`) merges their `_quarto-vars` the way Quarto
-merges profile configuration — first definition wins. `Folder`
-(`profileconfig.go:211`) applies the `qm: folder:` default rule. `Title`
-(`profileconfig.go:223`) resolves the book title, which is also the slide
-deck's title, because the deck is assembled from divs that carry none.
-
-`ResolveVars` (`profileconfig.go:239`) is qm's own `{{< var >}}` substitution.
-Note that an undefined variable is an *error* here, not Quarto's `?var:name`
-placeholder — the placeholder's only visible effect would be a wrongly named
-file discovered hours later.
-
-`ProjectPath` (`profileconfig.go:266`) joins a profile-supplied relative path
-onto the project root and refuses to leave it. Every path that comes out of a
-YAML file goes through it.
-
-### 3.4 The render matrix — `matrix.go`
-
-`BuildMatrix` (`matrix.go:44`) expands a request into the list of selections to
-render. The full cross product is not it: a book has no website format, some
-topics have no agency variants. Rather than encoding those exceptions in a
-driver script, the *profiles declare their own participation* under
-`qm: formats:` and `qm: audiences:`, and a profile that declares nothing takes
-part in everything.
-
-The rules, in code order: unknown names on any axis are errors, not empty
-results (`checkKnown`, `matrix.go:164`); a topic's declarations narrow what is
-available (`axisFor`, `matrix.go:131`); a format may exclude a topic or an
-audience from its side, and both sides must agree (`matrix.go:91`); the
-result order follows the project's own order on each axis rather than the order
-a profile happened to spell its list in (`inOrder`, `matrix.go:153`).
-
-### 3.5 Front matter, on disk — `scan.go`, `profile_yaml.go`, `types.go`
-
-`ReadFrontmatter` (`scan.go:27`) scans a `.qmd` for its leading YAML block and
+`ReadFrontmatter` (`scan.go`) scans a `.qmd` for its leading YAML block and
 unmarshals the three fields qm cares about (`order`, `insert-at`, `title` —
 `types.go:18`). A file without front matter is not an error, it is a zero
 value.
 
-`UpdateFrontmatter` (`scan.go:271`) is the write side, and the reason the
+`UpdateFrontmatter` (`scan.go`) is the write side, and the reason the
 `chapters` subcommands do not mangle files: it parses the block into a
 `yaml.Node`, hands the node to a mutation callback, and writes it back with the
 body preserved *verbatim*. The node-level helpers the callbacks use —
@@ -225,7 +156,7 @@ with unordered entries last.
 
 ## 4. `internal/bookmaker` — turning a folder into one document
 
-The answer to Quarto fact 1, and the densest code in the repository. It is a
+The answer to fact 1, and the densest code in the repository. It is a
 copy of the `quarto-bookmaker` command's internal package (MIT), which Go's
 `internal` rule prevents importing directly — see `doc.go`.
 
@@ -283,16 +214,17 @@ stable for a given source tree.
 as the book root, build the link target table, render.
 
 Read the doc comment above it before the code. The generated documents
-deliberately carry **no YAML front matter**, because Quarto reads an included
-chapter's opening heading with a line scanner that does not know it is looking
-at an include — the `---` closing an inlined block reads as a Setext underline
-and the book ends up titled `title: …`.
+deliberately carry **no YAML front matter**: a `---` closing an inlined block
+would read as a Setext underline and the document would be titled `title: …`.
 
 `renderNode` (`flatten.go:101`) recurses depth-first and returns *two* strings
-side by side: the book text and the slide text. Audience wrapping happens here
+side by side: the book text and the slide text. (Document renders ask for slide
+extraction only so that `::: slide` blocks stay out of the book; the deck itself
+is not built, PPTX being unsupported for now.) Audience wrapping happens here
 (`flatten.go:131`): content from an `_FW`/`_POL` folder is wrapped in a
 matching `::: fw` / `::: pol` div so the project's content filter can select it
-at render time — once per audience change, not once per nesting level, which is
+at render time (it is a conditional div like any other, kept when the selected
+audience is named `fw` or lists the class) — once per audience change, not once per nesting level, which is
 what `parentAudience` tracks.
 
 `renderPage` (`flatten.go:149`) is the subtle part. It has to decide whether a
@@ -302,7 +234,14 @@ others give only sub-headings. Treating the shallowest heading as the page
 title in the second case would promote a section to chapter rank. So a declared
 title counts as present only when a heading at the shallowest level actually
 spells it out (`echoesTitle`, `flatten.go:246`). If it does not, a heading is
-generated and the body's headings are pushed one level down.
+generated and the body's headings stay below it.
+
+Heading levels are **demoted by folder depth**, not normalised: a page keeps the
+levels it was written with, plus the node's depth minus one (`delta` in
+`renderPage`). Pages in the topic folder and a subfolder's `index.qmd` keep their
+headings; each deeper folder adds one level. The website needs the same logic
+page by page, so `Pages` and `PageMarkdown` render a single node's own page
+with the same demotion and no link rewriting.
 
 `preparePage` (`flatten.go:197`) is the per-page pipeline, and the order of its
 steps is load-bearing:
@@ -313,15 +252,16 @@ steps is load-bearing:
    in it.
 3. `rewriteLinks` — turn in-book links into anchors.
 4. warn about `{{< include >}}` shortcodes whose path is not project-absolute
-   (`relativeIncludes`): Quarto resolves them at render time, from the
-   flattened document rather than the page, so only a path starting with `/`
-   keeps working. An absolute include is fine and raises no warning.
+   (`relativeIncludes`): they are resolved on the flattened document rather
+   than the page, so only a path starting with `/` keeps working. An absolute
+   include is fine and raises no warning.
 
 `shiftHeadings` (`flatten.go:283`) applies the level delta and attaches the
 anchor to the page's own title heading — per *block*, not per page: sibling
 content divs (`::: explanation`, `::: tutorial`) typically repeat the heading
 verbatim and only some survive the content filter, so each repetition claims
-the id and Pandoc renames whichever duplicates actually survive.
+the id and the markdown package's `AssignIDs` numbers whichever duplicates
+actually survive the filter.
 
 ### 4.5 The Markdown surgery — `markdown.go`
 
@@ -332,7 +272,7 @@ it does; the pieces to understand are:
   that **nothing inside code is ever treated as markup**. Every scanner in the
   package starts with `code.step(line)`.
 - `balanceFences` (`markdown.go:158`) closes what a page left open and drops
-  stray closing fences. Pandoc tolerates imbalance because it closes everything
+  stray closing fences. A parser tolerates imbalance because it closes everything
   at end of file — but concatenating such a page would swallow the rest of the
   book into a code listing or a div.
   It also inserts the blank line an opening div fence needs
@@ -353,7 +293,8 @@ it does; the pieces to understand are:
 ### 4.6 Slides — `slides.go`
 
 `splitSlides` (`slides.go:50`) walks a page's lines and pulls the content of
-every `::: slide` div out into a second document. The fences themselves are
+every `::: slide` div out into a second document. Nothing renders that document
+now; it is kept for the follow-up that brings PPTX back. The fences themselves are
 dropped — what remains is the slide's own Markdown, whose heading levels are
 the deck's structure and are therefore left exactly as written. Divs
 *enclosing* a slide are reproduced around the extracted content (`enclose`,
@@ -364,7 +305,7 @@ once it stands alone. `isSlideFence` (`slides.go:26`) compares per token, so
 ### 4.7 Links — `links.go`
 
 `buildLinkTargets` (`links.go:21`) registers every URL spelling under which a
-page can be referenced — a Quarto website page is reachable as `/a/b/`, `/a/b`,
+page can be referenced — a website page is reachable as `/a/b/`, `/a/b`,
 `/a/b/index.qmd` and `/a/b/index.html` — and maps them to the page's anchor.
 `lookup` (`links.go:45`) resolves a destination and returns early for anything
 leaving the project (schemes, protocol-relative URLs, bare fragments). A link
@@ -380,132 +321,115 @@ from a link and an inner image from its enclosing link (`isImageLink`,
 
 ---
 
-## 5. `internal/bookrender` — build documents and the Quarto driver
+## 5. Parsing and writing
 
-The bridge between the flattener and the `quarto` binary. Its doc comment
-explains the one non-obvious constant: the generated documents live in
-`_build/` — an underscore-prefixed **directory**, not under
-underscore-prefixed *names*. The directory keeps Quarto's website scan out; a
-name would also exclude the files from the project's *inputs*, and Quarto
-honours `output-dir` and `output-file` only for project inputs, so a render
-aimed at such a file falls through to the standalone document renderer and
-writes its output next to the source.
+Everything between the flattened text and the file on disk.
 
-The names are fixed (`book.qmd`, `slides.qmd`, `render.go:45`), which is what
-lets `index.qmd` hold one topic-independent `{{< include >}}` and the topic be
-chosen by the profile alone.
+### 5.1 `internal/shortcode`
 
-`WriteBuild` (`render.go:98`) is what `qm prepare` and `qm flatten` both call:
-flatten the folder, log the warnings and the counts, write both files. An empty
-folder (a website render, topic `none`) writes documents that hold nothing but
-`generatedNote` (`render.go:55`) — a comment, because a heading would be picked
-up as the chapter title, which Quarto reads before the content filters run.
-`slideDoc` (`render.go:124`) is where the deck gets its title.
+`Expander` resolves the shortcodes the content uses, on the text, before it is
+parsed: `{{< include /path >}}` (project-absolute, nested up to eight deep,
+cycles are errors), `{{< pagebreak >}}` (an empty `::: {.qm-pagebreak}` div that
+every writer turns into its own page break) and `{{< var name >}}`. Text in
+fenced code is left alone, and any other shortcode is reported once and left
+as written. `Variables` builds what `var` resolves against: `_variables.yml`
+(nested keys addressed with dots), overlaid with the selection's variables.
 
-`Run` (`render.go:171`) walks a matrix, one `quarto` invocation per selection,
-carrying on after a failure so one broken combination does not hide the others.
+### 5.2 `internal/markdown`
 
-`quarto` (`render.go:216`) is nine lines with a long comment, and the comment
-is the interesting part: the invocation is
-`quarto render --profile <t>,<f>,<a> --no-clean`, run in the project root, with
-**no input file, no `--to`, no `--output`, no `--output-dir`** — every one of
-those is left to the configuration, which is the entire point of the
-arrangement. `--no-clean` is not optional: several topics and audiences share
-one output directory, so a cleaning run would delete what the run before it
-produced. Since Quarto has no configuration key for that, cleaning becomes
-`Options.Clean` and `cleanOutputDirs` (`render.go:240`), which empties each
-format's directory once, before the first render.
+`New` (`markdown.go`) configures goldmark with GFM tables, strikethrough,
+footnotes, definition lists, and qm's own pieces: a fenced-div block parser
+(`div.go`), a bracketed-span inline parser (`span.go`), attribute blocks on
+headings, links and images (`attrs.go`), and an AST transformer that turns
+callout divs into callouts. `html.go` renders the same tree to HTML for the
+website. `codeTracker` wraps the fenced-code parser so that nothing inside code
+is ever read as a div.
 
-`lineWriter` (`render.go:268`) feeds Quarto's stdout/stderr into the `Logf`
-callback line by line — which is what lets the same flow print to a terminal
-from `qm render` and to a polled HTML panel from `qm web`.
+`filter.go` is where a selection takes effect. `Prepare` runs `Filter` — drop
+every div or span that `Keep` rejects or that a `.content-visible` /
+`.content-hidden` condition hides, and always drop `slide` and `notes` — then
+settles callout titles, then `AssignIDs` (after the filter, so that only
+surviving headings are counted). `Demote` shifts heading levels.
+
+### 5.3 `internal/build`
+
+`Render` (`build.go`) produces one selection. For a website it calls
+`renderSite`. For a document it checks the cover and the template, then
+`Document` — `Flatten` (load the topic tree, `bookmaker.Flatten`, expand
+shortcodes) followed by `markdown.Parse` and `Prepare` — and writes one file per
+type of the format: `docx.Write` plus `docrender.CoverDOCX`, or
+`docrender.RunPDF` with the parsed document as input and the fonts that
+`brandFonts` (`brand.go`) found in `_brand.yml`. `Run` walks the selections,
+carries on after a failure so one broken combination does not hide the others,
+and after `--clean` empties each output directory once, refusing one that is not
+below the output directory. `Flatten` is also what `qm flatten` calls.
+
+`Logf` is the callback the whole flow reports through, which is what lets it
+print to a terminal from `qm render` and to a polled HTML panel from `qm web`.
+
+### 5.4 `internal/site`
+
+`Build` writes the website of a set of topics: each topic's tree
+(`bookmaker.LoadTree`) is loaded by `builder.load`, every page is rendered with
+`bookmaker.PageMarkdown` (same demotion as a document), parsed, filtered with the
+selection's `Keep`, and put into `assets/page.html`. `nav.go` builds the
+navigation data: the navbar with one entry per topic, the topic's sidebar tree and
+the previous/next links; `tocOf` takes the page's headings for the "On this page"
+list. `links.go` rewrites links between pages and images to relative URLs and
+copies the project files they point at. `assets/style.css` and `site.js` (scroll-
+spy, off-canvas sidebar) are embedded; the layout is in em throughout, with its
+breakpoints at 75em and 50em.
+
+### 5.5 `internal/docx`
+
+`Write` generates the document body as WordprocessingML from the parsed tree and
+places it into a base package — the format's `template:` DOCX (styles, page setup,
+headers, footers and numbering are kept, its body is discarded) or else a blank
+document made with docxgo. docxgo has no bookmarks, internal hyperlinks,
+footnotes or table shading, so `blocks.go` and `inline.go` write the body as raw
+OOXML, `styles.go` maps elements to the template's style names, and `package.go`
+patches the relationships, content types and settings.
+
+### 5.6 `internal/docrender`
+
+The PDF layout (gopdf) and the DOCX cover. The layout works on its own
+`Block`/`Run` model; `FromMarkdown` (`markdown.go`) converts the parsed tree into
+it, so the PDF is fed from the same document as the DOCX. `fonts.go` loads the Go
+fonts and the `_brand.yml` fonts, `cover.go` puts the cover PNG in front of
+either file.
 
 ---
 
 ## 6. A render, end to end
 
-Now the commands, in the order a real render touches them.
+### 6.1 `qm render`
 
-### 6.1 `qm render` — the matrix driver
+`render/render.go`. `cmd` collects the flags, appends the positional arguments to
+`--topic` (topics being the axis one usually varies) and hands a `config.Request`
+to `Run`. `BuildOptions` loads `qm.yml`, expands the request with
+`Config.Expand` and returns the `build.Options`; `Run` calls `build.Run` with a
+logger that prints to stdout. That is all `qm render` is. `qm web` builds the same
+`build.Options` through `server.selections` and runs them in its background `job`.
 
-`render/render.go`. `cmd` (`render.go:69`) collects the flags, appends the
-positional arguments to `--topic` (topics being the axis one usually varies),
-and hands a `qmcore.Matrix` to `Run` (`render.go:89`). `BuildOptions`
-(`render.go:106`) expands it via `qmcore.BuildMatrix` and hands the result to
-`bookrender.Run`.
+### 6.2 `qm flatten`
 
-That is all `qm render` is. The artefact is built and named by the project's
-own Quarto hooks, so a plain
-`quarto render --profile topic-x,format-y,audience-z` produces exactly the
-same result without qm ever being invoked.
+`flatten/flatten.go`. `Run` loads the config, looks the topic up and calls
+`build.Flatten` with the first format and audience, then writes
+`_build/<topic>.md`. It is the way to look at what a document render parses —
+heading demotion, rewritten links, resolved shortcodes — without writing a
+document. The conditional content is still in it; removing it needs a
+selection.
 
-### 6.2 `qm prepare` — the pre-render hook
+### 6.3 `qm migrate`
 
-`prepare/prepare.go`, wired into the project as `project: pre-render: qm
-prepare`.
-
-`ActiveProfiles` (`prepare.go:98`) reads `--profile` or `$QUARTO_PROFILE` —
-and the environment variable is the *effective* selection, with Quarto's own
-group defaults already appended, which is what makes validating it worth
-doing.
-
-`Run` (`prepare.go:112`) then, in order:
-
-1. `qmcore.ParseSelection` — one profile per axis (Quarto fact 3).
-2. `qmcore.LoadSelection` — every named profile exists (Quarto fact 4).
-3. `checkVariables` (`prepare.go:161`) — every `{{< var >}}` the selection
-   relies on resolves. `interpolated` (`prepare.go:175`) enumerates the values
-   to check: `book: title`, `book: output-file`, and each `qm:` key.
-4. `checkFolder` (`prepare.go:199`) — the topic's content folder is really
-   there; a typo would otherwise produce an empty book.
-5. `bookrender.LoadNative` — for a `qm: renderer: qm` format, the format
-   declares DOCX only and the capture filter, and the topic's cover is a
-   valid PNG.
-6. `bookrender.WriteBuild` — flatten the topic into `_build/`.
-7. `Native.Prepare` — for the qm renderer, write `_build/qm-capture.lua` and
-   remove the document a previous render captured.
-8. `copyFiles` (`prepare.go:221`) — carry out the `qm: copy:` map, resolving
-   `{{< var >}}` in the source, so that a template depending on both format and
-   audience can be pointed at by a fixed, non-interpolating format key.
-
-Steps 1–5 are the half that matters most: each returns an error, `cli.Guard`
-records it, the process exits non-zero, and Quarto stops (Quarto fact 5).
-
-### 6.3 `qm finalize` — the post-render hook
-
-`finalize/finalize.go`, wired as `project: post-render: qm finalize`. It reads
-`QUARTO_PROJECT_OUTPUT_DIR` and `QUARTO_PROJECT_OUTPUT_FILES` (or the
-equivalent flags — `envOr`, `finalize.go:109`) and applies the two rules a book
-does not need but everything else does:
-
-- `qm: output-file:` → `renameOutputs` (`finalize.go:253`) moves each produced
-  file to `<output-dir>/<stem><ext>`. The move is to the *top* of the output
-  directory on purpose: a `type: default` project mirrors the source layout, so
-  a deck built from `_build/slides.qmd` arrives at
-  `<output-dir>/_build/slides.pptx`. Emptied source directories are pruned
-  (`pruneEmpty`, `finalize.go:300`).
-- `qm: output-dir-suffix:` → `renameDir` (`finalize.go:281`) renames the output
-  directory, which is how an audience-dependent `_output/site-pol` is reached
-  given that `project: output-dir` does not interpolate (Quarto fact 2).
-
-Between the two, it completes a `qm: renderer: qm` format: `finishNative`
-(`finalize.go:206`) hands the DOCX Quarto reported to `Native.Finish`
-(`internal/bookrender/native.go`), which lays out the PDF beside it from
-`_build/qm-document.json` and puts the topic's cover on both. Because this
-happens in the hook, a plain `quarto render` gets the PDF and the covers too.
-
-A format that declares none of the three returns immediately
-(`finalize.go:160`) — the usual case for a book, whose `book: output-file`
-Quarto honours on its own.
-
-### 6.4 `qm flatten` — the same, without Quarto
-
-`flatten/flatten.go`. `Run` (`flatten.go:61`) loads only the *topic* profile
-and calls `bookrender.WriteBuild`. It is the way to look at what a render will
-feed to Quarto — heading demotion, rewritten links, extracted slides — without
-waiting for pandoc. Because the other two axes are not read, the deck title
-keeps whatever variables they would have supplied; resolving those is a
-render's job.
+`migrate/migrate.go`. The old setup was one `_quarto.yml` plus one profile file
+per axis value. `Run` reads them with `qmcore` (and `rawQuarto` for the keys qmcore
+does not know), builds the equivalent `qm.yml` as a `yaml.Node` tree so that key
+order and comments survive, turns `{{< var x >}}` into `{x}`, collects warnings
+for everything it cannot carry over (slide formats, variables in titles, a
+template generated into `_build/`, output directories outside the common
+parent), and verifies the result with `config.Load` before writing it. It refuses
+to overwrite an existing `qm.yml` without `--force`; `--dry-run` prints it.
 
 ---
 
@@ -514,8 +438,8 @@ render's job.
 Three small commands that edit `order:` front matter in one folder. All three
 share the same shape: resolve `--project`, resolve the folder argument, call
 `qmcore.ScanFolderChapters`, then rewrite front matter through
-`qmcore.UpdateFrontmatter`. None of them touches a book chapter list — there is
-none to touch, because a book is its folder flattened at render time.
+`qmcore.UpdateFrontmatter`. None of them touches a chapter list — there is
+none to touch, because a document is its folder flattened at render time.
 
 - **`insert`** (`insert/insert.go`). The new chapter is a file the user has
   already created, carrying `insert-at: <n>` and no `order:`.
@@ -546,7 +470,7 @@ one.
 
 The argument is a *topic*, not a whole selection: linting looks at source
 files, which are the same for every format and audience. `--lint-audience` is
-an optional narrowing to one set of `_POL`/`_FW` variants.
+an optional narrowing to one set of `_POL`/`_FW` variants. The topic's folder comes from `qm.yml` (`config.Load`), or is the topic name.
 
 There is currently one check. `CheckFences` (`lint.go:210`) tracks opening
 fences (`:::` plus a block descriptor) on a stack and closing fences (`:::`
@@ -561,7 +485,7 @@ Adding a second linter means writing a `Check…` function returning
 ## 9. `qm web` — the local UI
 
 `qm web` is the [quarto-sorter](https://github.com/christophberger-ailab/quarto-sorter)
-tool merged into qm. Its render panel drives the same `internal/bookrender`
+tool merged into qm. Its render panel drives the same `internal/build`
 flow `qm render` does, so both produce identical output.
 
 ### 9.1 Entry point — `web/web.go`
@@ -599,7 +523,7 @@ what the UI does:
 Two mechanisms are worth reading closely:
 
 **The fingerprint.** `fingerprint` (`server.go:271`) hashes the paths, sizes
-and mtimes of the project's `.qmd` files and `_quarto*.yml` configs.
+and mtimes of the project's `.qmd` files and its `qm.yml`.
 `rememberFP` (`server.go:303`) records it after every response the server
 produces itself, so `/watch` stays quiet for the app's own writes and fires
 only on outside changes. It is also where the search index learns the project
@@ -648,7 +572,7 @@ right after a `]` is a bracketed span's and is left alone, the same rule
 
 `job` (`job.go:13`) is the single background render: `start` (`job.go:51`)
 refuses to start a second one, the goroutine appends lines through `logf`, and
-the panel polls `state()` for a consistent snapshot. `bookrender.Run` receives
+the panel polls `state()` for a consistent snapshot. `build.Run` receives
 `j.logf` as its `Logf` — the same callback interface the CLI fills with
 `fmt.Printf`.
 
@@ -872,7 +796,7 @@ Every package has a `_test.go` file beside its source; `spec.yaml`
 IMPLEMENTATION.4 asks for red/green TDD. Two things are worth knowing before
 adding to them:
 
-- `testdata/project/` is a miniature Quarto tree exercising the awkward cases:
+- `testdata/project/` is a miniature project tree exercising the awkward cases:
   nested folders, an `_entwurf/` draft folder and a `.hidden/` one that must be
   skipped, a `dritter_FW/` audience folder, media directories, and a page whose
   slide div must end up in the deck rather than the book.
@@ -880,8 +804,9 @@ adding to them:
   for the flattener. A deliberate change to the flattening rules means
   regenerating them; an accidental one means the diff tells you exactly what
   moved.
-- `bookrender.QuartoCommand` (`internal/bookrender/render.go:197`) is a
-  variable so tests can substitute a stub for the real `quarto` binary.
+- `internal/site` and `internal/build` tests render small projects into a
+  temporary directory and check the generated HTML and the package parts of the
+  DOCX, so no external tool is needed to run them.
 
 Run everything with `go test ./...`; the release workflow additionally runs
 `go vet ./...`.
@@ -893,16 +818,17 @@ Run everything with `go test ./...`; the release workflow additionally runs
 | # | file(s) | what you get |
 | --- | --- | --- |
 | 1 | `main.go`, `internal/cli/cli.go` | command wiring, exit status |
-| 2 | `internal/qmcore/selection.go`, `matrix.go` | the three axes and the render matrix |
-| 3 | `internal/qmcore/profileconfig.go` | what a profile file means to qm |
-| 4 | `internal/bookmaker/tree.go`, `flatten.go` | folder tree → one document |
-| 5 | `internal/bookmaker/markdown.go`, `slides.go`, `links.go` | the Markdown-level surgery |
-| 6 | `internal/bookrender/render.go` | build documents, the `quarto` invocation |
-| 7 | `prepare/`, `finalize/`, `render/`, `flatten/` | the render path |
-| 8 | `insert/`, `move/`, `remove/`, `lint/` | the standalone commands |
-| 9 | `web/`, `internal/project/` | the local UI |
+| 2 | `internal/config/config.go`, `matrix.go` | `qm.yml`, the three axes and the render matrix |
+| 3 | `internal/bookmaker/tree.go`, `flatten.go` | folder tree → one document, heading demotion |
+| 4 | `internal/bookmaker/markdown.go`, `slides.go`, `links.go` | the Markdown-level surgery |
+| 5 | `internal/shortcode/`, `internal/markdown/` | shortcodes, the parser, the conditional filter |
+| 6 | `internal/build/build.go` | one render: flatten, parse, filter, write |
+| 7 | `internal/site/`, `internal/docx/`, `internal/docrender/` | the three writers |
+| 8 | `render/`, `flatten/`, `migrate/` | the commands on the render path |
+| 9 | `insert/`, `move/`, `remove/`, `lint/` | the standalone commands |
+| 10 | `web/`, `internal/project/` | the local UI |
 
-If you only read four files, read `internal/qmcore/selection.go`,
-`internal/qmcore/profileconfig.go`, `internal/bookmaker/flatten.go`, and
-`internal/bookrender/render.go`. Everything else is either wiring around them
-or a consequence of what their comments explain.
+If you only read four files, read `internal/config/config.go`,
+`internal/bookmaker/flatten.go`, `internal/markdown/filter.go`, and
+`internal/build/build.go`. Everything else is either wiring around them or a
+consequence of what their comments explain.

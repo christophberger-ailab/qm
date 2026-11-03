@@ -46,7 +46,7 @@ constraints:
       1-3: Text inside fenced code blocks is not touched, and any other shortcode is reported once and left in the text
       2: Conditional content the selected format and audience do not show is removed after parsing (see CONDITIONAL in spec.yaml)
       3: The DOCX is written in Go. A format's `template` names a reference DOCX whose styles, page setup, headers, footers and numbering are used and whose body is discarded; a missing template fails before anything is written
-      3-1: With `toc: true` the DOCX has a Word contents field
+      3-1: 'With `toc: true` the DOCX has a Word contents field'
       4: The PDF is laid out in Go (gopdf) from the same parsed document, A4, with embedded fonts, pagination, contents, links, headings, lists, ordinary tables and local raster images
       4-1: Emoji render in a monochrome emoji font, and a line never breaks inside a word that spans quote marks, emphasis or links
       4-2: An image among text in a paragraph is drawn inline on the text's baseline, and a line with a tall image grows to hold it; an image alone in its paragraph stays a block of its own
@@ -59,7 +59,7 @@ constraints:
       5-1: The cover is put in front of both the DOCX and the PDF with preserved aspect ratio, full-page for the PDF; the DOCX cover uses its own zero-margin section and page-relative image, and the original body section properties, styles, headers and footers are preserved
       6: Unsupported PDF constructs produce actionable errors rather than silently discarding content
       7: Mermaid diagrams stay code blocks, with a warning; math is not typeset
-      8: PPTX slide decks are not supported; `::: slide` blocks and `.notes` are dropped
+      8: 'PPTX slide decks are not supported; `::: slide` blocks and `.notes` are dropped'
 
   SITE:
     description: A website format writes a static site of all selected topics, with a layout like Quarto's.

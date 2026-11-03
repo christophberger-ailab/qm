@@ -1,6 +1,6 @@
 # Hilfe zu qm web
 
-`qm web` ist eine lokale Webseite zum Arbeiten an einem Quarto-Projekt. Du kannst die Seiten per Drag and Drop sortieren, bearbeiten, als Markdown in der Vorschau ansehen, mit einem LLM lektorieren, das ganze Projekt durchsuchen, Änderungen mit Git committen und das Projekt rendern, alles ohne den Browser zu verlassen.
+`qm web` ist eine lokale Webseite zum Arbeiten an einem Markdown-Dokumentationsprojekt. Du kannst die Seiten per Drag and Drop sortieren, bearbeiten, als Markdown in der Vorschau ansehen, mit einem LLM lektorieren, das ganze Projekt durchsuchen, Änderungen mit Git committen und das Projekt rendern, alles ohne den Browser zu verlassen.
 
 Alles läuft auf deinem eigenen Rechner. Der Seitenbaum und der Editor arbeiten direkt mit den `.qmd`-Dateien deines Projekts.
 

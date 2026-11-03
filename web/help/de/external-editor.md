@@ -1,6 +1,6 @@
 # Dateien in anderen Editoren öffnen
 
-`qm web` bearbeitet deine `.qmd`-Seiten. Für alles andere, etwa `_quarto.yml`, Filter, Stylesheets und Bilder, kannst du Dateien an ein anderes Programm übergeben.
+`qm web` bearbeitet deine `.qmd`-Seiten. Für alles andere, etwa `qm.yml`, Stylesheets und Bilder, kannst du Dateien an ein anderes Programm übergeben.
 
 ## Die Schaltfläche Editor
 

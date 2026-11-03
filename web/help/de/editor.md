@@ -49,7 +49,7 @@ Markiere Text, und rechts neben dem Editor erscheint in einer schmalen Leiste ei
 <!-- << Dein Kommentar -->der markierte Text<!-- >> -->
 ```
 
-- `<<` öffnet die kommentierte Stelle und enthält den Kommentar, `>>` schließt sie. Quarto lässt HTML-Kommentare weg, daher erscheinen Kommentare nie im gerenderten Ergebnis.
+- `<<` öffnet die kommentierte Stelle und enthält den Kommentar, `>>` schließt sie. Ein Rendering lässt HTML-Kommentare weg, daher erscheinen Kommentare nie im gerenderten Ergebnis.
 - Leerzeichen und Zeilenumbrüche am Rand der Markierung bleiben außerhalb der Stelle, ebenso eine Überschriften-, Zitat- oder Listenmarke davor.
 - Im Vim-Modus landest du im Einfügemodus und kannst gleich tippen.
 - `Strg-Z` entfernt einen gerade hinzugefügten Kommentar.

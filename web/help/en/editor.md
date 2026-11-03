@@ -49,7 +49,7 @@ Select some text and a `+` appears in the narrow rail to the right of the editor
 <!-- << Your comment goes here -->the selected text<!-- >> -->
 ```
 
-- `<<` opens the commented passage and holds the comment, `>>` closes it. Quarto drops HTML comments, so comments never show up in a render.
+- `<<` opens the commented passage and holds the comment, `>>` closes it. A render drops HTML comments, so comments never show up in a render.
 - Spaces and line breaks at the ends of the selection stay outside the passage, and so does a heading, quote, or list marker in front of it.
 - In Vim mode you land in Insert mode, ready to type.
 - `Ctrl-Z` removes a comment you just added.
