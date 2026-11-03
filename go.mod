@@ -24,10 +24,12 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/laurent22/toml-go v0.0.0-20140919090424-fa06a499644c // indirect
 	github.com/mitchellh/go-wordwrap v1.0.1 // indirect
+	github.com/mmonterroca/docxgo/v2 v2.15.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.3.1 // indirect
 	github.com/phpdave11/gofpdi v1.0.14-0.20211212211723-1f10f9844311 // indirect
 	github.com/pkg/errors v0.8.1 // indirect
 	github.com/protocolbuffers/txtpbfmt v0.0.0-20260420112717-c39628bde8b5 // indirect
+	github.com/yuin/goldmark v1.8.7 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/otel v1.35.0 // indirect
 	go.opentelemetry.io/otel/metric v1.35.0 // indirect

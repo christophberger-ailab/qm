@@ -174,6 +174,12 @@ func renderPage(n *Node, targets linkTargets, opts Options, res *Result) (page, 
 		edit.Classes = bookTitleClasses
 	}
 
+	// Headings are demoted by folder depth (n.Level-1), not normalised: a
+	// page's headings keep their relative depth and their distance from
+	// the top, so a page that starts with `##` stays one level below a
+	// page that starts with `#` in the same folder.
+	delta := n.Level - 1
+
 	if base == 0 || !echoesTitle(headings, base, declared) {
 		head := strings.Repeat("#", n.Level) + " " + n.Title() +
 			" " + mergeAttrs("", n.Anchor, edit.Classes)
@@ -184,11 +190,13 @@ func renderPage(n *Node, targets linkTargets, opts Options, res *Result) (page, 
 			return head + "\n\n" + strings.Join(lines, "\n"), slides
 		}
 		// Body headings are subordinate to the generated title heading.
-		lines = shiftHeadings(lines, headings, n, n.Level+1, base, titleEdit{}, res)
+		// They stay below it even where the page's own levels would put
+		// them beside it.
+		lines = shiftHeadings(lines, headings, n, max(base+delta, n.Level+1), base, titleEdit{}, res)
 		return head + "\n\n" + strings.Join(lines, "\n"), slides
 	}
 
-	lines = shiftHeadings(lines, headings, n, n.Level, base, edit, res)
+	lines = shiftHeadings(lines, headings, n, base+delta, base, edit, res)
 	return strings.Join(lines, "\n"), slides
 }
 
@@ -373,4 +381,29 @@ func relativeIncludes(lines []string) []string {
 		}
 	}
 	return out
+}
+
+// Pages prepares a tree for rendering page by page, as a website does:
+// every node gets its anchor and the root is marked as the book root, as
+// Flatten would do. title overrides the root's title.
+func Pages(root *Node, title string) {
+	assignAnchors(root)
+	root.bookRoot = true
+	root.titleOverride = title
+}
+
+// PageMarkdown renders a single node's own page — not its children — the
+// way Flatten renders it inside a book: markup balanced, a title heading
+// generated where the page has none, and headings demoted by the node's
+// folder depth. Links are left alone. With opts.WrapAudience the page is
+// wrapped in a div of the given audience class, which the caller works
+// out from the node and its ancestors. Call Pages on the tree first.
+func PageMarkdown(n *Node, audience string, opts Options) (string, []string) {
+	opts.RewriteLinks = false
+	res := &Result{}
+	page, _ := renderPage(n, nil, opts, res)
+	if opts.WrapAudience && audience != "" && page != "" {
+		page = wrapInDiv(page, audience)
+	}
+	return page, res.Warnings
 }

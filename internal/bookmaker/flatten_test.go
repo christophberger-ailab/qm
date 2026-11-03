@@ -252,7 +252,9 @@ func TestFlattenHeadingLevels(t *testing.T) {
 		// First-level folders are chapters, deeper ones nest.
 		{"Erster Abschnitt", "# "},
 		{"Alpha-Seite", "## "},
-		{"Tiefe Seite", "### "},
+		// Headings are demoted by folder depth, not normalised: the
+		// page writes `##`, two folders down that is `####`.
+		{"Tiefe Seite", "#### "},
 		// A sub-heading inside a page keeps its relative depth.
 		{"Unterpunkt", "### "},
 		// A page whose title lives only in the front matter gets a
@@ -357,7 +359,7 @@ func TestFlattenRepairsUnbalancedPage(t *testing.T) {
 		t.Fatalf("warnings = %v", res.Warnings)
 	}
 	// The following chapter must still be a heading, not code or div content.
-	if !containsHeading(res.Content, "# ", "Danach") {
+	if !containsHeading(res.Content, "## ", "Danach") {
 		t.Errorf("the next page was swallowed:\n%s", res.Content)
 	}
 	if !balanced(res.Content) {
@@ -387,7 +389,7 @@ func TestFlattenDirectoryWithoutIndex(t *testing.T) {
 	if !containsHeading(res.Content, "# ", "Ohne index") {
 		t.Errorf("missing generated folder heading:\n%s", res.Content)
 	}
-	if !containsHeading(res.Content, "## ", "Seite") {
+	if !containsHeading(res.Content, "### ", "Seite") {
 		t.Errorf("child page is at the wrong level:\n%s", res.Content)
 	}
 }
