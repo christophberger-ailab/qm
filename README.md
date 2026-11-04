@@ -347,7 +347,9 @@ for the audience `std`, which sets none.)
 A minimal project needs no `qm.yml` at all. Without one, every top-level
 content folder (one holding a `.qmd` or `.md` file, and not starting with `_`
 or `.`) is a topic, the only format is `web` (HTML), and there is one
-audience, `all`. A `qm.yml` states only what differs:
+audience, `all`. A project that has no `qm.yml` but still has `_quarto.yml` or
+`_quarto-*.yml` files is an error rather than a render on the defaults: run
+`qm migrate` first (see below). A `qm.yml` states only what differs:
 
 ```yaml
 title: Handbook

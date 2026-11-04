@@ -155,3 +155,19 @@ topics:
 		t.Error("undefined placeholder accepted")
 	}
 }
+
+// A project still configured for Quarto must not be rendered on the
+// defaults: that would silently produce something else.
+func TestOldQuartoConfigWithoutQmYmlIsAnError(t *testing.T) {
+	root := project(t, "", "a")
+	os.WriteFile(filepath.Join(root, "_quarto-topic-a.yml"), []byte("{}\n"), 0o644)
+	_, err := Load(root)
+	if err == nil || !strings.Contains(err.Error(), "qm migrate") || !strings.Contains(err.Error(), "_quarto-topic-a.yml") {
+		t.Fatalf("err = %v", err)
+	}
+	// Once qm.yml exists, the old files no longer matter.
+	os.WriteFile(filepath.Join(root, FileName), []byte("title: x\n"), 0o644)
+	if _, err := Load(root); err != nil {
+		t.Fatal(err)
+	}
+}
