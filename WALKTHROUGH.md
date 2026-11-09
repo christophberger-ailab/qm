@@ -251,10 +251,10 @@ steps is load-bearing:
    levels are what cuts a deck into slides and the book's anchors do not exist
    in it.
 3. `rewriteLinks` — turn in-book links into anchors.
-4. warn about `{{< include >}}` shortcodes whose path is not project-absolute
-   (`relativeIncludes`): they are resolved on the flattened document rather
-   than the page, so only a path starting with `/` keeps working. An absolute
-   include is fine and raises no warning.
+4. make relative `{{< include >}}` paths project-absolute
+   (`absoluteIncludes`): a relative path is relative to the page, and once
+   the page is part of a book or a site page the page's folder is no longer
+   known.
 
 `shiftHeadings` (`flatten.go:283`) applies the level delta and attaches the
 anchor to the page's own title heading — per *block*, not per page: sibling
@@ -328,8 +328,8 @@ Everything between the flattened text and the file on disk.
 ### 5.1 `internal/shortcode`
 
 `Expander` resolves the shortcodes the content uses, on the text, before it is
-parsed: `{{< include /path >}}` (project-absolute, nested up to eight deep,
-cycles are errors), `{{< pagebreak >}}` (an empty `::: {.qm-pagebreak}` div that
+parsed: `{{< include path >}}` (project-absolute with a leading `/`, else
+relative to the including file; nested up to eight deep, cycles are errors), `{{< pagebreak >}}` (an empty `::: {.qm-pagebreak}` div that
 every writer turns into its own page break) and `{{< var name >}}`. Text in
 fenced code is left alone, and any other shortcode is reported once and left
 as written. `Variables` builds what `var` resolves against: `_variables.yml`

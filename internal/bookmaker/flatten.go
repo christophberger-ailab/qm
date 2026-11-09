@@ -236,12 +236,7 @@ func preparePage(n *Node, targets linkTargets, opts Options, res *Result) (lines
 		res.Links += changed
 	}
 
-	if rel := relativeIncludes(lines); len(rel) > 0 {
-		res.Warnings = append(res.Warnings, fmt.Sprintf(
-			"%s: include shortcode path %s is not project-absolute; Quarto resolves "+
-				"it at render time, so it must start with '/'",
-			n.Page.Rel, strings.Join(rel, ", ")))
-	}
+	lines = absoluteIncludes(lines, path.Dir(n.Page.Rel))
 
 	res.Pages++
 	return lines, slides
@@ -362,25 +357,37 @@ func trimBlankEdges(lines []string) []string {
 	return lines[start:end]
 }
 
-// includeShortcode matches `{{< include path >}}` and captures the path,
-// quoted or not.
-var includeShortcode = regexp.MustCompile(`\{\{<\s*include\s+("[^"]*"|'[^']*'|[^\s>"']+)`)
+// includeLine matches a line that is one `{{< include path >}}` shortcode,
+// the form the shortcode expander resolves, and captures the text before
+// the path, the path (quoted or not) and the text after it.
+var includeLine = regexp.MustCompile(`^(\s*\{\{<\s*include\s+)("[^"]*"|'[^']*'|[^\s>"']+)(\s*>\}\}\s*)$`)
 
-// relativeIncludes returns the paths of the include shortcodes in lines that
-// are not project-absolute. Quarto resolves an include at render time, from
-// the file that holds it, and that is the flattened `_build/book.qmd` rather
-// than the page, so only a path starting at the project root keeps working.
-func relativeIncludes(lines []string) []string {
-	var out []string
-	for _, line := range lines {
-		for _, m := range includeShortcode.FindAllStringSubmatch(line, -1) {
-			p := strings.Trim(m[1], `"'`)
-			if !strings.HasPrefix(p, "/") {
-				out = append(out, p)
-			}
+// absoluteIncludes rewrites the relative include paths in a page's lines,
+// which are relative to the page's folder dir, into project-absolute ones.
+// The page's text ends up in a book or a site page that no longer knows
+// where it came from; an absolute path still finds the file. Includes in
+// fenced code blocks are left as written.
+func absoluteIncludes(lines []string, dir string) []string {
+	var code codeTracker
+	for i, line := range lines {
+		if code.step(line) {
+			continue
 		}
+		m := includeLine.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		p := strings.Trim(m[2], `"'`)
+		if p == "" || strings.HasPrefix(p, "/") {
+			continue
+		}
+		abs := "/" + path.Join(dir, p)
+		if m[2] != p {
+			abs = m[2][:1] + abs + m[2][:1]
+		}
+		lines[i] = m[1] + abs + m[3]
 	}
-	return out
+	return lines
 }
 
 // Pages prepares a tree for rendering page by page, as a website does:

@@ -91,7 +91,10 @@ offers is rendered, cut down to what each topic and format declares (see
 
 A **website** format covers all selected topics in one site, one site per
 selected audience. A **document** format (DOCX, PDF) is written per topic and
-audience. A failing combination does not stop the others; the command reports
+audience. The topic `all` has no folder: `--topic=all` selects every topic, and
+a topic `all` declared in `qm.yml` puts every topic into the websites it takes
+part in (`all: {formats: [website]}`), whatever the topics restrict themselves
+to. A failing combination does not stop the others; the command reports
 how many failed and exits non-zero. `--clean` empties each selected format's
 output directory once, before the first render; it refuses a directory that is
 not below the output directory. `--dry-run` prints the files that would be
@@ -440,8 +443,9 @@ shortcodes, parses it, removes the conditional content the selection does not
 show, and writes it. The shortcodes `include`, `var` and `pagebreak` are
 resolved by `qm`:
 
-- `{{< include /path/file.md >}}` takes a project-absolute path, nested up to
-  eight deep;
+- `{{< include path/file.md >}}` includes a file, nested up to eight deep. A
+  path starting with `/` is project-absolute; any other path is relative to
+  the file that holds the include;
 - `{{< var name >}}` resolves as described above;
 - `{{< pagebreak >}}` starts a new page.
 

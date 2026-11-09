@@ -5,6 +5,7 @@ package shortcode
 import (
 	"fmt"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -17,9 +18,15 @@ import (
 
 // The shortcodes:
 //
-//	{{< include /path/file.md >}}   the file's text, in place (project-absolute)
+//	{{< include path/file.md >}}    the file's text, in place
 //	{{< pagebreak >}}               a page break (see the page-break marker below)
 //	{{< var name >}}                a profile variable or a `_variables.yml` value
+//
+// An include path starting with '/' is project-absolute; any other path
+// is relative to the folder of the file holding the include. Text passed to
+// Expand has no file of its own, so its relative paths start at the project
+// root — the page loader makes a page's own includes project-absolute
+// before its text gets here.
 //
 // Includes and page breaks are whole-line shortcodes, which is how the
 // content writes them; `var` may sit anywhere in a line. Text inside fenced
@@ -66,10 +73,12 @@ func New(root string, vars map[string]string, warn func(string, ...any)) *Expand
 
 // Expand returns text with its shortcodes resolved.
 func (s *Expander) Expand(text string) (string, error) {
-	return s.expand(text, 0, nil)
+	return s.expand(text, ".", 0, nil)
 }
 
-func (s *Expander) expand(text string, depth int, stack []string) (string, error) {
+// expand resolves the shortcodes of text that lives in dir, a
+// project-relative, slash-separated folder.
+func (s *Expander) expand(text, dir string, depth int, stack []string) (string, error) {
 	lines := strings.Split(text, "\n")
 	out := make([]string, 0, len(lines))
 	var fence codeFence
@@ -82,7 +91,7 @@ func (s *Expander) expand(text string, depth int, stack []string) (string, error
 			continue
 		}
 		if m := shortcodeLine.FindStringSubmatch(line); m != nil {
-			replaced, handled, err := s.wholeLine(m[1], m[2], depth, stack)
+			replaced, handled, err := s.wholeLine(m[1], m[2], dir, depth, stack)
 			if err != nil {
 				return "", err
 			}
@@ -98,27 +107,24 @@ func (s *Expander) expand(text string, depth int, stack []string) (string, error
 
 // wholeLine resolves a line that is one shortcode. handled is false for a
 // shortcode it does not know; the caller then treats the line as text.
-func (s *Expander) wholeLine(name, arg string, depth int, stack []string) (string, bool, error) {
+func (s *Expander) wholeLine(name, arg, dir string, depth int, stack []string) (string, bool, error) {
 	switch name {
 	case "pagebreak":
 		return pagebreakDiv, true, nil
 	case "include":
-		text, err := s.include(arg, depth, stack)
+		text, err := s.include(arg, dir, depth, stack)
 		return text, true, err
 	}
 	return "", false, nil
 }
 
-func (s *Expander) include(arg string, depth int, stack []string) (string, error) {
+func (s *Expander) include(arg, dir string, depth int, stack []string) (string, error) {
 	path := strings.Trim(strings.TrimSpace(arg), `"'`)
 	if path == "" {
 		return "", fmt.Errorf("{{< include >}} names no file")
 	}
-	if !strings.HasPrefix(path, "/") {
-		return "", fmt.Errorf("{{< include %s >}}: the path must start with '/' (it is "+
-			"relative to the project root; the flattened book has lost the page it was written in)", path)
-	}
-	abs, err := qmcore.ProjectPath(s.root, strings.TrimPrefix(path, "/"))
+	rel := ResolveInclude(dir, path)
+	abs, err := qmcore.ProjectPath(s.root, rel)
 	if err != nil {
 		return "", fmt.Errorf("{{< include %s >}}: %w", path, err)
 	}
@@ -135,11 +141,22 @@ func (s *Expander) include(arg string, depth int, stack []string) (string, error
 		return "", fmt.Errorf("{{< include %s >}}: %w", path, err)
 	}
 	s.includes++
-	text, err := s.expand(strings.TrimRight(string(data), "\n"), depth+1, append(stack, abs))
+	text, err := s.expand(strings.TrimRight(string(data), "\n"), pathpkg.Dir(rel), depth+1, append(stack, abs))
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", path, err)
 	}
 	return text, nil
+}
+
+// ResolveInclude returns the project-relative path an include path names
+// when it is written in a file in dir (project-relative, slash-separated).
+// A path starting with '/' is project-absolute. The result may start with
+// "../" when the path leaves the project.
+func ResolveInclude(dir, path string) string {
+	if strings.HasPrefix(path, "/") {
+		return pathpkg.Clean(strings.TrimPrefix(path, "/"))
+	}
+	return pathpkg.Join(dir, path)
 }
 
 // inline resolves the shortcodes that may sit in the middle of a line.

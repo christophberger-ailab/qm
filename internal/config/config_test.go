@@ -111,6 +111,56 @@ audiences:
 	}
 }
 
+func TestAllTopic(t *testing.T) {
+	root := project(t, `
+formats:
+  handout: {type: docx}
+  web: {type: html}
+audiences: [pol, fw]
+topics:
+  a: {formats: [handout], audiences: [pol]}
+  b: {formats: [handout]}
+  all: {formats: [web]}
+`, "a", "b")
+	c, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	topicNames := func(s Selection) []string {
+		var out []string
+		for _, t := range s.Topics {
+			out = append(out, t.Name)
+		}
+		return out
+	}
+	for _, topics := range [][]string{nil, {"all"}} {
+		sels, err := c.Expand(Request{Topics: topics})
+		if err != nil {
+			t.Fatalf("%q: %v", topics, err)
+		}
+		var docs []string
+		for _, s := range sels {
+			if s.Format.IsWeb() {
+				if got := topicNames(s); !slices.Equal(got, []string{"a", "b"}) {
+					t.Errorf("%q: site %s has topics %q", topics, s.Audience.Name, got)
+				}
+			} else {
+				docs = append(docs, s.Topic.Name+"-"+s.Audience.Name)
+			}
+		}
+		if want := []string{"a-pol", "b-pol", "b-fw"}; !slices.Equal(docs, want) {
+			t.Errorf("%q: documents %q, want %q", topics, docs, want)
+		}
+	}
+	sels, err := c.Expand(Request{Topics: []string{"b"}, Formats: []string{"web"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sels) != 2 || !slices.Equal(topicNames(sels[0]), []string{"b"}) {
+		t.Errorf("a site for topic b only: %d selections, topics %q", len(sels), topicNames(sels[0]))
+	}
+}
+
 func TestPaths(t *testing.T) {
 	root := project(t, `
 vars: {org: LS}

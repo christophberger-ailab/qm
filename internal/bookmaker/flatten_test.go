@@ -448,30 +448,33 @@ func TestTrimBlankEdges(t *testing.T) {
 	}
 }
 
-func TestRelativeIncludes(t *testing.T) {
+func TestAbsoluteIncludes(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		line string
-		want []string
+		want string
 	}{
-		{"absolute", "{{< include /assets/templates/kolophon.md >}}", nil},
-		{"absolute quoted", `{{< include "/assets/a b.md" >}}`, nil},
-		{"relative", "{{< include ../shared/x.md >}}", []string{"../shared/x.md"}},
-		{"relative quoted", `{{< include 'x.md' >}}`, []string{"x.md"}},
-		{"mixed on a line", "{{< include /a.md >}} text {{< include b.md >}}", []string{"b.md"}},
-		{"other shortcode", "{{< pagebreak >}} {{< var topic >}}", nil},
-		{"no shortcode", "include x.md", nil},
+		{"absolute", "{{< include /assets/templates/kolophon.md >}}", "{{< include /assets/templates/kolophon.md >}}"},
+		{"absolute quoted", `{{< include "/assets/a b.md" >}}`, `{{< include "/assets/a b.md" >}}`},
+		{"relative", "{{< include ../shared/x.md >}}", "{{< include /book/shared/x.md >}}"},
+		{"relative quoted", `  {{< include 'x.md' >}}`, `  {{< include '/book/ch/x.md' >}}`},
+		{"not the whole line", "text {{< include b.md >}}", "text {{< include b.md >}}"},
+		{"escaped", "{{{< include b.md >}}}", "{{{< include b.md >}}}"},
+		{"other shortcode", "{{< pagebreak >}}", "{{< pagebreak >}}"},
 	} {
-		got := relativeIncludes([]string{tc.line})
-		if strings.Join(got, "|") != strings.Join(tc.want, "|") {
-			t.Errorf("%s: relativeIncludes(%q) = %v, want %v", tc.name, tc.line, got, tc.want)
+		got := absoluteIncludes([]string{tc.line}, "book/ch")
+		if got[0] != tc.want {
+			t.Errorf("%s: absoluteIncludes(%q) = %q, want %q", tc.name, tc.line, got[0], tc.want)
 		}
+	}
+	got := absoluteIncludes([]string{"```", "{{< include x.md >}}", "```"}, "book")
+	if got[1] != "{{< include x.md >}}" {
+		t.Errorf("an include in a code fence was rewritten: %q", got[1])
 	}
 }
 
-func TestFlattenIncludeWarning(t *testing.T) {
+func TestFlattenRelativeInclude(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, dir+"/_quarto.yml", "project:\n  type: website\n")
 	writeFile(t, dir+"/book/index.qmd", "---\ntitle: B\n---\n\n# B\n")
 	writeFile(t, dir+"/book/absolut/index.qmd", "---\norder: 1\n---\n\n# Absolut\n\n{{< include /assets/templates/kolophon.md >}}\n")
 	writeFile(t, dir+"/book/relativ/index.qmd", "---\norder: 2\n---\n\n# Relativ\n\n{{< include ../kolophon.md >}}\n")
@@ -484,9 +487,12 @@ func TestFlattenIncludeWarning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "relativ/index.qmd") ||
-		!strings.Contains(res.Warnings[0], "../kolophon.md") {
-		t.Fatalf("warnings = %v, want one about relativ/index.qmd only", res.Warnings)
+	if len(res.Warnings) != 0 {
+		t.Errorf("warnings = %v, want none", res.Warnings)
+	}
+	for _, want := range []string{"{{< include /assets/templates/kolophon.md >}}", "{{< include /book/kolophon.md >}}"} {
+		if !strings.Contains(res.Content, want) {
+			t.Errorf("flattened book lacks %q:\n%s", want, res.Content)
+		}
 	}
 }

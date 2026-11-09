@@ -63,15 +63,46 @@ func TestShortcodes(t *testing.T) {
 	}
 
 	for name, in := range map[string]string{
-		"relative":   "{{< include assets/nested.md >}}",
-		"outside":    "{{< include /../secret.md >}}",
-		"missing":    "{{< include /assets/none.md >}}",
-		"recursive":  "{{< include /assets/loop.md >}}",
-		"no file":    "{{< include >}}",
-		"quoted bad": `{{< include "assets/x.md" >}}`,
+		"outside":     "{{< include /../secret.md >}}",
+		"outside rel": "{{< include ../secret.md >}}",
+		"missing":     "{{< include /assets/none.md >}}",
+		"recursive":   "{{< include /assets/loop.md >}}",
+		"no file":     "{{< include >}}",
 	} {
 		if _, err := New(root, nil, nil).Expand(in); err == nil {
 			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+func TestRelativeIncludes(t *testing.T) {
+	root := t.TempDir()
+	write := func(name, body string) {
+		p := filepath.Join(root, name)
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		os.WriteFile(p, []byte(body), 0o644)
+	}
+	write("assets/outer.md", "Outer.\n\n{{< include parts/inner.md >}}\n")
+	write("assets/parts/inner.md", "Inner.\n\n{{< include '../../top.md' >}}\n")
+	write("top.md", "Top.\n")
+
+	for _, in := range []string{"{{< include assets/outer.md >}}", `{{< include "/assets/outer.md" >}}`} {
+		out, err := New(root, nil, nil).Expand(in)
+		if err != nil {
+			t.Fatalf("%s: %v", in, err)
+		}
+		if want := "Outer.\n\nInner.\n\nTop."; out != want {
+			t.Errorf("%s: got %q, want %q", in, out, want)
+		}
+	}
+	for _, tc := range [][3]string{
+		{".", "a.md", "a.md"},
+		{"book/ch", "../x.md", "book/x.md"},
+		{"book", "/assets/x.md", "assets/x.md"},
+		{".", "../x.md", "../x.md"},
+	} {
+		if got := ResolveInclude(tc[0], tc[1]); got != tc[2] {
+			t.Errorf("ResolveInclude(%q, %q) = %q, want %q", tc[0], tc[1], got, tc[2])
 		}
 	}
 }

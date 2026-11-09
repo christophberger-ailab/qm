@@ -11,6 +11,12 @@ type Request struct {
 	Topics, Formats, Audiences []string
 }
 
+// AllTopics is the topic that stands for every topic of the project. It has
+// no folder of its own. Requesting it selects every topic; declaring it in
+// qm.yml (with its own formats and audiences) puts every topic into the
+// websites it takes part in.
+const AllTopics = "all"
+
 // Expand returns the selections a request addresses, in a stable order:
 // formats outermost, then topics, then audiences.
 //
@@ -21,7 +27,15 @@ type Request struct {
 // Topics and formats restrict each other: a topic that lists its formats
 // takes part only in those, and the same holds for audiences and for a
 // format's own lists. A name that the project does not define is an error.
+//
+// The topic "all" (AllTopics) is not a folder. In a request it means every
+// topic. Declared in qm.yml, it makes every topic part of each website
+// format and audience the "all" topic itself takes part in, whatever the
+// individual topics restrict themselves to.
 func (c *Config) Expand(req Request) ([]Selection, error) {
+	if slices.Contains(req.Topics, AllTopics) {
+		req.Topics = nil
+	}
 	for _, n := range req.Topics {
 		if !c.Topics.Has(n) {
 			return nil, fmt.Errorf("unknown topic %q (have %v)", n, c.Topics.Names())
@@ -43,6 +57,7 @@ func (c *Config) Expand(req Request) ([]Selection, error) {
 	allows := func(list []string, name string) bool {
 		return len(list) == 0 || slices.Contains(list, name)
 	}
+	all, hasAll := c.Topics.Get(AllTopics)
 
 	var out []Selection
 	for _, f := range c.Formats {
@@ -55,9 +70,14 @@ func (c *Config) Expand(req Request) ([]Selection, error) {
 				if !pick(req.Audiences, a.Name) || !allows(format.Audiences, a.Name) {
 					continue
 				}
+				everything := hasAll && allows(format.Topics, AllTopics) &&
+					allows(all.Formats, f.Name) && allows(all.Audiences, a.Name)
 				var topics []Topic
 				for _, t := range c.Topics {
-					if pick(req.Topics, t.Name) && allows(format.Topics, t.Name) &&
+					if t.Name == AllTopics || !pick(req.Topics, t.Name) {
+						continue
+					}
+					if everything || allows(format.Topics, t.Name) &&
 						allows(t.Value.Formats, f.Name) && allows(t.Value.Audiences, a.Name) {
 						topics = append(topics, t.Value)
 					}
@@ -70,7 +90,7 @@ func (c *Config) Expand(req Request) ([]Selection, error) {
 			continue
 		}
 		for _, t := range c.Topics {
-			if !pick(req.Topics, t.Name) || !allows(format.Topics, t.Name) || !allows(t.Value.Formats, f.Name) {
+			if t.Name == AllTopics || !pick(req.Topics, t.Name) || !allows(format.Topics, t.Name) || !allows(t.Value.Formats, f.Name) {
 				continue
 			}
 			for _, a := range c.Audiences {
