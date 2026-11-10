@@ -1,5 +1,5 @@
 // Package web implements the `qm web` command: a local web app for
-// reordering the pages of a Quarto project by drag and drop, editing them,
+// reordering the pages of a qm project by drag and drop, editing them,
 // and rendering its book folders.
 //
 // Spec: spec-web.yaml.
@@ -10,7 +10,7 @@
 //
 // The package is the quarto-sorter tool
 // (https://github.com/christophberger-ailab/quarto-sorter) merged into qm;
-// its render panel drives the same internal/bookrender flow that
+// its render panel drives the same internal/build flow that
 // `qm render` runs from the command line.
 package web
 
