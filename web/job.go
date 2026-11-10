@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/christophberger-ailab/qm/internal/bookrender"
+	"github.com/christophberger-ailab/qm/internal/build"
 )
 
 // job is the single background render the server runs at a time. The tree
-// handlers must stay responsive while Quarto works, which can take minutes,
+// handlers must stay responsive while a render works, which can take minutes,
 // so the render runs in its own goroutine and the UI polls this for output.
 type job struct {
 	mu      sync.Mutex
@@ -48,7 +48,7 @@ func (j *job) fail() {
 
 // start begins a render in the background, reporting whether it was
 // accepted: a job already running is left alone.
-func (j *job) start(o bookrender.Options) bool {
+func (j *job) start(o build.Options) bool {
 	j.mu.Lock()
 	if j.running {
 		j.mu.Unlock()
@@ -58,7 +58,7 @@ func (j *job) start(o bookrender.Options) bool {
 	j.mu.Unlock()
 
 	go func() {
-		if err := bookrender.Run(o, j.logf); err != nil {
+		if err := build.Run(o, j.logf); err != nil {
 			j.fail()
 		}
 		j.mu.Lock()

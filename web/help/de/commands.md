@@ -1,6 +1,6 @@
 # Die qm-Kommandozeile im Überblick
 
-`qm web` ist einer von mehreren Befehlen. Sie arbeiten alle am selben Quarto-Projekt.
+`qm web` ist einer von mehreren Befehlen. Sie arbeiten alle am selben Projekt.
 
 ```
 qm <object> <subcommand> [flags] [args]
@@ -10,16 +10,15 @@ qm <object> <subcommand> [flags] [args]
 
 | Flag | Umgebungsvariable | Standard | Bedeutung |
 | --- | --- | --- | --- |
-| `--project`, `-p` | `QM_PROJECT` | `.` | Pfad zum Quarto-Dokumentbaum |
+| `--project`, `-p` | `QM_PROJECT` | `.` | Pfad zum Dokumentbaum |
 
 ## Befehle
 
 | Befehl | Was er tut |
 | --- | --- |
 | `qm render [<topic>…]` | rendert die Matrix aus Thema × Format × Zielgruppe des Projekts |
-| `qm flatten <topic>` | schreibt die Build-Dokumente eines Themas, ohne zu rendern |
-| `qm prepare` | Pre-Render-Hook: prüft die Auswahl, baut das Thema und schreibt den Capture-Filter |
-| `qm finalize` | Post-Render-Hook: verschiebt die Ausgabe dorthin, wo die Profile es vorgeben, und ergänzt PDF und Deckblätter des qm-Renderers |
+| `qm flatten <topic>` | schreibt das Markdown, das ein Dokument-Rendering des Themas einliest, nach `_build/<topic>.md`, ohne zu rendern |
+| `qm migrate` | schreibt `qm.yml` aus den alten `_quarto*.yml`-Dateien des Projekts (`--dry-run` gibt sie aus, `--force` überschreibt) |
 | `qm lint [<topic>]` | prüft die `.qmd`-Quellen (derzeit: nicht geschlossene `:::`-Fences) |
 | `qm chapters insert <folder>` | gibt einer neuen Seite ihr `order:` und nummeriert die Geschwisterseiten neu |
 | `qm chapters move <folder> <old> <new>` | verschiebt ein Kapitel an eine andere `order`-Position |

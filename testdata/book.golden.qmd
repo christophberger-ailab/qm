@@ -19,23 +19,23 @@ Einleitung zum ersten Abschnitt.
 :::
 
 ::: explanation
-### Tiefe Seite {#bm-book-erster-alpha-tief}
+#### Tiefe Seite {#bm-book-erster-alpha-tief}
 
 Text.
 :::
 
 ::: explanation
-## Beta-Seite {#bm-book-erster-beta}
+### Beta-Seite {#bm-book-erster-beta}
 :::
 
 ::: tutorial
-## Beta-Seite {#bm-book-erster-beta}
+### Beta-Seite {#bm-book-erster-beta}
 
 Übung.
 :::
 
 ::: reference
-## Quellen
+### Quellen
 :::
 
 # Zweiter Abschnitt {#bm-book-zweiter}
@@ -52,6 +52,6 @@ Nur Fließtext, die Überschrift steht im Front Matter.
 :::
 
 ::: explanation
-## Feuerwehr-Detailseite {#bm-book-dritter-fw-seite}
+### Feuerwehr-Detailseite {#bm-book-dritter-fw-seite}
 :::
 ::::

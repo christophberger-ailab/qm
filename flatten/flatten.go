@@ -2,10 +2,12 @@
 //
 // Spec: spec-flatten.yaml.
 //
-// It writes the same `_build/book.qmd` and `_build/slides.qmd` that
-// `qm prepare` writes during a render, and stops there. It is the way to
-// look at what a render will actually feed to Quarto — heading demotion,
-// rewritten in-book links, extracted slides — without waiting for pandoc.
+// It writes the Markdown a document render of one topic parses —
+// `_build/<topic>.md`: the pages in folder order, headings demoted by
+// folder depth, in-book links rewritten into anchors, shortcodes resolved —
+// and stops there. It is the way to look at what a render works from.
+// Conditional content is still in it; a render removes what the selected
+// format and audience do not show.
 package flatten
 
 import (
@@ -13,11 +15,14 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/christophberger-ailab/qm/internal/bookrender"
+	"github.com/christophberger-ailab/qm/internal/build"
 	"github.com/christophberger-ailab/qm/internal/cli"
-	"github.com/christophberger-ailab/qm/internal/qmcore"
+	"github.com/christophberger-ailab/qm/internal/config"
 	"github.com/christophberger/start"
 )
+
+// BuildDir is where the flattened documents go.
+const BuildDir = "_build"
 
 var projectPath *string
 
@@ -26,13 +31,10 @@ func Register(projectFlag *string) {
 	projectPath = projectFlag
 	start.Add(&start.Command{
 		Name:  "flatten",
-		Short: "Write the build documents of one topic without rendering",
-		Long: "Flatten a topic's content folder into _build/book.qmd and " +
-			"_build/slides.qmd, then exit. Usage: qm flatten <topic>. The " +
-			"topic is the value of a `topic-<name>` profile; its content " +
-			"folder is the profile's `qm: folder:`, or the topic name. The " +
-			"topics `all` and `none` address the whole project and write " +
-			"the empty build documents.",
+		Short: "Write the flattened Markdown of one topic without rendering",
+		Long: "Flatten a topic's content folder into _build/<topic>.md, then " +
+			"exit. Usage: qm flatten <topic>. The topic is one of qm.yml's " +
+			"topics (or, without qm.yml, a top-level content folder).",
 		Flags: []string{"project"},
 		Cmd:   cli.Guard(cmd),
 	})
@@ -47,45 +49,41 @@ func cmd(c *start.Command) error {
 		return fmt.Errorf("cannot resolve project path: %w", err)
 	}
 	if len(c.Args) != 1 {
-		topics, _ := qmcore.AxisValues(root, qmcore.AxisTopic)
-		return fmt.Errorf("usage: qm flatten <topic>; the project has: %v", topics)
+		cfg, err := config.Load(root)
+		if err != nil {
+			return err
+		}
+		return fmt.Errorf("usage: qm flatten <topic>; the project has: %v", cfg.Topics.Names())
 	}
 	return Run(root, c.Args[0])
 }
 
-// Run flattens one topic into the build documents.
-//
-// Only the topic profile is read, so the deck's title keeps whatever
-// variables the other two axes would have supplied; a render resolves them
-// through `qm prepare`. Everything else — the flattening itself — is
-// audience- and format-independent: the audience divs are reproduced around
-// the content and filtered at render time.
+// Run flattens one topic and returns nothing but errors; the progress goes
+// to stdout.
 func Run(root, topic string) error {
-	p, err := qmcore.LoadProfile(root, qmcore.AxisTopic.ProfileName(topic))
+	cfg, err := config.Load(root)
 	if err != nil {
 		return fmt.Errorf("flatten: %w", err)
 	}
-	folder := p.QM.Folder
-	if folder == "" {
-		folder = topic
-	}
-	if qmcore.IsWholeProject(topic) {
-		folder = ""
+	t, ok := cfg.Topics.Get(topic)
+	if !ok {
+		return fmt.Errorf("flatten: unknown topic %q (have %v)", topic, cfg.Topics.Names())
 	}
 	log := func(format string, args ...any) {
 		fmt.Fprintf(os.Stdout, format+"\n", args...)
 	}
-	if err := bookrender.WriteBuild(root, folder, p.Book.Title, log); err != nil {
+	sel := config.Selection{Config: cfg, Topic: t, Format: cfg.Formats[0].Value, Audience: cfg.Audiences[0].Value}
+	text, _, err := build.Flatten(sel, log)
+	if err != nil {
 		return fmt.Errorf("flatten: %w", err)
 	}
-	log("wrote %s and %s",
-		rel(root, bookrender.BookFile(root)), rel(root, bookrender.SlidesFile(root)))
-	return nil
-}
-
-func rel(root, p string) string {
-	if r, err := filepath.Rel(root, p); err == nil {
-		return filepath.ToSlash(r)
+	out := filepath.Join(root, BuildDir, topic+".md")
+	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+		return err
 	}
-	return p
+	if err := os.WriteFile(out, []byte(text), 0o644); err != nil {
+		return err
+	}
+	log("wrote %s", filepath.ToSlash(filepath.Join(BuildDir, topic+".md")))
+	return nil
 }

@@ -14,8 +14,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 
 	"github.com/christophberger-ailab/qm/internal/cli"
+	"github.com/christophberger-ailab/qm/internal/config"
 	"github.com/christophberger-ailab/qm/internal/qmcore"
 	"github.com/christophberger/start"
 	flag "github.com/spf13/pflag"
@@ -39,7 +41,7 @@ func Register(projectFlag *string) {
 		Short: "Run lint checks on the files of a topic",
 		Long: "Run lint checks against every .qmd file that belongs to " +
 			"the given topic, or against the whole project when no topic is " +
-			"named or the topic is `all` or `none`. Usage: qm lint [<topic>].",
+			"named or the topic is `all`. Usage: qm lint [<topic>].",
 		Flags: []string{"project", "lint-audience"},
 		Cmd:   cli.Guard(cmd),
 	})
@@ -115,22 +117,16 @@ func Run(docPath, topicArg, audience string) error {
 // folder's `_POL`/`_FW` variant files are in play, so it is an optional
 // narrowing, not part of the address.
 func topicFiles(docPath, topicArg, audience string) ([]string, error) {
-	topic := topicArg
-	if a, value, ok := qmcore.SplitProfileName(topicArg); ok {
-		if a != qmcore.AxisTopic {
-			return nil, fmt.Errorf("%q is a %s profile; qm lint takes a topic", topicArg, a)
-		}
-		topic = value
-	}
-	// `all` and `none` name no folder: they are the whole project, which is
-	// what linting without a topic already covers.
-	if qmcore.IsWholeProject(topic) {
+	topic := strings.TrimPrefix(topicArg, "topic-")
+	// `all` names no folder: it is the whole project, which is what linting
+	// without a topic already covers.
+	if topic == "all" {
 		return allDocFiles(docPath)
 	}
 	folder := topic
-	if p, err := qmcore.LoadProfile(docPath, qmcore.AxisTopic.ProfileName(topic)); err == nil {
-		if p.QM.Folder != "" {
-			folder = p.QM.Folder
+	if cfg, err := config.Load(docPath); err == nil {
+		if t, ok := cfg.Topics.Get(topic); ok {
+			folder = t.Folder
 		}
 	}
 

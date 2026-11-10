@@ -23,6 +23,9 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+// testConfig is the fixture's qm.yml.
+const testConfig = "formats:\n  pdf: {type: pdf}\n  docx: {type: docx}\naudiences: [std]\ntopics:\n  chapter2:\n"
+
 func fixture(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -33,13 +36,7 @@ func fixture(t *testing.T) string {
 		"chapter2/third.qmd":  "---\ntitle: Third\norder: 2\n---\n# Third\n",
 		"chapter2/loose.qmd":  "---\ntitle: Loose\n---\n# Loose\n",
 		"chapter2/broken.qmd": "---\ntitle: Broken\norder: 3\n---\n::: {.callout-note}\nunclosed\n",
-		"_quarto.yml":         "project:\n  type: book\nbook:\n  chapters:\n    - index.qmd\n",
-
-		"_quarto-topic-chapter2.yml":  "book:\n  title: Two\n_quarto-vars:\n  topic: chapter2\n",
-		"_quarto-format-pdf.yml":      "project:\n  type: book\n  output-dir: _output/pdf\n",
-		"_quarto-format-docx.yml":     "project:\n  type: book\n  output-dir: _output/docx\n",
-		"_quarto-audience-std.yml":    "_quarto-vars:\n  audience: \"\"\n",
-		"_quarto-not-an-axis-web.yml": "format:\n  html: default\n",
+		"qm.yml":              testConfig,
 	}
 	for name, content := range files {
 		p := filepath.Join(root, name)
@@ -245,7 +242,7 @@ func TestHiddenButtonsStayHidden(t *testing.T) {
 	}
 }
 
-// A move reorders the tree on disk and leaves every _quarto*.yml config
+// A move reorders the tree on disk and leaves every *.yml config
 // alone: chapter lists are no longer maintained by the sorter.
 func TestMoveReordersAndLeavesConfigsAlone(t *testing.T) {
 	srv, root := testServer(t)
@@ -263,10 +260,10 @@ func TestMoveReordersAndLeavesConfigsAlone(t *testing.T) {
 	assertConfigsUnchanged(t, root, before)
 }
 
-// configs snapshots the contents of the project's _quarto*.yml files.
+// configs snapshots the contents of the project's *.yml files.
 func configs(t *testing.T, root string) map[string]string {
 	t.Helper()
-	matches, err := filepath.Glob(filepath.Join(root, "_quarto*.yml"))
+	matches, err := filepath.Glob(filepath.Join(root, "*.yml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -791,7 +788,7 @@ func TestMediaServesProjectImages(t *testing.T) {
 // for the rest of the project.
 func TestMediaServesImagesOnly(t *testing.T) {
 	srv, root := testServer(t)
-	for _, p := range []string{"index.qmd", "_quarto.yml"} {
+	for _, p := range []string{"index.qmd", "qm.yml"} {
 		want, err := os.ReadFile(filepath.Join(root, p))
 		if err != nil {
 			t.Fatal(err)

@@ -49,7 +49,7 @@ Markiere Text, und rechts neben dem Editor erscheint in einer schmalen Leiste ei
 <!-- << {#c4k2x9 author="Ana" date="2026-11-03"} Dein Kommentar -->der markierte Text<!-- >> {#c4k2x9} -->
 ```
 
-- `<<` öffnet die kommentierte Stelle und enthält den Kommentar, `>>` schließt sie. Quarto lässt HTML-Kommentare weg, daher erscheinen Kommentare nie im gerenderten Ergebnis.
+- `<<` öffnet die kommentierte Stelle und enthält den Kommentar, `>>` schließt sie. Ein Rendering lässt HTML-Kommentare weg, daher erscheinen Kommentare nie im gerenderten Ergebnis.
 - Der Kommentar wird mit deinem Namen und dem heutigen Datum gezeichnet. Den Namen legst du unter `Config` → [`Comments: Your name`](settings.md) fest; ohne ihn wird dein Anmeldename verwendet. Die Id verbindet die beiden Enden, sodass sich Stellen, die verschiedene Personen kommentiert haben, überlappen dürfen.
 - Leerzeichen und Zeilenumbrüche am Rand der Markierung bleiben außerhalb der Stelle, ebenso eine Überschriften-, Zitat- oder Listenmarke davor.
 - Im Vim-Modus landest du im Einfügemodus und kannst gleich tippen.

@@ -1,0 +1,39 @@
+feature:
+  name: migrate
+  description: Write qm.yml from a project's old Quarto configuration
+
+components:
+  COMMAND:
+    description: qm migrate [--force] [--dry-run]
+    requirements:
+      1: Object name is "migrate"
+      2: No subcommand
+      3: Parameters
+      3-1: Flag --project sets the path to the document tree. Defaults to the current directory
+      3-2: Flag --dry-run prints the qm.yml that would be written instead of writing it. Defaults to false
+      3-3: Flag --force overwrites an existing qm.yml. Defaults to false
+
+constraints:
+  STANDARD: See the constraints in spec.yaml.
+
+  PROCESS:
+    description: >
+      The old configuration is one `_quarto.yml` plus one profile file per
+      axis value: `_quarto-topic-<t>.yml`, `_quarto-format-<f>.yml` and
+      `_quarto-audience-<a>.yml`. qm no longer reads them; this command
+      converts them once.
+    requirements:
+      1: Write `qm.yml` in the project root, in the format described by CONFIG in spec.yaml
+      1-1: An existing qm.yml is an error unless --force is given; with --dry-run it is never an error and nothing is written
+      1-2: The result is verified by loading it as a qm.yml before it is reported as written
+      1-3: A project with none of the profile files is an error
+      2: Every topic profile becomes a topic, carrying its content folder, its title, its cover and the formats and audiences it takes part in
+      2-1: A format or audience that no longer exists in the new configuration is dropped from a list, with a warning
+      3: Every format profile becomes a format, carrying its output types (html, docx, pdf), its contents flag, its reference DOCX and its output directory and file name, with `{{< var x >}}` turned into `{x}` placeholders
+      3-1: The output directory of the project becomes `output`; a format whose output directory lies outside it is warned about
+      3-2: A format that writes slides (PPTX) only is skipped, and the PPTX output of a mixed format is dropped, each with a warning
+      3-3: A reference DOCX that the old configuration generated into `_build/` is warned about, since the new `template` must name a source file
+      4: Every audience profile becomes an audience, carrying the `make:` flags that are true as its `show` list and its variables
+      5: A title that contains a variable cannot be carried over; it is dropped with a warning
+      6: Warnings go to stderr, one per line, prefixed `warning:`; the qm.yml itself goes to the file, or with --dry-run to stdout
+      7: The old files are left in place

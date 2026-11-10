@@ -1,6 +1,6 @@
 # Opening projects
 
-A project is a Quarto document tree. `qm web` shows one project at a time.
+A project is a document tree of Markdown pages, optionally with a `qm.yml`. `qm web` shows one project at a time.
 
 ## Starting qm web
 

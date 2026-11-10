@@ -1,6 +1,6 @@
 # Projekte öffnen
 
-Ein Projekt ist ein Quarto-Dokumentbaum. `qm web` zeigt jeweils ein Projekt.
+Ein Projekt ist ein Dokumentbaum aus Markdown-Seiten, optional mit einer `qm.yml`. `qm web` zeigt jeweils ein Projekt.
 
 ## qm web starten
 

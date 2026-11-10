@@ -1,5 +1,14 @@
 # Native document rendering
 
+> **Status (2026-11).** This page records how the native PDF and DOCX pipeline
+> came about, in two stages that qm has since left behind. Pandoc is no longer
+> the main path: qm now needs neither Quarto nor Pandoc, and a document is
+> parsed in Go (`internal/markdown`, goldmark) and written by `internal/docx`
+> (DOCX) and `internal/docrender` (PDF, gopdf). The Pandoc-JSON capture, the
+> capture filter, `qm prepare`/`qm finalize` and `internal/bookrender` described
+> below no longer exist; the library research, the cover packaging and the PDF
+> layout still apply. Current behaviour is in the [README](../README.md).
+
 ## Library research (2026-09-30)
 
 | Library | Finding | Decision |
@@ -10,12 +19,13 @@
 | [fumiama/go-docx](https://github.com/fumiama/go-docx) | AGPL-3.0; repository last pushed May 2025 | Not selected |
 | [unidoc/unioffice](https://github.com/unidoc/unioffice) | Active, commercial licensing | Not selected |
 
-Repository activity is a snapshot, not a maintenance guarantee. The selected
-DOCX writer is **Pandoc**, already bundled with Quarto, following the user's
-choice to retain its mature document support. Go's ZIP/XML standard library
-implements the narrow cover insertion step.
+Repository activity is a snapshot, not a maintenance guarantee. At the time,
+the selected DOCX writer was **Pandoc**, already bundled with Quarto. It has
+since been replaced by a pure-Go writer (`internal/docx`, on top of
+[docxgo](https://github.com/mmonterroca/docxgo), with the body written as raw
+OOXML). Go's ZIP/XML standard library implements the cover insertion step.
 
-## Why capture JSON during DOCX rendering?
+## Why capture JSON during DOCX rendering? (historical)
 
 Quarto book projects reject `--to json`. Rendering Markdown and parsing it again
 would also lose structure and require another interpretation of attributes.
@@ -37,9 +47,8 @@ The AST captured at `post-finalize` differs from one captured by a command-line
 `--lua-filter` only by Quarto's empty, hidden file-metadata `Div`. The filter
 drops that `Div`, so the two captures are byte-identical.
 
-`internal/bookrender` owns the pipeline; `internal/docrender` owns PDF layout
-and DOCX cover insertion. `qm prepare`, `qm finalize`, `qm render` and `qm web`
-share it.
+Today `internal/build` owns the pipeline; `internal/docrender` owns PDF layout
+and DOCX cover insertion, and `qm render` and `qm web` share it.
 
 ## Cover packaging
 
@@ -58,14 +67,12 @@ is ignored, while its styles and document properties are reused. See the
 ```sh
 go test ./...
 go vet ./...
-QM_TEST_QUARTO=1 go test ./internal/bookrender -run TestNativeQuartoIntegration -v
 ```
 
-The integration test builds qm, wires it into a real Quarto book's hooks and
-runs a plain `quarto render`. It covers audience filtering, a table,
-Unicode text, PDF generation and full-page DOCX cover insertion. Unit tests
-verify DOCX package preservation, XML geometry, PDF pagination and refusal to
-silently discard unsupported document content.
+Unit tests verify DOCX package preservation, XML geometry, PDF pagination and
+refusal to silently discard unsupported document content. (An integration test
+that ran a real `quarto render` through the hooks existed while Quarto was
+part of the pipeline; it went with the hooks.)
 
 Training project checks: Einführung handout/handbook and Calltaker FW/POL
 handouts rendered successfully. PDF cover/body samples were rasterized with
@@ -75,15 +82,17 @@ LibreOffice build could not start in the test environment. The sysadmin render
 stopped during Quarto preprocessing because Chrome (needed for diagrams) was
 not installed; this dependency is independent of PDF typesetting.
 
-## Without Quarto: `qm: renderer: pandoc` (2026-10-28)
+## Without Quarto: `qm: renderer: pandoc` (2026-10-28, historical)
 
 The pipeline above runs Pandoc *inside* Quarto: Quarto reads the book, runs
 its filters, and writes the DOCX, and the project's hooks capture the document
 and lay out the PDF. A format with `qm: renderer: pandoc` takes Quarto out of
 the loop. `qm` flattens the topic itself, resolves the few shortcodes the
 content uses, runs Pandoc with the project's own filter chain, and lays out
-the PDF from the document that chain captures. See
-[the README](../README.md#documents-without-quarto-qm-renderer-pandoc).
+the PDF from the document that chain captures. This renderer, too, has been
+replaced: the content is now read by qm's own parser and no Pandoc is run (see
+[the README](../README.md#documents-docx-and-pdf)). The comparison below is kept
+because the behaviours it found are the ones the Go writers imitate.
 
 Why this is safe to rely on. The renderer was checked against Quarto's output
 for the same selections:

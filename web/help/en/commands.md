@@ -1,6 +1,6 @@
 # The qm command line in brief
 
-`qm web` is one of several commands. They all work on the same Quarto project.
+`qm web` is one of several commands. They all work on the same project.
 
 ```
 qm <object> <subcommand> [flags] [args]
@@ -10,16 +10,15 @@ qm <object> <subcommand> [flags] [args]
 
 | flag | environment variable | default | meaning |
 | --- | --- | --- | --- |
-| `--project`, `-p` | `QM_PROJECT` | `.` | path to the Quarto document tree |
+| `--project`, `-p` | `QM_PROJECT` | `.` | path to the document tree |
 
 ## Commands
 
 | command | what it does |
 | --- | --- |
 | `qm render [<topic>…]` | render the project's topic × format × audience matrix |
-| `qm flatten <topic>` | write the build documents of one topic without rendering |
-| `qm prepare` | pre-render hook: validate the selection, build the topic, write the capture filter |
-| `qm finalize` | post-render hook: move the output where the profiles say, add the qm renderer's PDF and covers |
+| `qm flatten <topic>` | write the Markdown a document render of one topic parses, to `_build/<topic>.md`, without rendering |
+| `qm migrate` | write `qm.yml` from the project's old `_quarto*.yml` files (`--dry-run` prints it, `--force` overwrites) |
 | `qm lint [<topic>]` | check the `.qmd` sources (currently: unclosed `:::` fences) |
 | `qm chapters insert <folder>` | give a new page its `order:`, renumbering its siblings |
 | `qm chapters move <folder> <old> <new>` | move a chapter to another order position |

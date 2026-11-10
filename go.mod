@@ -6,8 +6,10 @@ require (
 	cuelang.org/go v0.17.1
 	github.com/christophberger/start v0.6.0
 	github.com/github/copilot-sdk/go v1.0.14
+	github.com/mmonterroca/docxgo/v2 v2.15.0
 	github.com/signintech/gopdf v0.38.1
 	github.com/spf13/pflag v1.0.10
+	github.com/yuin/goldmark v1.8.7
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/image v0.46.0
 	gopkg.in/yaml.v3 v3.0.1

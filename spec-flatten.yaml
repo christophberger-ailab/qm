@@ -1,6 +1,6 @@
 feature:
   name: flatten
-  description: Write the build documents of one topic without rendering
+  description: Write the Markdown a document render of one topic parses, without rendering
 
 components:
   COMMAND:
@@ -16,10 +16,9 @@ constraints:
 
   PROCESS:
     requirements:
-      1: Use the same flattening behavior as `qm prepare`
-      2: Write `_build/book.qmd` and `_build/slides.qmd`, the same documents a render feeds on
-      3: The content folder is the topic profile's `qm: folder:`, or the topic name
-      4: 'The topic `none` writes the empty build documents'
-      5: A topic with no profile file is an error, and nothing is written
-      6: Only the topic profile is read, so the deck title keeps the variables the other two axes would have supplied. Resolving them is a render's job
-      7: Keep the generated files and exit without invoking Quarto
+      1: 'Use the same flattening behavior as a document render (internal/build): pages in folder order, headings demoted by folder depth, in-book links turned into anchors, shortcodes resolved'
+      2: Write `_build/<topic>.md`, the text a document render parses
+      3: The content folder is the topic's `folder` in qm.yml, or the topic name
+      4: A topic that qm.yml (or, without it, the content folders) does not define is an error, and nothing is written
+      5: Conditional content is not filtered; that is a render's job, since it depends on the format and audience
+      6: Keep the generated file and exit

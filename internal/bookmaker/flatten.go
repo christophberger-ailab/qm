@@ -174,6 +174,12 @@ func renderPage(n *Node, targets linkTargets, opts Options, res *Result) (page, 
 		edit.Classes = bookTitleClasses
 	}
 
+	// Headings are demoted by folder depth (n.Level-1), not normalised: a
+	// page's headings keep their relative depth and their distance from
+	// the top, so a page that starts with `##` stays one level below a
+	// page that starts with `#` in the same folder.
+	delta := n.Level - 1
+
 	if base == 0 || !echoesTitle(headings, base, declared) {
 		head := strings.Repeat("#", n.Level) + " " + n.Title() +
 			" " + mergeAttrs("", n.Anchor, edit.Classes)
@@ -184,11 +190,13 @@ func renderPage(n *Node, targets linkTargets, opts Options, res *Result) (page, 
 			return head + "\n\n" + strings.Join(lines, "\n"), slides
 		}
 		// Body headings are subordinate to the generated title heading.
-		lines = shiftHeadings(lines, headings, n, n.Level+1, base, titleEdit{}, res)
+		// They stay below it even where the page's own levels would put
+		// them beside it.
+		lines = shiftHeadings(lines, headings, n, max(base+delta, n.Level+1), base, titleEdit{}, res)
 		return head + "\n\n" + strings.Join(lines, "\n"), slides
 	}
 
-	lines = shiftHeadings(lines, headings, n, n.Level, base, edit, res)
+	lines = shiftHeadings(lines, headings, n, base+delta, base, edit, res)
 	return strings.Join(lines, "\n"), slides
 }
 
@@ -228,12 +236,7 @@ func preparePage(n *Node, targets linkTargets, opts Options, res *Result) (lines
 		res.Links += changed
 	}
 
-	if rel := relativeIncludes(lines); len(rel) > 0 {
-		res.Warnings = append(res.Warnings, fmt.Sprintf(
-			"%s: include shortcode path %s is not project-absolute; Quarto resolves "+
-				"it at render time, so it must start with '/'",
-			n.Page.Rel, strings.Join(rel, ", ")))
-	}
+	lines = absoluteIncludes(lines, path.Dir(n.Page.Rel))
 
 	res.Pages++
 	return lines, slides
@@ -354,23 +357,60 @@ func trimBlankEdges(lines []string) []string {
 	return lines[start:end]
 }
 
-// includeShortcode matches `{{< include path >}}` and captures the path,
-// quoted or not.
-var includeShortcode = regexp.MustCompile(`\{\{<\s*include\s+("[^"]*"|'[^']*'|[^\s>"']+)`)
+// includeLine matches a line that is one `{{< include path >}}` shortcode,
+// the form the shortcode expander resolves, and captures the text before
+// the path, the path (quoted or not) and the text after it.
+var includeLine = regexp.MustCompile(`^(\s*\{\{<\s*include\s+)("[^"]*"|'[^']*'|[^\s>"']+)(\s*>\}\}\s*)$`)
 
-// relativeIncludes returns the paths of the include shortcodes in lines that
-// are not project-absolute. Quarto resolves an include at render time, from
-// the file that holds it, and that is the flattened `_build/book.qmd` rather
-// than the page, so only a path starting at the project root keeps working.
-func relativeIncludes(lines []string) []string {
-	var out []string
-	for _, line := range lines {
-		for _, m := range includeShortcode.FindAllStringSubmatch(line, -1) {
-			p := strings.Trim(m[1], `"'`)
-			if !strings.HasPrefix(p, "/") {
-				out = append(out, p)
-			}
+// absoluteIncludes rewrites the relative include paths in a page's lines,
+// which are relative to the page's folder dir, into project-absolute ones.
+// The page's text ends up in a book or a site page that no longer knows
+// where it came from; an absolute path still finds the file. Includes in
+// fenced code blocks are left as written.
+func absoluteIncludes(lines []string, dir string) []string {
+	var code codeTracker
+	for i, line := range lines {
+		if code.step(line) {
+			continue
 		}
+		m := includeLine.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		p := strings.Trim(m[2], `"'`)
+		if p == "" || strings.HasPrefix(p, "/") {
+			continue
+		}
+		abs := "/" + path.Join(dir, p)
+		if m[2] != p {
+			abs = m[2][:1] + abs + m[2][:1]
+		}
+		lines[i] = m[1] + abs + m[3]
 	}
-	return out
+	return lines
+}
+
+// Pages prepares a tree for rendering page by page, as a website does:
+// every node gets its anchor and the root is marked as the book root, as
+// Flatten would do. title overrides the root's title.
+func Pages(root *Node, title string) {
+	assignAnchors(root)
+	root.bookRoot = true
+	root.titleOverride = title
+}
+
+// PageMarkdown renders a single node's own page — not its children — the
+// way Flatten renders it inside a book: markup balanced, a title heading
+// generated where the page has none, and headings demoted by the node's
+// folder depth. Links are left alone. With opts.WrapAudience the page is
+// wrapped in a div of the given audience class, which the caller works
+// out from the node and its ancestors. Call Pages on the tree first.
+func PageMarkdown(n *Node, audience string, opts Options) (string, []string) {
+	opts.RewriteLinks = false
+	res := &Result{}
+	page, _ := renderPage(n, nil, opts, res)
+	if opts.WrapAudience && audience != "" && page != "" {
+		page = wrapInDiv(page, audience)
+	}
+	return page, res.Warnings
 }

@@ -49,7 +49,7 @@ Select some text and a `+` appears in the narrow rail to the right of the editor
 <!-- << {#c4k2x9 author="Ana" date="2026-11-03"} Your comment goes here -->the selected text<!-- >> {#c4k2x9} -->
 ```
 
-- `<<` opens the commented passage and holds the comment, `>>` closes it. Quarto drops HTML comments, so comments never show up in a render.
+- `<<` opens the commented passage and holds the comment, `>>` closes it. A render drops HTML comments, so comments never show up in a render.
 - The comment is signed with your name and today's date. Set the name under `Config` → [`Comments: Your name`](settings.md); without one, your login name is used. The id pairs the two ends, so passages commented by different people may overlap.
 - Spaces and line breaks at the ends of the selection stay outside the passage, and so does a heading, quote, or list marker in front of it.
 - In Vim mode you land in Insert mode, ready to type.

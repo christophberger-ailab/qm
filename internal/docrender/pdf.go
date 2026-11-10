@@ -55,10 +55,21 @@ func PDF(path string, doc *Document, o Options) error {
 // it with a timeout of their own, since a call into gopdf cannot be
 // interrupted (see RunPDF).
 func PDFContext(ctx context.Context, path string, doc *Document, o Options) error {
-	bb, err := blocks(doc.Blocks, 0)
+	var bb []Block
+	var err error
+	if doc == nil && o.Markdown != nil {
+		bb, err = FromMarkdown(o.Markdown)
+	} else {
+		bb, err = blocks(doc.Blocks, 0)
+	}
 	if err != nil {
 		return err
 	}
+	return layoutPDF(ctx, path, bb, o)
+}
+
+// layoutPDF lays out the blocks, from whichever input they were read.
+func layoutPDF(ctx context.Context, path string, bb []Block, o Options) error {
 	fonts, err := loadFonts(o.Fonts)
 	if err != nil {
 		return err
@@ -107,7 +118,7 @@ func PDFContext(ctx context.Context, path string, doc *Document, o Options) erro
 	if o.TOC && len(entries) > 0 {
 		w.newPage()
 		tocStart = w.page
-		if err = w.paragraph([]Run{{Text: "Inhalt", Heading: true}}, 22, margin, pageW-2*margin); err != nil {
+		if err = w.paragraph([]Run{{Text: tocTitle(o.Lang), Heading: true}}, 22, margin, pageW-2*margin); err != nil {
 			return err
 		}
 		for i := range entries {
