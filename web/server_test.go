@@ -790,10 +790,18 @@ func TestMediaServesProjectImages(t *testing.T) {
 // /media exists so the preview can show images. It must not become a reader
 // for the rest of the project.
 func TestMediaServesImagesOnly(t *testing.T) {
-	srv, _ := testServer(t)
-	for _, p := range []string{"/media/index.qmd", "/media/_quarto.yml"} {
-		if rec := get(t, srv, p); rec.Code != http.StatusNotFound {
-			t.Errorf("GET %s: status %d, want 404", p, rec.Code)
+	srv, root := testServer(t)
+	for _, p := range []string{"index.qmd", "_quarto.yml"} {
+		want, err := os.ReadFile(filepath.Join(root, p))
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec := get(t, srv, "/media/"+p)
+		if bytes.Equal(rec.Body.Bytes(), want) {
+			t.Errorf("GET /media/%s: served the file", p)
+		}
+		if rec.Header().Get("X-Qm-Placeholder") != "true" {
+			t.Errorf("GET /media/%s: not answered with the placeholder", p)
 		}
 	}
 }
@@ -825,10 +833,65 @@ func TestMediaWithoutProject(t *testing.T) {
 	}
 }
 
-func TestMediaMissingFile(t *testing.T) {
+// An image link that names no image of the project shows the project's
+// placeholder, /assets/images/_placeholder.png, in the preview.
+func TestMediaMissingFileShowsProjectPlaceholder(t *testing.T) {
+	srv, root := testServer(t)
+	want := writePNG(t, root, "assets/images/_placeholder.png")
+	os.MkdirAll(filepath.Join(root, "assets", "dir.png"), 0o755)
+
+	for _, p := range []string{"/media/assets/nope.png", "/media/chapter2/nope.jpg", "/media/assets/dir.png"} {
+		rec := get(t, srv, p)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s: status %d, want 200", p, rec.Code)
+		}
+		if ct := rec.Header().Get("Content-Type"); ct != "image/png" {
+			t.Errorf("GET %s: Content-Type %q, want image/png", p, ct)
+		}
+		if !bytes.Equal(rec.Body.Bytes(), want) {
+			t.Errorf("GET %s: body is not the project's placeholder", p)
+		}
+		if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+			t.Errorf("GET %s: Cache-Control %q, want no-store", p, cc)
+		}
+	}
+}
+
+// A project without a placeholder of its own gets the app's.
+func TestMediaMissingFileShowsBuiltInPlaceholder(t *testing.T) {
 	srv, _ := testServer(t)
-	if rec := get(t, srv, "/media/assets/nope.png"); rec.Code != http.StatusNotFound {
-		t.Errorf("status %d, want 404", rec.Code)
+	rec := get(t, srv, "/media/assets/nope.png")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, want 200", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "image/svg+xml" {
+		t.Errorf("Content-Type %q, want image/svg+xml", ct)
+	}
+	if !strings.Contains(rec.Body.String(), "<svg") {
+		t.Error("body is not the built-in placeholder")
+	}
+}
+
+// An image /media cannot answer for -- an external one that does not load
+// -- falls back to the app's placeholder in the browser. That happens out
+// of a Go test's reach; what can be checked is that the script still
+// handles the error and that the placeholder is served.
+func TestPreviewFallsBackToPlaceholder(t *testing.T) {
+	preview, err := assets.ReadFile("assets/static/preview.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"img.addEventListener('error', showPlaceholder);",
+		"var placeholderURL = '/static/placeholder.svg';",
+	} {
+		if !strings.Contains(string(preview), want) {
+			t.Errorf("preview.js does not fall back to the placeholder, missing %q", want)
+		}
+	}
+	srv, _ := testServer(t)
+	if rec := get(t, srv, "/static/placeholder.svg"); rec.Code != http.StatusOK {
+		t.Errorf("GET /static/placeholder.svg: status %d, want 200", rec.Code)
 	}
 }
 

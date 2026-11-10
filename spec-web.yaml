@@ -95,6 +95,9 @@ constraints:
       3-5-6: The stamp changes only when the page is loaded or reloaded, so the images are not fetched again for every keystroke the preview follows
       3-5-7: Hovering an image in the preview shows the image's path as written in the page as a tooltip; an image with a Markdown title shows the title with the path on a line below it
       3-5-8: An image of the project changed on disk -- saved by the image editor (see 12-7), or by anything else -- is shown as it is now without a reload: the tree's watch announces the change, and the preview renews its image stamp and renders again; the editor's text is untouched
+      3-5-9: An image link that names no image file of the project -- a file that is missing, a directory, or a file that is not an image -- shows the project's placeholder image, `/assets/images/_placeholder.png` resolved against the project root like any website-absolute image path, instead of the browser's broken-image icon
+      3-5-10: A project without that placeholder gets a placeholder built into the app, and so does an image the route cannot answer for, such as an external image that does not load
+      3-5-11: The placeholder is not cached, so an image that turns up on disk replaces it once the tree's watch announces the change (see 3-5-8)
       3-6: The editor is CodeMirror, embedded in the binary like the other assets, and highlights the page's YAML frontmatter and Markdown
       3-6-1: A toggle button in the editor's own column, below the editor text, switches Vim keybindings on and off; the choice is remembered across sessions
       3-6-2: Vim mode is off unless the user turns it on
