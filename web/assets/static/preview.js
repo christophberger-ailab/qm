@@ -10,7 +10,8 @@
 //   - Pandoc bracketed spans (`[text]{.class}`) become real <span>s the
 //     same way,
 //   - image sources are pointed at the server's /media route so that the
-//     page's images show up (see mediaURL),
+//     page's images show up (see mediaURL), and an image that is not there
+//     shows a placeholder instead (see showPlaceholder),
 //   - an image standing alone in a paragraph becomes a figure with its alt
 //     text as the caption below it, the way Pandoc's implicit figures --
 //     which Quarto builds on -- come out (see captionFigures),
@@ -397,8 +398,28 @@ function resolveMedia(root, pagePath) {
       img.removeAttribute('data-media-path');
     }
     img.setAttribute('title', tip);
+    img.addEventListener('error', showPlaceholder);
     img.setAttribute('src', mediaURL(src, baseDir));
   });
+}
+
+// placeholderURL is the app's own stand-in for an image that cannot be
+// shown.
+var placeholderURL = '/static/placeholder.svg';
+
+// showPlaceholder stands in for an image the browser could not load. An
+// image of the project that is missing never gets here: /media answers it
+// with the project's placeholder, `/assets/images/_placeholder.png`, or
+// with the app's own when the project has none. What is left is an image
+// /media cannot answer for -- an external one that is not there, a path
+// that climbs out of the project -- and that gets the app's placeholder,
+// once, so a placeholder that fails too is not tried again and again.
+function showPlaceholder(evt) {
+  var img = evt.target;
+  img.removeEventListener('error', showPlaceholder);
+  if (img.getAttribute('src') !== placeholderURL) {
+    img.setAttribute('src', placeholderURL);
+  }
 }
 
 // captionFigures turns an image that stands alone in a paragraph -- a
