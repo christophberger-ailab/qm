@@ -28,7 +28,7 @@ Bilder werden aus deinem Projekt geladen.
 
 ## Kommentare
 
-Eine im [Editor](editor.md) kommentierte Stelle wird hervorgehoben, auch wenn sie über mehrere Absätze reicht. Fahre mit der Maus darüber, um den Kommentar zu lesen; ein Klick setzt den Cursor im Editor an den Anfang des Kommentars, sodass du ihn bearbeiten kannst. Ein Kommentar innerhalb von Code wird als Code angezeigt.
+Eine im [Editor](editor.md) kommentierte Stelle wird hervorgehoben, auch wenn sie über mehrere Absätze reicht. Fahre mit der Maus darüber, um den Kommentar zu lesen, wer ihn wann geschrieben hat, und die Antworten darauf; ein Klick setzt den Cursor im Editor an den Anfang des Kommentars, sodass du ihn bearbeiten kannst. Ein Kommentar innerhalb von Code wird als Code angezeigt.
 
 ## Scrollen
 

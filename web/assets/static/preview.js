@@ -468,19 +468,29 @@ function captionFigures(root) {
 //
 //   <!-- << {#c1 author="ana" date="2026-10-30"} The comment -->...<!-- >> {#c1} -->
 //
-// None is written yet. It is room for what comments by more than one
-// person will need -- who wrote one and when, and an id that pairs the two
-// ends when passages commented by different people overlap -- so comments
-// written today stay valid once those are added. A closing marker with an
-// id closes the open passage with that id; one without closes the passage
-// opened last.
+// The editor writes all three on the starting marker -- who wrote the
+// comment and when, and an id -- and the id alone on the closing one, which
+// pairs the two ends when passages commented by different people overlap.
+// A closing marker with an id closes the open passage with that id; one
+// without closes the passage opened last. A comment without attributes, as
+// written by hand, stays valid.
+//
+// A reply to a comment is a `<<+` marker standing right after the comment's
+// starting marker, or after the reply before it, with nothing but spaces
+// between them:
+//
+//   <!-- << {#c1 author="ana" date="2026-10-30"} Too long? --><!-- <<+ {author="ben" date="2026-11-03"} No, keep it. -->...
+//
+// The replies are the comment's thread, in the order they stand; the
+// passage starts after the last of them. A reply anywhere else answers no
+// comment and is an ordinary HTML comment.
 
 // parseCommentMarker reads the text of an HTML comment -- what lies
 // between `<!--` and `-->` -- and returns the comment marker it is, or null
 // when it is an ordinary comment. textAt is where the comment's own text
 // starts in data, after the marker, its attributes, and one space.
 function parseCommentMarker(data) {
-  var m = /^\s*(<<|>>)[ \t]?/.exec(data);
+  var m = /^\s*(<<\+|<<|>>)[ \t]?/.exec(data);
   if (!m) {
     return null;
   }
@@ -492,7 +502,7 @@ function parseCommentMarker(data) {
     at += attrs[0].length;
   }
   return {
-    kind: m[1] === '<<' ? 'start' : 'end',
+    kind: { '<<': 'start', '<<+': 'reply', '>>': 'end' }[m[1]],
     id: parsed.id,
     author: parsed.keys.author || '',
     date: parsed.keys.date || '',
@@ -501,10 +511,12 @@ function parseCommentMarker(data) {
   };
 }
 
-// commentStart and commentEnd spell the two markers out, the start as the
-// text before and after the comment's own, so the editor can put the
-// cursor between them. meta may name an id, an author, and a date; left
-// empty, the markers carry no attribute block at all.
+// commentStart, commentReply, and commentEnd spell the markers out, the
+// start and the reply as the text before and after the comment's own, so
+// the editor can put the cursor between them. meta may name an id, an
+// author, and a date; left empty, the markers carry no attribute block at
+// all. The end carries the id alone, which is all it needs to close the
+// passage, and a reply no id, since where it stands says what it answers.
 function commentAttrs(meta) {
   var attrs = [];
   if (meta && meta.id) {
@@ -522,8 +534,12 @@ function commentStart(meta) {
   return { before: '<!-- << ' + commentAttrs(meta), after: ' -->' };
 }
 
+function commentReply(meta) {
+  return { before: '<!-- <<+ ' + commentAttrs({ author: meta && meta.author, date: meta && meta.date }), after: ' -->' };
+}
+
 function commentEnd(meta) {
-  return '<!-- >> ' + commentAttrs(meta) + '-->';
+  return '<!-- >> ' + commentAttrs({ id: meta && meta.id }) + '-->';
 }
 
 // maskCode blanks out what Markdown reads as code -- fenced code blocks and
@@ -559,7 +575,8 @@ function maskCode(text, frontLines) {
 // stand, each with where it sits in text: from and to around the whole
 // HTML comment, textFrom where the comment's own text starts. It is the
 // order the preview meets them in, which is what ties a highlight there to
-// its marker here.
+// its marker here. Every start carries its replies, and every reply its
+// start as thread (see threadReply); a reply that answers nothing has none.
 function findCommentMarkers(text) {
   var masked = maskCode(text, splitFrontmatter(text).offset);
   var found = [];
@@ -571,10 +588,31 @@ function findCommentMarkers(text) {
       marker.from = m.index;
       marker.to = m.index + m[0].length;
       marker.textFrom = m.index + 4 + marker.textAt;
+      var last = found[found.length - 1];
+      var adjacent = last && /^[ \t]*$/.test(text.slice(last.to, marker.from));
+      threadReply(marker, adjacent ? last : null);
       found.push(marker);
     }
   }
   return found;
+}
+
+// threadReply files marker into the thread it belongs to, given the marker
+// standing right before it, if any: a start opens a thread of its own, and
+// a reply joins the thread of the start or the reply before it.
+function threadReply(marker, before) {
+  if (marker.kind === 'start') {
+    marker.replies = [];
+    return;
+  }
+  if (marker.kind !== 'reply') {
+    return;
+  }
+  var thread = before && (before.kind === 'start' ? before : before.thread);
+  if (thread) {
+    marker.thread = thread;
+    thread.replies.push(marker);
+  }
 }
 
 // pairCommentMarkers matches each closing marker with the start it closes,
@@ -586,6 +624,9 @@ function pairCommentMarkers(markers) {
   markers.forEach(function (marker) {
     if (marker.kind === 'start') {
       open.push(marker);
+      return;
+    }
+    if (marker.kind !== 'end') {
       return;
     }
     for (var i = open.length - 1; i >= 0; i--) {
@@ -623,14 +664,22 @@ function unblockComments(src) {
   return out + src.slice(last);
 }
 
-// commentTooltip is what hovering a commented passage shows: the comment,
-// who wrote it and when if the marker says, and what a click does.
+// commentTooltip is what hovering a commented passage shows: the comment
+// and its replies, each with who wrote it and when if its marker says, and
+// what a click does.
 function commentTooltip(marker) {
-  var tip = marker.text || '(empty comment)';
-  if (marker.author || marker.date) {
-    tip += '\n— ' + [marker.author, marker.date].filter(Boolean).join(', ');
+  function entry(m, empty) {
+    var text = m.text || empty;
+    if (m.author || m.date) {
+      text += '\n— ' + [m.author, m.date].filter(Boolean).join(', ');
+    }
+    return text;
   }
-  return tip + '\nClick to edit the comment in the editor';
+  var tip = entry(marker, '(empty comment)');
+  (marker.replies || []).forEach(function (reply) {
+    tip += '\n\n↳ ' + entry(reply, '(empty reply)');
+  });
+  return tip + '\n\nClick to edit or reply to the comment in the editor';
 }
 
 // markComments highlights every commented passage in root. The markers
@@ -646,19 +695,25 @@ function markComments(root) {
   var nodes = [];
   var markers = [];
   var starts = 0;
+  var last = null; // the marker just met, while nothing but spaces follow it
   while (walker.nextNode()) {
     var node = walker.currentNode;
     if (node.nodeType === Node.COMMENT_NODE) {
       var marker = parseCommentMarker(node.data);
-      if (marker) {
+      threadReply(marker || {}, last);
+      last = marker;
+      if (marker && marker.kind !== 'reply') {
         if (marker.kind === 'start') {
           marker.index = starts++;
         }
         markers.push(marker);
         nodes.push(marker);
       }
-    } else if (node.data.trim() !== '') {
-      nodes.push(node);
+    } else if (!/^[ \t]*$/.test(node.data)) {
+      last = null;
+      if (node.data.trim() !== '') {
+        nodes.push(node);
+      }
     }
   }
   if (!markers.length) {
