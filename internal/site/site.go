@@ -38,6 +38,9 @@ type Options struct {
 	Topics  []Topic
 	Keep    markdown.Keep
 	Formats []string
+	// CSS are stylesheets, absolute paths, that every page links after the
+	// site's own. They are copied verbatim into OutDir/_site/css.
+	CSS []string
 	// Expand expands shortcodes in a page's Markdown; may be nil.
 	Expand func(string) (string, error)
 	// Log receives warnings and progress; may be nil.
@@ -76,6 +79,7 @@ type builder struct {
 	copied  map[string]bool
 	tmpl    *template.Template
 	labels  labels
+	css     []string // OutDir-relative paths of the extra stylesheets
 	outAbs  string
 	rootAbs string
 }
@@ -109,6 +113,10 @@ func Build(o Options) error {
 		b.o.Lang = "en"
 	}
 	b.labels = labelsFor(b.o.Lang)
+	for i, c := range o.CSS {
+		name := strings.TrimSuffix(filepath.Base(c), filepath.Ext(c))
+		b.css = append(b.css, fmt.Sprintf("_site/css/%d-%s.css", i+1, name))
+	}
 
 	b.tmpl, err = template.ParseFS(assetFS, "assets/page.html")
 	if err != nil {

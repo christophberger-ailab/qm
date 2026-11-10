@@ -71,3 +71,4 @@ constraints:
       4: The layout is responsive -- the contents list is hidden at 75em and narrower, the sidebar is off-canvas at 50em and narrower -- with all text sizes and the 42em text column in em
       5: The site has a dark mode following the system setting and print styles
       6: The site has no search
+      7: 'A format''s `css` lists project-relative stylesheets; each is copied verbatim (an .scss file is not compiled) to `_site/css/` and linked on every page after the site''s own stylesheet. A missing one fails the render before anything is written'

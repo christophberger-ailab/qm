@@ -284,8 +284,10 @@ anything else HTML). More keys: `show` (the conditional classes the format
 keeps), `toc` (a table of contents in a document), `template` (a reference
 DOCX), `dir` (output directory below `output`; default the format's name),
 `file` (a document's file name without extension; default `{topic}`, plus
-`-{audience}` when the project has more than one audience), `topics` and
-`audiences` (restrict the matrix from the format's side) and `vars`.
+`-{audience}` when the project has more than one audience), `css` (a website
+only: stylesheets, project-relative, that every page links after the site's
+own), `topics` and `audiences` (restrict the matrix from the format's side)
+and `vars`.
 
 An **audience** has an optional `title` (the label in the web UI), `show` (the
 conditional classes it keeps; its own name is always one of them) and `vars`.
@@ -359,7 +361,7 @@ title: Handbook
 lang: en
 ```
 
-`{name}` placeholders in `dir`, `file`, `cover` and `template` resolve against
+`{name}` placeholders in `dir`, `file`, `cover`, `template` and `css` resolve against
 the variables: the project's `vars`, then the topic's, the audience's and the
 format's (later ones win), plus the built-ins `topic`, `format` and
 `audience`. A placeholder without a variable is an error. The same variables
@@ -434,7 +436,25 @@ Callouts, tables, footnotes, definition lists and images are drawn by the
 site's own stylesheet. Links between pages of a topic (`/dispatcher/a/`,
 `/dispatcher/a/index.qmd`, …) are rewritten to the generated pages. With
 several audiences, a site goes to `<output>/<format>-<audience>` unless the
-format's `dir` contains a placeholder.
+format's `dir` contains a placeholder. A site that should show every
+audience's content at once, each marked by its class, is a format restricted
+to one audience whose `show:` lists the others:
+
+```yaml
+formats:
+  website-full:
+    type: html
+    audiences: [all]
+    css: [assets/styles/profile-highlighting.scss]
+audiences:
+  all: {show: [fw, pol]}
+```
+
+The kept divs and spans keep their classes (`<div class="pol">`), but the
+site's own stylesheet does not style them; a format's `css:` adds the
+stylesheets that do. They are copied verbatim to `_site/css/` and linked after
+the site's own: a `.scss` file is not compiled, so it has to be plain CSS, and
+`url()` references in it are not rewritten.
 
 ### Documents: DOCX and PDF
 

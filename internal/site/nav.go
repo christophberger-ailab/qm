@@ -39,6 +39,7 @@ type sideData struct {
 type pageData struct {
 	Lang, Title, SiteTitle, Base string
 	HomeURL                      string
+	CSS                          []string
 	Nav                          []navLink
 	Sidebar                      *sideData
 	TOC                          []tocItem
@@ -53,7 +54,7 @@ func (b *builder) pageData(p *pageInfo, content template.HTML, toc []tocItem) *p
 	d := &pageData{
 		Lang: b.o.Lang, SiteTitle: b.title, Title: p.title + " – " + b.title,
 		Base: strings.Repeat("../", depth), Content: content, TOC: toc, L: b.labels,
-		HomeURL: relURL(p.out, "index.html"), Home: p.home,
+		HomeURL: relURL(p.out, "index.html"), Home: p.home, CSS: b.css,
 	}
 	if p.home {
 		d.Title = b.title

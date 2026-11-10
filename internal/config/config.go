@@ -89,6 +89,10 @@ type Format struct {
 	// "-{audience}" when the project has more than one audience. May
 	// contain placeholders.
 	File string `yaml:"file"`
+	// CSS lists project-relative stylesheets a website links after its
+	// own. They are copied verbatim, so an .scss file must be plain CSS.
+	// May contain placeholders.
+	CSS []string `yaml:"css"`
 	// Topics and Audiences restrict the matrix from the format's side.
 	Topics    []string          `yaml:"topics"`
 	Audiences []string          `yaml:"audiences"`
@@ -194,6 +198,9 @@ func (c *Config) complete() error {
 		}
 		if f.Has(TypeHTML) && len(f.Type) > 1 {
 			return fmt.Errorf("format %s: html cannot be combined with another type", f.Name)
+		}
+		if len(f.CSS) > 0 && !f.IsWeb() {
+			return fmt.Errorf("format %s: css applies to html formats only", f.Name)
 		}
 		if f.Dir == "" {
 			f.Dir = f.Name
@@ -450,6 +457,19 @@ func (s Selection) Template() (string, error) {
 		return "", fmt.Errorf("format %s: template: %w", s.Format.Name, err)
 	}
 	return filepath.Join(s.Config.Root, filepath.FromSlash(p)), nil
+}
+
+// Stylesheets are the absolute paths of the format's extra stylesheets.
+func (s Selection) Stylesheets() ([]string, error) {
+	var out []string
+	for _, c := range s.Format.CSS {
+		p, err := Interpolate(c, s.Vars())
+		if err != nil {
+			return nil, fmt.Errorf("format %s: css: %w", s.Format.Name, err)
+		}
+		out = append(out, filepath.Join(s.Config.Root, filepath.FromSlash(p)))
+	}
+	return out, nil
 }
 
 // String names the selection for logs.

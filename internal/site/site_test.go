@@ -185,6 +185,23 @@ func anyStr(a []any) string {
 	return strings.Join(s, " ")
 }
 
+func TestExtraStylesheets(t *testing.T) {
+	root, out := project(t)
+	write(t, root, "styles/audiences.scss", ".pol { background: lightblue; }\n")
+	o := opts(root, out)
+	o.CSS = []string{filepath.Join(root, "styles", "audiences.scss")}
+	if err := Build(o); err != nil {
+		t.Fatal(err)
+	}
+	has(t, "copy", read(t, out, "_site/css/1-audiences.css"), ".pol { background: lightblue; }")
+	has(t, "home", read(t, out, "index.html"), `href="_site/css/1-audiences.css"`)
+	sub := read(t, out, "dispatcher/a/index.html")
+	has(t, "sub", sub, `href="../../_site/css/1-audiences.css"`)
+	if strings.Index(sub, "_site/style.css") > strings.Index(sub, "_site/css/1-audiences.css") {
+		t.Error("extra stylesheet linked before the site's own")
+	}
+}
+
 func TestHomePageAndExpand(t *testing.T) {
 	root, out := project(t)
 	write(t, root, "index.qmd", "---\ntitle: Start\n---\n\n# Welcome\n\n[Go](/dispatcher/b.qmd) {{< hello >}}\n")

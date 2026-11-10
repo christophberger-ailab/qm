@@ -62,6 +62,7 @@ topics:
 		"unknown key":      "formatz: {}\n",
 		"unknown type":     "formats: {x: {type: pptx}}\n",
 		"html mixed":       "formats: {x: {type: [html, docx]}}\n",
+		"css on document":  "formats: {x: {type: docx, css: [a.css]}}\n",
 		"unknown audience": "topics: {one: {audiences: [fw]}}\n",
 		"duplicate":        "topics:\n  one:\n  one:\n",
 	} {
@@ -166,7 +167,7 @@ func TestPaths(t *testing.T) {
 vars: {org: LS}
 formats:
   handout: {type: docx, file: "{org}_{topic}{suffix}", template: "tpl/{audience}.docx"}
-  web: {type: html}
+  web: {type: html, css: ["styles/{audience}.scss"]}
 audiences:
   std: {vars: {suffix: ""}}
   pol: {vars: {suffix: _POL}}
@@ -194,6 +195,10 @@ topics:
 	tpl, _ := doc.Template()
 	dir, _ := doc.OutputDir()
 	wdir, _ := web.OutputDir()
+	css, _ := web.Stylesheets()
+	if len(css) != 1 || css[0] != filepath.Join(root, "styles", "pol.scss") {
+		t.Errorf("css %q", css)
+	}
 	if stem != "LS_calltaker_POL" ||
 		cover != filepath.Join(root, "covers", "calltaker_POL.png") ||
 		tpl != filepath.Join(root, "tpl", "pol.docx") ||

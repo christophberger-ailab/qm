@@ -223,6 +223,15 @@ func loadTopic(root string, t config.Topic) (*bookmaker.Node, error) {
 }
 
 func renderSite(sel config.Selection, dir string, dryRun bool, log Logf) error {
+	css, err := sel.Stylesheets()
+	if err != nil {
+		return err
+	}
+	for _, p := range css {
+		if fi, err := os.Stat(p); err != nil || fi.IsDir() {
+			return fmt.Errorf("format %s: css: %s is not a file", sel.Format.Name, rel(sel.Config.Root, p))
+		}
+	}
 	if dryRun {
 		log("would write the site to %s/", rel(sel.Config.Root, dir))
 		return nil
@@ -232,7 +241,7 @@ func renderSite(sel config.Selection, dir string, dryRun bool, log Logf) error {
 		topics[i] = site.Topic{Name: t.Name, Folder: t.Folder, Title: t.Title}
 	}
 	exp := Expander(sel, log)
-	err := site.Build(site.Options{
+	err = site.Build(site.Options{
 		Root:    sel.Config.Root,
 		OutDir:  dir,
 		Title:   sel.Config.Title,
@@ -240,6 +249,7 @@ func renderSite(sel config.Selection, dir string, dryRun bool, log Logf) error {
 		Topics:  topics,
 		Keep:    sel.Keep,
 		Formats: sel.Types(),
+		CSS:     css,
 		Expand:  exp.Expand,
 		Log:     log,
 	})
